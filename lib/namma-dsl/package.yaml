@@ -87,6 +87,9 @@ dependencies:
   - mtl
   - stringbuilder
   - pretty-show
+  - flatparse
+  - utf8-string
+  - containers
 
 ghc-options:
   - -Wall
