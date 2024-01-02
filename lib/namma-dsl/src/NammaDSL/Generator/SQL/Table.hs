@@ -1,8 +1,8 @@
 module NammaDSL.Generator.SQL.Table (generateSQL) where
 
-import NammaDSL.DSL.Syntax.Storage
 import Data.List (intercalate)
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Storage
 import Text.Casing (quietSnake)
 
 -- Generates SQL for creating a table and altering it to add columns

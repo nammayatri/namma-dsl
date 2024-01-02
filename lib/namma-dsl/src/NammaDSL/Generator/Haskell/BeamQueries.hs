@@ -1,11 +1,11 @@
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries) where
 
-import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.GeneratorCore
-import NammaDSL.Utils
 import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
 import qualified Data.Text as Text
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.GeneratorCore
+import NammaDSL.Utils
 
 generateBeamQueries :: TableDef -> Code
 generateBeamQueries tableDef = do

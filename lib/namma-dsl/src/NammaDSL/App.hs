@@ -2,6 +2,8 @@
 
 module NammaDSL.App where
 
+import qualified Data.Text as T
+import Kernel.Prelude
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
 import NammaDSL.DSL.Syntax.API
@@ -11,8 +13,6 @@ import NammaDSL.Generator.Haskell.ApiTypes
 import NammaDSL.Generator.Purs
 import NammaDSL.Generator.SQL
 import NammaDSL.Utils
-import qualified Data.Text as T
-import Kernel.Prelude
 import System.Directory
 import System.FilePath
 

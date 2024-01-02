@@ -1,12 +1,12 @@
 module NammaDSL.Generator.Haskell.DomainType where
 
-import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.GeneratorCore
-import NammaDSL.Utils (isMaybeType)
 import qualified Data.List as L
 import qualified Data.List.Split as L
 import Data.Tuple.Extra (both)
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.GeneratorCore
+import NammaDSL.Utils (isMaybeType)
 
 generateDomainType :: TableDef -> Code
 generateDomainType tableDef =

@@ -1,14 +1,15 @@
 module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 
 -- import NammaDSL.DSL.Parser.API hiding (figureOutImports)
-import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
+
 -- import NammaDSL.Utils
 
-import NammaDSL.GeneratorCore
 import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
+import NammaDSL.DSL.Syntax.API
+import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
+import NammaDSL.GeneratorCore
 
 generateDomainHandler :: Apis -> Code
 generateDomainHandler input =

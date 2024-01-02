@@ -2,12 +2,12 @@
 
 module NammaDSL.Generator.Haskell.BeamTable (generateBeamTable) where
 
-import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.GeneratorCore
-import NammaDSL.Utils
 import Data.List (intercalate, isInfixOf)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
+import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.GeneratorCore
+import NammaDSL.Utils
 
 generateBeamTable :: TableDef -> Code
 generateBeamTable tableDef =

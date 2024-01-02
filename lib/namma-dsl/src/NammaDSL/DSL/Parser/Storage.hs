@@ -2,8 +2,6 @@
 
 module NammaDSL.DSL.Parser.Storage (storageParser) where
 
-import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Utils (figureOutImports, isMaybeType, makeTypeQualified, _String)
 import Control.Lens.Combinators
 import Control.Lens.Operators
 import Data.Aeson
@@ -19,6 +17,8 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
+import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.Utils (figureOutImports, isMaybeType, makeTypeQualified, _String)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
 
