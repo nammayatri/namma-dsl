@@ -1,11 +1,14 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries) where
 
+import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
+import Data.String.Interpolate (__i)
+import qualified Data.Text as Text
+import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
-import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
-import qualified Data.Text as Text
-import Kernel.Prelude
 
 generateBeamQueries :: TableDef -> Code
 generateBeamQueries tableDef = do
@@ -51,8 +54,10 @@ generateDefaultCreateQuery = do
   let qname = "Domain.Types." ++ name ++ "." ++ name
   onNewLine $
     tellM $
-      "create :: (EsqDBFlow m r, MonadFlow m, CacheFlow m r) => " ++ qname ++ "-> m ()\n"
-        ++ "create = createWithKV\n\n"
+      [__i|
+        create::(EsqDBFlow m r, MonadFlow m, CacheFlow m r) => #{qname} -> m ()
+        create = createWithKV
+      |]
 
 generateDefaultCreateManyQuery :: StorageM ()
 generateDefaultCreateManyQuery = do
@@ -60,29 +65,25 @@ generateDefaultCreateManyQuery = do
   let qname = "Domain.Types." ++ name ++ "." ++ name
   onNewLine $
     tellM $
-      "createMany :: (EsqDBFlow m r, MonadFlow m, CacheFlow m r) => " ++ "[" ++ qname ++ "]" ++ "-> m ()\n"
-        ++ "createMany = traverse_ createWithKV\n\n"
+      [__i|
+        createMany :: (EsqDBFlow m r, MonadFlow m, CacheFlow m r) => [#{qname}] -> m ()
+        createMany = traverse_ createWithKV
+      |]
 
 fromTTypeInstance :: StorageM ()
 fromTTypeInstance = do
   tableDef <- ask
   onNewLine $
     tellM $
-      "instance FromTType' Beam." ++ tableNameHaskell tableDef ++ " Domain.Types." ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
-        ++ "  fromTType' Beam."
-        ++ tableNameHaskell tableDef
-        ++ "T {..} = do\n"
-        ++ "    pure $\n"
-        ++ "      Just\n"
-        ++ "        "
-        ++ "Domain.Types."
-        ++ (tableNameHaskell tableDef)
-        ++ "."
-        ++ (tableNameHaskell tableDef)
-        ++ "\n"
-        ++ "          { "
-        ++ intercalate ",\n            " (map fromField (fields tableDef))
-        ++ "\n          }\n\n"
+      [__i|
+        instance FromTType' Beam.#{tableNameHaskell tableDef} Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef} where
+          fromTType' Beam.#{tableNameHaskell tableDef}T {..} = do
+            pure $
+              Just
+                Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef}
+                  { #{intercalate ",\n                        " (map fromField (fields tableDef))}
+                  }
+      |]
   where
     getFromTTypeParams :: FieldDef -> String
     getFromTTypeParams hfield = unwords $ map bFieldName (beamFields hfield)
@@ -100,19 +101,13 @@ toTTypeInstance = do
   tableDef <- ask
   onNewLine $
     tellM $
-      "instance ToTType' Beam." ++ tableNameHaskell tableDef ++ " Domain.Types." ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
-        ++ "  toTType' "
-        ++ "Domain.Types."
-        ++ (tableNameHaskell tableDef)
-        ++ "."
-        ++ (tableNameHaskell tableDef)
-        ++ " {..} = do\n"
-        ++ "    Beam."
-        ++ tableNameHaskell tableDef
-        ++ "T\n"
-        ++ "      { "
-        ++ intercalate ",\n        " (concatMap toField (fields tableDef))
-        ++ "\n      }\n\n"
+      [__i|
+        instance ToTType' Beam.#{tableNameHaskell tableDef} Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef} where
+          toTType' Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef} {..} = do
+              Beam.#{tableNameHaskell tableDef}T
+                { #{intercalate ",\n                  " (concatMap toField (fields tableDef))}
+                }
+      |]
   where
     toField hfield =
       map
@@ -270,11 +265,11 @@ mapWithIndex f = zipWith f [0 ..]
 -- Function to process each clause
 generateClause :: [FieldDef] -> Bool -> Int -> Int -> WhereClause -> String
 generateClause _ _ _ _ EmptyWhere = ""
-generateClause allFields isFullObjInp n i (Leaf (field, tp, op)) =
+generateClause allFields isFullObjInp n v (Leaf (field, tp, op)) =
   let bFields = maybe (error "Param not found in data type") beamFields $ find (\f -> fieldName f == field) allFields
-   in intercalate " , " $ map (\bfield -> (if i == 0 then " " else spaces n) ++ "Se.Is Beam." ++ bFieldName bfield ++ " $ " ++ operator (fromMaybe Eq op) ++ " " ++ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)) bFields
-generateClause allFields isFullObjInp n i (Query (op, clauses)) =
-  (if i == 0 then " " else spaces n)
+   in intercalate " , " $ map (\bfield -> (if v == 0 then " " else spaces n) ++ "Se.Is Beam." ++ bFieldName bfield ++ " $ " ++ operator (fromMaybe Eq op) ++ " " ++ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)) bFields
+generateClause allFields isFullObjInp n v (Query (op, clauses)) =
+  (if v == 0 then " " else spaces n)
     ++ ( if op `elem` comparisonOperator
            then ""
            else

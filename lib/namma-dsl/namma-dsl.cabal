@@ -106,6 +106,7 @@ library
     , scientific
     , servant-server
     , split
+    , string-interpolate
     , stringbuilder
     , template-haskell
     , text
@@ -204,6 +205,7 @@ test-suite namma-dsl-tests
     , scientific
     , servant-server
     , split
+    , string-interpolate
     , stringbuilder
     , template-haskell
     , text
