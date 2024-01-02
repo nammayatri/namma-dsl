@@ -2441,14 +2441,6 @@
     "root": {
       "inputs": {
         "common": "common",
-        "haskell-flake": [
-          "common",
-          "haskell-flake"
-        ],
-        "nixpkgs": [
-          "common",
-          "nixpkgs"
-        ],
         "shared-kernel": "shared-kernel"
       }
     },
