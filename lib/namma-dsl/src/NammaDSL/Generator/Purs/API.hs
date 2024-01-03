@@ -1,9 +1,9 @@
 module NammaDSL.Generator.Purs.API where
 
-import NammaDSL.DSL.Syntax.API
-import NammaDSL.Utils (apiTypeToText, capitalize)
 import Data.Text (Text)
 import qualified Data.Text as T
+import NammaDSL.DSL.Syntax.API
+import NammaDSL.Utils (apiTypeToText, capitalize)
 import Prelude
 
 mkRestEndpointInstance :: ApiTT -> Maybe (Text, Text) -> Text

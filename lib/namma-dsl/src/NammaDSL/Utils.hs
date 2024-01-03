@@ -1,6 +1,5 @@
 module NammaDSL.Utils where
 
-import NammaDSL.DSL.Syntax.API (ApiType (..))
 import Control.Lens.Combinators
 import Data.Aeson
 import Data.Aeson.Key (fromString)
@@ -11,6 +10,7 @@ import qualified Data.List as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
+import NammaDSL.DSL.Syntax.API (ApiType (..))
 import System.Directory (createDirectoryIfMissing)
 import System.IO
 

@@ -1,7 +1,7 @@
 module NammaDSL.DSL.Syntax.Storage where
 
-import NammaDSL.GeneratorCore
 import Kernel.Prelude
+import NammaDSL.GeneratorCore
 
 data TableDef = TableDef
   { tableNameHaskell :: String,

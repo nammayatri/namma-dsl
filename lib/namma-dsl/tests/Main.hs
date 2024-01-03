@@ -2,8 +2,8 @@
 
 module Main where
 
-import NammaDSL.App
 import Kernel.Prelude
+import NammaDSL.App
 import System.Directory (createDirectoryIfMissing)
 
 storageYamlFilePath :: FilePath
