@@ -330,13 +330,10 @@ generateClause allFields isFullObjInp n v (Query (op, clauses)) =
 
 generateLeafClause :: String -> String -> BeamField -> Maybe Operator -> Bool -> Int -> Int -> String
 generateLeafClause field tp bfield op isFullObjInp n v =
-  (if v == 0 then " " else spaces n)
-    ++ "Se.Is Beam."
-    ++ bFieldName bfield
-    ++ " $ "
-    ++ operator (fromMaybe Eq op)
-    ++ " "
-    ++ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)
+  [__i|
+    #{if v == 0 then " " else spaces n}
+    Se.Is Beam.#{bFieldName bfield} $ #{operator (fromMaybe Eq op)} #{if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield}
+  |]
 
 generateToTTypeFuncs :: StorageM ()
 generateToTTypeFuncs = do
