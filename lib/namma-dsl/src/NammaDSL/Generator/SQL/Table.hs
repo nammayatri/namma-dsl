@@ -1,8 +1,8 @@
 module NammaDSL.Generator.SQL.Table (generateSQL) where
 
-import NammaDSL.DSL.Syntax.Storage
 import Data.List (intercalate)
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Storage
 import Text.Casing (quietSnake)
 
 -- Generates SQL for creating a table and altering it to add columns
@@ -18,7 +18,7 @@ createTableSQL tableDef =
 -- SQL for altering the table to add each column
 alterTableSQL :: TableDef -> String
 alterTableSQL tableDef =
-  intercalate "\n" $ map (addColumnSQL (tableNameSql tableDef)) (fields tableDef)
+  intercalate "\n" $ map (addColumnSQL (tableNameSql tableDef)) $ filter (isNothing . relation) (fields tableDef)
 
 -- SQL for adding a single column with constraints
 addColumnSQL :: String -> FieldDef -> String

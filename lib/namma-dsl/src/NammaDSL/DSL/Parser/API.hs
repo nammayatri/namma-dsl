@@ -6,8 +6,6 @@
 
 module NammaDSL.DSL.Parser.API where
 
-import NammaDSL.DSL.Syntax.API
-import qualified NammaDSL.Utils as U
 import Control.Lens hiding (noneOf)
 import Data.Aeson
 import Data.Aeson.Key (fromText, toText)
@@ -20,6 +18,8 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import Kernel.Prelude hiding (toText)
+import NammaDSL.DSL.Syntax.API
+import qualified NammaDSL.Utils as U
 
 apiParser :: FilePath -> IO Apis
 apiParser filepath = do

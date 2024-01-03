@@ -87,6 +87,7 @@ dependencies:
   - mtl
   - stringbuilder
   - string-interpolate
+  - pretty-show
 
 ghc-options:
   - -Wall

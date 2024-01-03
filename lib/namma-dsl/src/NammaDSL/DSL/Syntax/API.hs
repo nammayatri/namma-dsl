@@ -2,9 +2,9 @@
 
 module NammaDSL.DSL.Syntax.API where
 
-import NammaDSL.GeneratorCore
 import Control.Lens hiding (noneOf)
 import Kernel.Prelude
+import NammaDSL.GeneratorCore
 
 data UrlParts
   = UnitPath Text

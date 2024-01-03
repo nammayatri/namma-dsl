@@ -1,7 +1,7 @@
 module NammaDSL.DSL.Syntax.Storage where
 
-import NammaDSL.GeneratorCore
 import Kernel.Prelude
+import NammaDSL.GeneratorCore
 
 data TableDef = TableDef
   { tableNameHaskell :: String,
@@ -12,7 +12,8 @@ data TableDef = TableDef
     primaryKey :: [String],
     secondaryKey :: [String],
     types :: Maybe [TypeObject],
-    containsEncryptedField :: Bool
+    containsEncryptedField :: Bool,
+    relationalTableNamesHaskell :: [String]
   }
   deriving (Show)
 
@@ -40,9 +41,13 @@ data FieldDef = FieldDef
     haskellType :: String,
     beamFields :: [BeamField],
     fromTType :: Maybe String,
-    isEncrypted :: Bool
+    isEncrypted :: Bool,
+    relation :: Maybe FieldRelation,
+    relationalTableNameHaskell :: Maybe String
   }
   deriving (Show)
+
+data FieldRelation = OneToOne | MaybeOneToOne | OneToMany deriving (Show, Eq)
 
 data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT deriving (Show, Eq)
 

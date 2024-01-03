@@ -1,18 +1,20 @@
 module NammaDSL.Utils where
 
-import NammaDSL.DSL.Syntax.API (ApiType (..))
 import Control.Lens.Combinators
 import Data.Aeson
 import Data.Aeson.Key (fromString)
 import Data.Aeson.Lens (key, _Value)
-import Data.Char (isLower, toUpper)
+import Data.Char (isLower, toLower, toUpper)
 import Data.List (intercalate, nub)
 import qualified Data.List as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
+import NammaDSL.DSL.Syntax.API (ApiType (..))
+import NammaDSL.DSL.Syntax.Storage (FieldRelation (..))
 import System.Directory (createDirectoryIfMissing)
 import System.IO
+import Text.Regex.TDFA ((=~))
 
 apiTypeToText :: ApiType -> Text
 apiTypeToText apitype = case apitype of
@@ -52,6 +54,36 @@ defaultTypeImports tp = case tp of
   "Kilometers" -> Just "Kernel.Types.Common"
   "HighPrecMoney" -> Just "Kernel.Types.Common"
   _ -> Nothing
+
+removeOccurrence :: String -> String -> String
+removeOccurrence remove str = T.unpack $ T.replace (T.pack remove) (T.pack "") (T.pack str)
+
+regexExec :: String -> String -> Maybe String
+regexExec str pattern' = do
+  let match = str =~ pattern' :: (String, String, String, [String])
+  listToMaybe $ filter (/= "") $ snd4 match
+  where
+    snd4 (_, _, _, x) = x
+
+getFieldRelationAndHaskellType :: String -> Maybe (FieldRelation, String)
+getFieldRelationAndHaskellType str = do
+  let patternOneToOne' :: String = "^Domain\\.Types\\..*\\.(.*)$"
+      patternMaybeOneToOne' :: String = "^Kernel.Prelude.Maybe Domain\\.Types\\..*\\.(.*)$"
+      patternOneToMany' :: String = "^\\[Domain\\.Types\\..*\\.(.*)\\]$"
+      fieldRelationAndHaskellType =
+        case (regexExec str patternOneToOne', regexExec str patternMaybeOneToOne', regexExec str patternOneToMany') of
+          (Just haskellType, Nothing, Nothing) -> Just (OneToOne, haskellType)
+          (Nothing, Just haskellType, Nothing) -> Just (MaybeOneToOne, haskellType)
+          (Nothing, Nothing, Just haskellType) -> Just (OneToMany, haskellType)
+          (_, _, _) -> Nothing
+  if isJust fieldRelationAndHaskellType && validatePattern
+    then fieldRelationAndHaskellType
+    else Nothing
+  where
+    validatePattern =
+      case splitOn "." str of
+        [_, _, third, fourth] -> third == fourth
+        _ -> False
 
 -- makeTypeQualified (Maybe Module name)
 makeTypeQualified :: Maybe String -> Maybe [String] -> Maybe [String] -> String -> Object -> String -> String
@@ -93,5 +125,13 @@ capitalize :: String -> String
 capitalize "" = ""
 capitalize (x : xs) = toUpper x : xs
 
+-- Helper function to lowercase the first letter of a string
+lowercaseFirstLetter :: String -> String
+lowercaseFirstLetter "" = ""
+lowercaseFirstLetter (x : xs) = toLower x : xs
+
 _String :: Prism' Value String
 _String = _Value . prism (String . T.pack) (\v -> case v of String s -> Right $ T.unpack s; _ -> Left v)
+
+_Bool :: Prism' Value Bool
+_Bool = _Value . prism Bool (\v -> case v of Bool s -> Right s; _ -> Left v)
