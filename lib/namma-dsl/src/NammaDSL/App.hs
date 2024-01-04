@@ -15,12 +15,10 @@ import NammaDSL.Generator.SQL
 import NammaDSL.Utils
 import System.Directory
 import System.FilePath
-import Text.Show.Pretty (ppShow)
 
 mkBeamTable :: FilePath -> FilePath -> IO ()
 mkBeamTable filePath yaml = do
   tableDef <- storageParser yaml
-  print $ ppShow tableDef
   mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateBeamTable t)) tableDef
 
 mkBeamQueries :: FilePath -> FilePath -> IO ()

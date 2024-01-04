@@ -86,7 +86,6 @@ dependencies:
   - filepath
   - mtl
   - stringbuilder
-  - pretty-show
   - flatparse
   - utf8-string
   - containers

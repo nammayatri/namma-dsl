@@ -2,9 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile) where
+module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, runAnyParser) where
 
--- import qualified Debug.Trace as DT
 import Control.Lens.Combinators
 import Control.Lens.Operators
 import Data.Aeson
@@ -22,6 +21,7 @@ import qualified Data.Text as T
 import Data.Tuple (swap)
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
+import qualified Debug.Trace as DT
 import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Storage
@@ -29,10 +29,10 @@ import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybe
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
 
--- debugParser :: Parser e ()
--- debugParser = do
---   !_ <- DT.traceShowId <$> lookahead (many anyChar)
---   pure ()
+debugParser :: String -> Parser e ()
+debugParser tag = do
+  !_ <- DT.traceShowId . ((<>) tag) <$> lookahead (many anyChar)
+  pure ()
 
 snakeCaseToCamelCase :: String -> String
 snakeCaseToCamelCase = concat . makeMeCamel . map (T.unpack . T.strip) . T.split (== '_') . T.pack
@@ -43,14 +43,17 @@ snakeCaseToCamelCase = concat . makeMeCamel . map (T.unpack . T.strip) . T.split
     captialise (x : xs) = toUpper x : xs
     captialise [] = error "got two underscores together in field name, feeling sad...."
 
-sqlAlterAddPrimaryKeyParser :: Parser e [String]
+sqlAlterAddPrimaryKeyParser :: Parser e ([String], [String])
 sqlAlterAddPrimaryKeyParser = do
   $(string "ALTER TABLE atlas_app.") -- TODO: need to make schema dynamic, will do when fixing in generator code
   _tableName <- many $ notFollowedBy anyChar $(string "ADD PRIMARY KEY (")
   $(string " ADD PRIMARY KEY ( ")
   keys <- many $ notFollowedBy anyChar $(string ";")
-  $(string ");\n")
-  return $ map (snakeCaseToCamelCase . T.unpack) (T.split (== ',') . T.pack $ keys)
+  $(string ");\n") <|> $(string ");")
+  let snakeKeys = map (snakeCaseToCamelCase . T.unpack) (T.split (== ',') . T.pack $ keys)
+  case snakeKeys of
+    (x : xs) -> pure ([x], xs)
+    [] -> pure ([], [])
 
 parseWithDefault :: Parser e (Maybe String)
 parseWithDefault = do
@@ -74,19 +77,22 @@ parseConstraint = do
 sqlAlterTableAddColumn :: Parser e FieldDef
 sqlAlterTableAddColumn = do
   $(string "ALTER TABLE atlas_app.") -- TODO: need to make schema dynamic, will do when fixing in generator code
-  _tableName <- many $ notFollowedBy anyChar $(string "ADD COLUMN")
+  _tableName <- many $ notFollowedBy anyChar ($(string "ADD COLUMN") <|> $(string "ADD PRIMARY KEY"))
   $(string " ADD COLUMN ")
   fieldNameStart <- many $ notFollowedBy anyChar $(string " ")
   fieldNameEnd <- anyChar
   let fieldName = fieldNameStart <> [fieldNameEnd]
+      isEncrypted = fieldName =~ ("_hash" :: String)
   $(string " ")
-  sqlType <- many $ notFollowedBy anyChar ($(string "NOT NULL") <|> $(string ";")) -- TODO: update it when we add more constraints in generator.
+  sqlType <- many $ notFollowedBy anyChar ($(string "NOT NULL") <|> $(string ";") <|> $(string "default")) -- TODO: update it when we add more constraints in generator.
   constraint <- parseConstraint <|> return Nothing
   $(string " ;") <|> pure ()
   defaultVal <- parseWithDefault <|> return Nothing
-  $(string ";\n") <|> $(string "\n")
-  let isEncrypted = False
-      fromTType = Nothing
+  $(string ";\n") <|> $(string "\n") <|> $(string ";")
+  when isEncrypted $ do
+    _ignoreNextLine <- many $ notFollowedBy anyChar $(string "\n")
+    $(string ";\n")
+  let fromTType = Nothing
       beamFields = [bf]
       bf =
         BeamField
@@ -119,7 +125,7 @@ sqlCreateParser = do
   pure tableName
 
 sqlUpdateStampParser :: Parser e ()
-sqlUpdateStampParser = $(string "\n\n------ SQL updates ------\n\n")
+sqlUpdateStampParser = $(string "\n\n------- SQL updates -------\n\n")
 
 columnUpdateActionParser :: Parser e SqlFieldUpdates
 columnUpdateActionParser = do
@@ -130,11 +136,12 @@ columnUpdateActionParser = do
       <|> ($(string " SET NOT NULL") *> pure AddNotNull)
   finalAction <-
     case updateAction of
-      AddDefault _ -> AddDefault <$> many (notFollowedBy anyChar $(string "\n"))
-      val -> do
-        _ <- many $ notFollowedBy anyChar $(string "\n")
-        pure val
-  $(string ";\n")
+      AddDefault _ -> do
+        defStart <- many $ notFollowedBy anyChar ($(string ";\n") <|> $(string ";"))
+        defEnd <- anyChar
+        pure . AddDefault $ defStart <> [defEnd]
+      val -> pure val
+  $(string ";\n") <|> $(string ";")
   return finalAction
 
 sqlUpdatesParser :: Parser e SqlUpdates
@@ -142,41 +149,77 @@ sqlUpdatesParser = do
   $(string "ALTER TABLE atlas_app.")
   _tableNameStart <- many (notFollowedBy anyChar $(string " "))
   _tableNameEndChar <- anyChar
-  isColumnAlter <-
-    $( switch
-         [|
-           case _ of
-             " ALTER COLUMN " -> pure True
-             " DROP CONSTRAINT " -> pure False
-             _ -> pure False
-           |]
-     )
-  if isColumnAlter
-    then do
+  sqlAction :: String <-
+    ($(string " ALTER COLUMN ") *> pure "ALTER COLUMN")
+      <|> ($(string " DROP CONSTRAINT ") *> pure "DROP CONSTRAINT")
+      <|> ($(string " DROP COLUMN ") *> pure "DROP COLUMN")
+  case sqlAction of
+    "DROP COLUMN" -> do
+      fieldNameStart <- many $ notFollowedBy anyChar ($(string ";\n") <|> $(string ";"))
+      fieldNameEnd <- anyChar
+      $(string ";\n") <|> $(string ";")
+      pure $
+        SqlUpdates
+          (Just (snakeCaseToCamelCase (fieldNameStart <> [fieldNameEnd]), DropColumn))
+          []
+    "ALTER COLUMN" -> do
       fieldName <- many (notFollowedBy anyChar ($(string "DROP") <|> $(string "SET") <|> $(string "TYPE")))
       update <- columnUpdateActionParser
       pure $
         SqlUpdates
           (Just (snakeCaseToCamelCase fieldName, update))
           []
-    else do
+    "DROP CONSTRAINT" -> do
       _ <- many $ notFollowedBy anyChar $(string "pkey;\n")
-      $(string "_pkey;\n")
-      pk <- sqlAlterAddPrimaryKeyParser <|> return []
+      $(string "_pkey;\n") <|> $(string "_pkey;")
+      (pk, sk) <- sqlAlterAddPrimaryKeyParser <|> return ([], [])
       pure $
         SqlUpdates
           Nothing
-          pk
+          (pk <> sk)
+    _ -> pure $ SqlUpdates Nothing []
+
+updateParser :: Parser e [(Maybe SqlUpdates, Maybe FieldDef)]
+updateParser = do
+  sqlUpdateStampParser
+  many (asFst sqlUpdatesParser <|> asSnd sqlAlterTableAddColumn)
+  where
+    asSnd f = (Nothing,) . Just <$> f
+    asFst f = (,Nothing) . Just <$> f
 
 migrationFileParser :: String -> Parser e MigrationFile
 migrationFileParser lastSqlFile = do
   !tableName <- sqlCreateParser
-  fields <- many sqlAlterTableAddColumn
-  !pk <- sqlAlterAddPrimaryKeyParser <|> return []
-  !columnUpdates <-
-    concat <$> many do
-      sqlUpdateStampParser
-      many sqlUpdatesParser
+  fields' <- many sqlAlterTableAddColumn
+  keys <- sqlAlterAddPrimaryKeyParser <|> return ([], [])
+  fieldUpdates' <-
+    concat
+      <$> many updateParser
+  let !(columnUpdates, newFields) = second catMaybes . first catMaybes $ unzip fieldUpdates'
+  let !deletedFields = L.nub . map fst . filter ((== DropColumn) . snd) $ mapMaybe fieldUpdates columnUpdates
+  let !finalFieldsDeleted =
+        filter
+          ( \delField ->
+              foldl'
+                ( \res updF ->
+                    case updF of
+                      (Just sqlUpdate, Nothing) -> if (fst <$> fieldUpdates sqlUpdate) == Just delField then (snd <$> fieldUpdates sqlUpdate) == Just DropColumn else res
+                      (Nothing, Just newField) -> (fieldName newField) /= delField
+                      _ -> res
+                )
+                True
+                fieldUpdates'
+          )
+          deletedFields
+  let !fields = filter (\field -> fieldName field `notElem` finalFieldsDeleted) $ fields' <> newFields
+  let (pk, sk) =
+        foldl'
+          ( \(pkAcc, skAcc) columnUpdate -> case keysInPrimaryKey columnUpdate of
+              (x : xs) -> ([x], xs)
+              [] -> (pkAcc, skAcc)
+          )
+          keys
+          columnUpdates
   let !finalFieldUpdates =
         foldr
           ( \sqlUpdate accMap -> do
@@ -196,17 +239,13 @@ migrationFileParser lastSqlFile = do
                 { beamFields =
                     map
                       ( \beamField -> do
-                          let ubf =
-                                if beamField.bFieldName `elem` pk && beamField.bFieldName /= "id"
-                                  then beamField {bConstraints = beamField.bConstraints <> [SecondaryKey]}
-                                  else beamField
-                          let (notNullRelatedAcc, defaultRelatedAcc) = fromMaybe ([], []) $ M.lookup ubf.bFieldName finalFieldUpdates
+                          let (notNullRelatedAcc, defaultRelatedAcc) = fromMaybe ([], []) $ M.lookup beamField.bFieldName finalFieldUpdates
                           let ubf' =
                                 -- using head and last below because we are never going to get empty array below, could have used NonEmpty array, will be in next PR along with other refactor.
                                 case lastMay notNullRelatedAcc of
-                                  Just AddNotNull | NotNull `notElem` ubf.bConstraints -> ubf {bConstraints = NotNull : ubf.bConstraints}
-                                  Just DropNotNull -> ubf {bConstraints = filter (/= NotNull) ubf.bConstraints}
-                                  _ -> ubf
+                                  Just AddNotNull | NotNull `notElem` beamField.bConstraints -> beamField {bConstraints = NotNull : beamField.bConstraints}
+                                  Just DropNotNull -> beamField {bConstraints = filter (/= NotNull) beamField.bConstraints}
+                                  _ -> beamField
                           case lastMay defaultRelatedAcc of
                             Just DropDefault -> ubf' {bDefaultVal = Nothing}
                             Just (AddDefault val) -> ubf' {bDefaultVal = Just val}
@@ -216,16 +255,24 @@ migrationFileParser lastSqlFile = do
                 }
           )
           fields
-  pure $ MigrationFile tableName finalFields pk lastSqlFile
+  pure $ MigrationFile tableName finalFields pk sk lastSqlFile
   where
     groupRelevant sqlUpdate (notNullRelatedAcc, defaultRelatedAcc)
       | sqlUpdate `elem` [DropNotNull, AddNotNull] = (sqlUpdate : notNullRelatedAcc, defaultRelatedAcc)
       | sqlUpdate `elem` [AddDefault "", DropDefault] = (notNullRelatedAcc, sqlUpdate : defaultRelatedAcc)
       | otherwise = (notNullRelatedAcc, defaultRelatedAcc)
 
+runAnyParser :: Show a => Parser e a -> String -> IO (Maybe a)
+runAnyParser parser str = do
+  pure $ go (runParser parser $ BSU.fromString str)
+  where
+    go (OK r _) = Just r
+    go _ = Nothing
+
 getOldSqlFile :: FilePath -> IO (Maybe MigrationFile)
 getOldSqlFile filepath = do
   lastSqlFile <- BS.readFile filepath
+  print ("loading old file" :: String)
   pure $ go (runParser (migrationFileParser (BSU.toString lastSqlFile)) lastSqlFile)
   where
     go (OK r _) = Just r
