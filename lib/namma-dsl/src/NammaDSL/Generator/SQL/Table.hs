@@ -5,6 +5,7 @@ module NammaDSL.Generator.SQL.Table (generateSQL) where
 import Data.List (intercalate)
 import qualified Data.Map as M
 import qualified Data.Set as DS
+-- import qualified Debug.Trace as DT
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
 import Text.Casing (quietSnake)
@@ -15,34 +16,34 @@ mkSnake = quietSnake . bFieldName
 -- Generates SQL for creating a table and altering it to add columns
 generateSQL :: Maybe MigrationFile -> TableDef -> String
 generateSQL (Just oldSqlFile) tableDef = do
-  let (updatedFields, newFields, deletedFields) = getUpdatesAndRest oldSqlFile tableDef
+  let (updatedFields, newFields, deletedFields, pkChanged) = getUpdatesAndRest oldSqlFile tableDef
       tableName = tableNameSql tableDef
       anyChanges = length (updatedFields <> newFields <> deletedFields) > 0
-      updateQueries = generateUpdateSQL tableDef tableName updatedFields
+      updateQueries = generateUpdateSQL tableName updatedFields
+      pkChangeQuery = if pkChanged then "ALTER TABLE atlas_app." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL tableDef else ""
       newColumnQueries = addColumnSQL tableName newFields
       deleteQueries = generateDeleteSQL tableName deletedFields
-  if anyChanges
-    then oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, deleteQueries])
+  if anyChanges || pkChanged
+    then oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, deleteQueries, pkChangeQuery])
     else oldSqlFile.rawLastSqlFile
 generateSQL Nothing tableDef =
   createTableSQL tableDef ++ "\n" ++ alterTableSQL tableDef ++ "\n" ++ addKeySQL tableDef
 
 updateStamp :: String
-updateStamp = "\n\n------ SQL updates ------\n\n"
+updateStamp = "\n\n\n------- SQL updates -------\n\n"
 
 generateDeleteSQL :: String -> [BeamField] -> String
 generateDeleteSQL tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> do
   "ALTER TABLE atlas_app." ++ tableName ++ " DROP COLUMN " ++ (mkSnake beamField) ++ ";"
 
-generateUpdateSQL :: TableDef -> String -> [BeamField] -> String
-generateUpdateSQL tableDef tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdaes -> case fieldUpdaes of
+generateUpdateSQL :: String -> [BeamField] -> String
+generateUpdateSQL tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdaes -> case fieldUpdaes of
   DropDefault -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP DEFAULT;"
   AddDefault _ -> maybe "" (\dv -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET DEFAULT " <> dv <> ";") (bDefaultVal beamField)
   TypeChange -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " TYPE " <> (bSqlType beamField) <> ";"
   DropNotNull -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP NOT NULL;"
   AddNotNull -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET NOT NULL;"
-  DropPrimaryKey -> "ALTER TABLE atlas_app." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL tableDef
-  AddPrimaryKey -> "ALTER TABLE atlas_app." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL tableDef
+  DropColumn -> ""
 
 whichChanges :: BeamField -> BeamField -> [SqlFieldUpdates]
 whichChanges oldField newField = do
@@ -52,19 +53,21 @@ whichChanges oldField newField = do
   let removedConstraints = DS.difference oCs nCs
   let isChangeApplicable change =
         case change of
+          DropColumn -> False
           DropDefault -> isNothing (bDefaultVal newField) && isJust (bDefaultVal oldField)
           AddDefault _ -> isJust (bDefaultVal newField) && isNothing (bDefaultVal oldField) || bDefaultVal oldField /= bDefaultVal newField
           TypeChange -> bSqlType newField /= bSqlType oldField
           DropNotNull -> DS.member NotNull removedConstraints
           AddNotNull -> DS.member NotNull addedConstraints
-          DropPrimaryKey -> DS.member PrimaryKey removedConstraints || (DS.member SecondaryKey removedConstraints)
-          AddPrimaryKey -> DS.member PrimaryKey addedConstraints || (DS.member SecondaryKey addedConstraints)
-  filter isChangeApplicable [DropNotNull, DropDefault, AddNotNull, AddDefault "Not_Required_Here", TypeChange, DropPrimaryKey, AddPrimaryKey]
+  filter isChangeApplicable [DropNotNull, DropDefault, AddNotNull, AddDefault "Not_Required_Here", TypeChange]
 
-getUpdatesAndRest :: MigrationFile -> TableDef -> ([BeamField], [BeamField], [BeamField])
+getUpdatesAndRest :: MigrationFile -> TableDef -> ([BeamField], [BeamField], [BeamField], Bool)
 getUpdatesAndRest oldSqlFile tableDef = do
   let newSqlFields = M.fromList . map (\beamField -> (beamField.bFieldName, beamField)) $ concatMap (\field -> field.beamFields) (fields tableDef)
   let oldSqlFields = M.fromList . map (\beamField -> (beamField.bFieldName, beamField)) $ concatMap (\field -> field.beamFields) (fields_ oldSqlFile)
+  let newKeyIds = DS.fromList $ tableDef.primaryKey <> tableDef.secondaryKey
+  let oldKeyIds = DS.fromList $ oldSqlFile.primaryKeys <> oldSqlFile.secondaryKeys
+  let isPkChanged = newKeyIds /= oldKeyIds
   let updatedFields =
         fst $
           M.mapAccumWithKey
@@ -99,7 +102,7 @@ getUpdatesAndRest oldSqlFile tableDef = do
             )
             []
             oldSqlFields
-  (updatedFields, newFields, deletedFields)
+  (updatedFields, newFields, deletedFields, isPkChanged)
 
 -- SQL for creating an empty table
 createTableSQL :: TableDef -> String
@@ -128,7 +131,7 @@ addColumnSQL tableName beamFields =
   where
     generateAlterColumnSQL :: String -> String -> BeamField -> String
     generateAlterColumnSQL fieldName_ sqlType_ beamField =
-      "ALTER TABLE atlas_app." ++ tableName ++ " ADD COLUMN " ++ fieldName_ ++ " " ++ sqlType_ ++ " "
+      "ALTER TABLE atlas_app." ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [fieldName_, sqlType_]) ++ " "
         ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
         ++ maybe "" (" default " ++) (bDefaultVal beamField)
         ++ ";"
