@@ -1,3 +1,5 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 
 -- import NammaDSL.DSL.Parser.API hiding (figureOutImports)
@@ -5,6 +7,7 @@ module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 -- import NammaDSL.Utils
 
 import Data.List (isInfixOf, nub)
+import Data.String.Interpolate (__i)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
@@ -70,8 +73,8 @@ mkCodeBody = do
             ty -> " -> " <> T.intercalate " -> " ty
           handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.Flow " <> last allTypes
        in tellM $
-            T.unpack $
-              functionName <> (if isAuthPresent apiT then " :: (Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)" else " ::") <> handlerTypes
-                <> "\n"
-                <> functionName
-                <> " = error \"Logic yet to be decided\""
+            T.unpack
+              [__i|
+            #{functionName} :: #{if isAuthPresent apiT then "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)" :: Text else ""} #{handlerTypes}
+            #{functionName} = error "Logic yet to be decided"
+          |]

@@ -6,7 +6,7 @@
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries) where
 
 import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
-import Data.String.Interpolate (__i)
+import Data.String.Interpolate (__i, i)
 import qualified Data.Text as Text
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
@@ -65,7 +65,7 @@ generateDefaultCreateQuery = do
   onNewLine $
     tellM $
       [__i|
-        create::(EsqDBFlow m r, MonadFlow m, CacheFlow m r) => #{qname} -> m ()
+        create :: (EsqDBFlow m r, MonadFlow m, CacheFlow m r) => #{qname} -> m ()
         create = createWithKV
       |]
 
@@ -88,11 +88,11 @@ fromTTypeInstance = do
       [__i|
         instance FromTType' Beam.#{tableNameHaskell tableDef} Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef} where
           fromTType' Beam.#{tableNameHaskell tableDef}T {..} = do
-            #{intercalate "\n" (filter (/= "") (map (\field -> fromTTypeMConversionFunction (tableNameHaskell tableDef) (haskellType field) (fieldName field) (relation field)) (fields tableDef)))}
+            #{intercalate ",\n         " (filter (/= "") (map (\field -> fromTTypeMConversionFunction (tableNameHaskell tableDef) (haskellType field) (fieldName field) (relation field)) (fields tableDef)))}
             pure $
               Just
                 Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef}
-                  { #{intercalate ",\n                    " (map fromField (fields tableDef))}
+                  { #{intercalate ",\n            " (map fromField (fields tableDef))}
                   }
       |]
   where
@@ -102,15 +102,19 @@ fromTTypeInstance = do
     fromField :: FieldDef -> String
     fromField field =
       [__i|
-        #{fieldName field} =
-          #{maybeTransformation (isMaybeType (haskellType field))}
+        #{fieldName field} = #{if isEncrypted field then encryptedConversion else nonEncryptedConversion}
       |]
       where
-        maybeTransformation :: Bool -> String
-        maybeTransformation True =
-          [__i|EncryptedHashed <$> (Encrypted <$> #{fieldName field}Encrypted) <*> #{fieldName field}Hash|]
-        maybeTransformation False =
-          [__i|#{fromTTypeConversionFunction (fromTType field) (haskellType field) (getFromTTypeParams field) (relation field)}|]
+        encryptedConversion :: String
+        encryptedConversion =
+          if isMaybeType (haskellType field)
+            then [__i|EncryptedHashed <$> (Encrypted <$> #{fieldName field}Encrypted) <*> #{fieldName field}Hash|]
+            else [__i|EncryptedHashed (Encrypted #{fieldName field}Encrypted) #{fieldName field}Hash|]
+
+        nonEncryptedConversion :: String
+        nonEncryptedConversion =
+          fromTTypeConversionFunction (fromTType field) (haskellType field) (getFromTTypeParams field) (relation field)
+
 
 toTTypeInstance :: StorageM ()
 toTTypeInstance = do
@@ -120,9 +124,9 @@ toTTypeInstance = do
       [__i|
         instance ToTType' Beam.#{tableNameHaskell tableDef} Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef} where
           toTType' Domain.Types.#{tableNameHaskell tableDef}.#{tableNameHaskell tableDef} {..} = do
-              Beam.#{tableNameHaskell tableDef}T
-                { #{intercalate ",\n                  " (concatMap toField $ filter (isNothing . relation)  (fields tableDef))}
-                }
+            Beam.#{tableNameHaskell tableDef}T
+              { #{intercalate ",\n        " (concatMap toField $ filter (isNothing . relation)  (fields tableDef))}
+              }
       |]
   where
     toField hfield =
@@ -185,17 +189,22 @@ generateBeamQuery :: [FieldDef] -> String -> QueryDef -> StorageM ()
 generateBeamQuery allHaskellFields tableNameHaskell query =
   tellM $
     [__i|
-  ${generateFunctionSignature query tableNameHaskell}
-  ${generateBeamFunctionCall query.kvFunction}
-  ${generateQueryParams allHaskellFields query.params}
-  [${genWhereClause}]
-  ${orderAndLimit query}
-|]
+      #{genFunctionSignature}
+      #{genBeamFunctionCall}#{genQueryParams}
+          [
+            #{genWhereClause}
+          ]
+      #{genOrderAndLimit}
+    |]
   where
-    genWhereClause = generateClause allHaskellFields query.takeFullObjectAsInput 6 0 query.whereClause
+    genFunctionSignature = generateFunctionSignature query tableNameHaskell
+    genBeamFunctionCall = generateBeamFunctionCall query.kvFunction
+    genQueryParams = generateQueryParams allHaskellFields query.params
+    genWhereClause = generateWhereClause allHaskellFields query.takeFullObjectAsInput 6 0 query.whereClause
+    genOrderAndLimit = generateOrderAndLimit query
 
-orderAndLimit :: QueryDef -> String
-orderAndLimit query =
+generateOrderAndLimit :: QueryDef -> String
+generateOrderAndLimit query =
   let findAllFunctions =
         [ "findAllWithOptionsKV",
           "findAllWithOptionsKV'",
@@ -217,13 +226,14 @@ ignoreEncryptionFlag ((field, tp), _) = (field, tp)
 generateFunctionSignature :: QueryDef -> String -> String
 generateFunctionSignature query tableNameHaskell =
   [__i|
-    $(queryName query) :: (MonadFlow m, CacheFlow m r, EsqDBFlow m r) => $(paramTypes) -> m ($(generateQueryReturnType query.kvFunction tableNameHaskell))
-    $(queryName query) $(paramNames) = do
+    #{queryName query} :: (MonadFlow m, CacheFlow m r, EsqDBFlow m r) => #{paramTypes} -> m (#{genQueryReturnType})
+    #{queryName query} #{paramNames} = do
   |]
   where
+    genQueryReturnType = generateQueryReturnType query.kvFunction tableNameHaskell
     qparams = filter ((/= "updatedAt") . fst) $ map getIdsOut $ nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
-    paramTypes = if query.takeFullObjectAsInput then "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell else foldMap ((++ " -> ") . snd) qparams
-    paramNames = if query.takeFullObjectAsInput then "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " {..}" else foldMap ((++ " ") . fst) qparams
+    paramTypes = if query.takeFullObjectAsInput then "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell else foldMap (snd) qparams
+    paramNames = if query.takeFullObjectAsInput then "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " {..}" else foldMap (fst) qparams
 
 addLimitParams :: QueryDef -> [(String, String)]
 addLimitParams query =
@@ -269,15 +279,18 @@ getWhereClauseFieldNamesAndTypes (Query (_, clauses)) = concatMap getWhereClause
 
 generateBeamFunctionCall :: String -> String
 generateBeamFunctionCall kvFunction =
-  (if "update" `isPrefixOf` kvFunction then "   " ++ "now <- getCurrentTime\n" else "") ++ "   " ++ kvFunction ++ "\n"
+  (if "update" `isPrefixOf` kvFunction then "  " ++ "now <- getCurrentTime\n" else "") ++ "  " ++ kvFunction ++ "\n"
 
 generateQueryParams :: [FieldDef] -> [((String, String), Bool)] -> String
 generateQueryParams _ [] = ""
 generateQueryParams allFields params =
-  [__i|
-    [ #{intercalate ",\n      " (filter (/= "") $ map (generateQueryParam allFields) params)}
-    ]
-  |]
+  -- "    [ " ++
+  -- [__i|
+  --   #{intercalate ",\n      " (filter (/= "") $ map (generateQueryParam allFields) params)}
+  -- |] ++
+  -- "\n    ]"
+  [i|    [ #{intercalate ",\n      " (filter (/= "") $ map (generateQueryParam allFields) params)}
+    ]|]
 
 generateQueryParam :: [FieldDef] -> ((String, String), Bool) -> String
 generateQueryParam allFields ((field, tp), encrypted) =
@@ -295,9 +308,7 @@ generateParamField fieldDef field tp encrypted bField
           Se.Set Beam.#{field}Hash $ #{field}#{mapOperator}(.hash)
         |]
   | otherwise =
-    [__i|
-      Se.Set Beam.#{bFieldName bField} $ #{correctSetField field tp bField}
-    |]
+    [__i|Se.Set Beam.#{bFieldName bField} $ #{correctSetField field tp bField}|]
 
 correctSetField :: String -> String -> BeamField -> String
 correctSetField field tp beamField
@@ -317,21 +328,20 @@ correctEqField field tp beamField
 mapWithIndex :: (Int -> a -> b) -> [a] -> [b]
 mapWithIndex f = zipWith f [0 ..]
 
-generateClause :: [FieldDef] -> Bool -> Int -> Int -> WhereClause -> String
-generateClause _ _ _ _ EmptyWhere = ""
-generateClause allFields isFullObjInp n v (Leaf (field, tp, op)) =
+generateWhereClause :: [FieldDef] -> Bool -> Int -> Int -> WhereClause -> String
+generateWhereClause _ _ _ _ EmptyWhere = ""
+generateWhereClause allFields isFullObjInp n v (Leaf (field, tp, op)) =
   let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
    in intercalate " , " $ filter (/= "") $ map (\bfield -> generateLeafClause field tp bfield op isFullObjInp n v) fieldDef.beamFields
-generateClause allFields isFullObjInp n v (Query (op, clauses)) =
+generateWhereClause allFields isFullObjInp n v (Query (op, clauses)) =
   (if v == 0 then " " else spaces n)
     ++ (if op `elem` comparisonOperator then "" else operator op ++ "\n" ++ spaces (n + 2) ++ "[")
-    ++ intercalate ",\n" (filter (/= "") $ mapWithIndex (generateClause allFields isFullObjInp (n + 4)) clauses)
+    ++ intercalate ",\n" (filter (/= "") $ mapWithIndex (generateWhereClause allFields isFullObjInp (n + 4)) clauses)
     ++ (if op `elem` comparisonOperator then "" else "\n" ++ spaces (n + 2) ++ "]")
 
 generateLeafClause :: String -> String -> BeamField -> Maybe Operator -> Bool -> Int -> Int -> String
 generateLeafClause field tp bfield op isFullObjInp n v =
-  [__i|
-    #{if v == 0 then " " else spaces n}
+  [i|#{if v == 0 then " " else spaces n}
     Se.Is Beam.#{bFieldName bfield} $ #{operator (fromMaybe Eq op)} #{if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield}
   |]
 

@@ -1,8 +1,11 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module NammaDSL.Generator.Haskell.Servant (generateServantAPI, handlerSignature, handlerFunctionText) where
 
 import Control.Lens ((^.))
 import Data.List (intercalate, nub)
 import Data.List.Extra (snoc)
+import Data.String.Interpolate (__i)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
@@ -66,17 +69,35 @@ mkCodeBody = do
   input <- ask
   let allApis = _apis input
       moduleName' = _moduleName input
-      seperator = onNewLine (tellM " :<|> ")
-      handlerFunctionText' = tellM . T.unpack . handlerFunctionText
-  onNewLine $ do
-    tellM "type API = "
-    onNewLine $ withSpace $ intercalateA seperator (map apiTTToText allApis)
-  onNewLine $ do
-    tellM "handler  :: Environment.FlowServer API"
-    onNewLine $ tellM "handler = "
-    withSpace $ intercalateA seperator (map handlerFunctionText' allApis)
-  onNewLine $ intercalateA newLine (map (handlerFunctionDef moduleName') allApis)
+      seperator = ((*>) "\n") $ " :<|> "
+      handlerFunctionText' = T.unpack . handlerFunctionText
+
+  tellM $
+    [__i|
+    type API =
+      #{intercalate seperator (map apiTTToText allApis)}
+
+    handler :: Environment.FlowServer API
+    handler =
+      #{intercalate seperator (map handlerFunctionText' allApis)}
+
+    #{intercalate "\n" (map (handlerFunctionDef moduleName') allApis)}
+  |]
   where
+    handlerFunctionDef :: Text -> ApiTT -> String
+    handlerFunctionDef moduleName' apiT =
+      let functionName = handlerFunctionText apiT
+          allTypes = handlerSignature apiT
+          showType = case filter (/= T.empty) (init allTypes) of
+            [] -> T.empty
+            ty -> T.intercalate " -> " ty
+          handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.FlowHandler " <> last allTypes
+       in [__i|
+        #{functionName}#{if isAuthPresent apiT then (" :: (Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant) -> ") :: Text else " :: "}#{handlerTypes}
+        #{functionName}#{generateParams (isAuthPresent apiT) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)} =
+          withFlowHandlerAPI $ Domain.Action.UI.#{moduleName'}.#{functionName}#{generateParams (isAuthPresent apiT) True (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)}
+      |]
+
     isAuthPresent :: ApiTT -> Bool
     isAuthPresent apiT = case _authType apiT of
       Just NoAuth -> False
@@ -91,38 +112,15 @@ mkCodeBody = do
       )
         <> generateParams isAuth isbackParam mx (n - 1)
 
-    handlerFunctionDef :: Text -> ApiTT -> ApisM ()
-    handlerFunctionDef moduleName' apiT =
-      let functionName = handlerFunctionText apiT
-          allTypes = handlerSignature apiT
-          showType = case filter (/= T.empty) (init allTypes) of
-            [] -> T.empty
-            ty -> T.intercalate " -> " ty
-          handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.FlowHandler " <> last allTypes
-       in tellM $
-            T.unpack $
-              functionName <> (if isAuthPresent apiT then " :: (Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant) -> " else " :: ") <> handlerTypes
-                <> "\n"
-                <> functionName
-                <> generateParams (isAuthPresent apiT) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
-                <> " = withFlowHandlerAPI $ "
-                <> "Domain.Action.UI."
-                <> moduleName'
-                <> "."
-                <> functionName
-                <> generateParams (isAuthPresent apiT) True (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
-                <> "\n"
-
-apiTTToText :: ApiTT -> ApisM ()
+apiTTToText :: ApiTT -> String
 apiTTToText apiTT =
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiReqText = apiReqToText (_apiReqType apiTT)
       apiResText = apiResToText (_apiResType apiTT)
       headerText = map headerToText (_header apiTT)
-   in tellM $
-        T.unpack $
-          addAuthToApi (_authType apiTT) (T.concat urlPartsText <> T.concat headerText <> apiReqText <> " :> " <> apiTypeText <> apiResText)
+   in T.unpack $
+        addAuthToApi (_authType apiTT) (T.concat urlPartsText <> T.concat headerText <> apiReqText <> " :> " <> apiTypeText <> apiResText)
   where
     addAuthToApi :: Maybe AuthType -> Text -> Text
     addAuthToApi authtype apiDef = case authtype of
