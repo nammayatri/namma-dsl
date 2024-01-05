@@ -211,12 +211,7 @@ generateOrderAndLimit query =
           "findAllWithOptionsDb"
         ]
    in if query.kvFunction `elem` findAllFunctions
-        then
-          [__i|
-        (Se.Desc Beam.createdAt)
-        limit
-        offset
-      |]
+        then [i|    (Se.Desc Beam.createdAt)\n    limit\n    offset|]
         else "\n"
 
 ignoreEncryptionFlag :: ((String, String), Bool) -> (String, String)

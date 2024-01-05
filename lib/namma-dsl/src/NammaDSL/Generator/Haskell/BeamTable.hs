@@ -110,7 +110,7 @@ tableInstancesToBeam = do
     [__i|
     type #{tableName} = #{tableName}T Identity
 
-    $(enableKVPG ''#{tableName}T ['#{intercalate "', '" (primaryKey def)}] #{if null (secondaryKey def) then "[]" else "[['" <> intercalate "', '" (secondaryKey def) <> "]]"})
+    $(enableKVPG ''#{tableName}T ['#{intercalate "', '" (primaryKey def)}] #{if null (secondaryKey def) then "[]" else "[['" <> intercalate ", '" (secondaryKey def) <> "]]"})
 
     $(mkTableInstances ''#{tableName}T "#{tableNameSql def}")
   |]
