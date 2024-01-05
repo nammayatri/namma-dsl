@@ -13,6 +13,7 @@ data MigrationFile = MigrationFile
   { sqlTableName :: String,
     fields_ :: [FieldDef],
     primaryKeys :: [String],
+    secondaryKeys :: [String],
     rawLastSqlFile :: String
   }
   deriving (Show)
@@ -65,14 +66,13 @@ data FieldRelation = OneToOne | MaybeOneToOne | OneToMany deriving (Show, Eq)
 
 data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT deriving (Show, Eq, Ord)
 
-data SqlFieldUpdates = DropNotNull | DropDefault | AddNotNull | AddDefault String | TypeChange | DropPrimaryKey | AddPrimaryKey deriving (Show)
+data SqlFieldUpdates = DropNotNull | DropDefault | AddNotNull | AddDefault String | DropColumn | TypeChange deriving (Show)
 
 instance Eq SqlFieldUpdates where
   (==) DropNotNull DropNotNull = True
+  (==) DropColumn DropColumn = True
   (==) DropDefault DropDefault = True
   (==) AddNotNull AddNotNull = True
-  (==) DropPrimaryKey DropPrimaryKey = True
-  (==) AddPrimaryKey AddPrimaryKey = True
   (==) (AddDefault _) (AddDefault _) = True
   (==) TypeChange TypeChange = True
   (==) _ _ = False
