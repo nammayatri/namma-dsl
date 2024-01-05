@@ -26,6 +26,7 @@ import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, _String)
+import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
 
@@ -204,7 +205,7 @@ migrationFileParser lastSqlFile = do
                 ( \res updF ->
                     case updF of
                       (Just sqlUpdate, Nothing) -> if (fst <$> fieldUpdates sqlUpdate) == Just delField then (snd <$> fieldUpdates sqlUpdate) == Just DropColumn else res
-                      (Nothing, Just newField) -> (fieldName newField) /= delField
+                      (Nothing, Just newField) -> if (fieldName newField) /= delField then res else False
                       _ -> res
                 )
                 True
@@ -271,9 +272,13 @@ runAnyParser parser str = do
 
 getOldSqlFile :: FilePath -> IO (Maybe MigrationFile)
 getOldSqlFile filepath = do
-  lastSqlFile <- BS.readFile filepath
-  print ("loading old file" :: String)
-  pure $ go (runParser (migrationFileParser (BSU.toString lastSqlFile)) lastSqlFile)
+  fileExist <- doesFileExist filepath
+  if fileExist
+    then do
+      lastSqlFile <- BS.readFile filepath
+      print ("loading old file" :: String)
+      pure $ go (runParser (migrationFileParser (BSU.toString lastSqlFile)) lastSqlFile)
+    else pure Nothing
   where
     go (OK r _) = Just r
     go _ = Nothing
