@@ -225,14 +225,14 @@ ignoreEncryptionFlag ((field, tp), _) = (field, tp)
 generateFunctionSignature :: QueryDef -> String -> String
 generateFunctionSignature query tableNameHaskell =
   [__i|
-    #{queryName query} :: (MonadFlow m, CacheFlow m r, EsqDBFlow m r) => #{paramTypes} -> m (#{genQueryReturnType})
+    #{queryName query} :: (MonadFlow m, CacheFlow m r, EsqDBFlow m r) => #{paramTypes} m (#{genQueryReturnType})
     #{queryName query} #{paramNames} = do
   |]
   where
     genQueryReturnType = generateQueryReturnType query.kvFunction tableNameHaskell
     qparams = filter ((/= "updatedAt") . fst) $ map getIdsOut $ nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
-    paramTypes = if query.takeFullObjectAsInput then "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell else foldMap (snd) qparams
-    paramNames = if query.takeFullObjectAsInput then "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " {..}" else foldMap (fst) qparams
+    paramTypes = bool (foldMap ((++ " -> ") . snd) qparams) ("Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " ->") query.takeFullObjectAsInput
+    paramNames = bool (foldMap ((++ " ") . fst) qparams) ("Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " {..}") query.takeFullObjectAsInput
 
 addLimitParams :: QueryDef -> [(String, String)]
 addLimitParams query =
@@ -336,8 +336,7 @@ generateWhereClause allFields isFullObjInp n v (Query (op, clauses)) =
 generateLeafClause :: String -> String -> BeamField -> Maybe Operator -> Bool -> Int -> Int -> String
 generateLeafClause field tp bfield op isFullObjInp n v =
   [i|#{if v == 0 then " " else spaces n}
-    Se.Is Beam.#{bFieldName bfield} $ #{operator (fromMaybe Eq op)} #{if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield}
-  |]
+    Se.Is Beam.#{bFieldName bfield} $ #{operator (fromMaybe Eq op)} #{if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield}|]
 
 generateToTTypeFuncs :: StorageM ()
 generateToTTypeFuncs = do
