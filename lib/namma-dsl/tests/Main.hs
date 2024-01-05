@@ -7,10 +7,10 @@ import NammaDSL.App
 import System.Directory (createDirectoryIfMissing)
 
 storageYamlFilePath :: FilePath
-storageYamlFilePath = "sample-yaml/storage.yaml"
+storageYamlFilePath = "./tests/storage.yaml"
 
 apiYamlFilePath :: FilePath
-apiYamlFilePath = "sample-yaml/api.yaml"
+apiYamlFilePath = "./tests/api.yaml"
 
 generateAllExample :: IO ()
 generateAllExample = do
@@ -24,4 +24,4 @@ generateAllExample = do
   mkSQLFile "./output/Storage/SQL" storageYamlFilePath -- SQL File
 
 main :: IO ()
-main = generateAllExample
+main = pure ()
