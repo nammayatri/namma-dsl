@@ -21,7 +21,7 @@ generateAllExample = do
   mkServantAPI "./output/API/Servant" apiYamlFilePath -- Servant Logic Handler
   mkDomainHandler "./output/Domain" apiYamlFilePath -- Domain Logic Handler
   mkApiTypes "./output/API/Types" apiYamlFilePath -- API Types
-  -- mkSQLFile "./output/Storage/SQL" storageYamlFilePath -- SQL File
+  mkSQLFile "./output/Storage/SQL" storageYamlFilePath -- SQL File
 
 main :: IO ()
 main = pure ()
