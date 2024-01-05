@@ -6,7 +6,7 @@
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries) where
 
 import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
-import Data.String.Interpolate (__i, i)
+import Data.String.Interpolate (i, __i)
 import qualified Data.Text as Text
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
@@ -114,7 +114,6 @@ fromTTypeInstance = do
         nonEncryptedConversion :: String
         nonEncryptedConversion =
           fromTTypeConversionFunction (fromTType field) (haskellType field) (getFromTTypeParams field) (relation field)
-
 
 toTTypeInstance :: StorageM ()
 toTTypeInstance = do
@@ -284,11 +283,6 @@ generateBeamFunctionCall kvFunction =
 generateQueryParams :: [FieldDef] -> [((String, String), Bool)] -> String
 generateQueryParams _ [] = ""
 generateQueryParams allFields params =
-  -- "    [ " ++
-  -- [__i|
-  --   #{intercalate ",\n      " (filter (/= "") $ map (generateQueryParam allFields) params)}
-  -- |] ++
-  -- "\n    ]"
   [i|    [ #{intercalate ",\n      " (filter (/= "") $ map (generateQueryParam allFields) params)}
     ]|]
 

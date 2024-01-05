@@ -88,10 +88,12 @@ library
     , base >=4.7 && <5
     , bytestring
     , casing
+    , containers
     , directory
     , esqueleto
     , extra
     , filepath
+    , flatparse
     , lens
     , lens-aeson
     , mobility-core
@@ -113,6 +115,7 @@ library
     , text
     , time
     , unordered-containers
+    , utf8-string
     , vector
     , yaml
   default-language: Haskell2010
@@ -187,10 +190,12 @@ test-suite namma-dsl-tests
     , base >=4.7 && <5
     , bytestring
     , casing
+    , containers
     , directory
     , esqueleto
     , extra
     , filepath
+    , flatparse
     , lens
     , lens-aeson
     , mobility-core
@@ -213,6 +218,7 @@ test-suite namma-dsl-tests
     , text
     , time
     , unordered-containers
+    , utf8-string
     , vector
     , yaml
   default-language: Haskell2010

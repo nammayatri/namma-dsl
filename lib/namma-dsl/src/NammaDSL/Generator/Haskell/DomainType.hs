@@ -5,6 +5,7 @@ module NammaDSL.Generator.Haskell.DomainType where
 import qualified Data.List as L
 import qualified Data.List.Split as L
 import Data.String.Interpolate (i, __i)
+import Data.Text (pack)
 import Data.Tuple.Extra (both)
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
@@ -140,14 +141,7 @@ shouldImportUtilsTH typeObj =
 
 isHttpInstanceDerived :: [TypeObject] -> Bool
 isHttpInstanceDerived typeObj =
-  any
-    ( \case
-        TypeObject (_, (_, derive)) ->
-          case derive of
-            Just "HttpInstance" -> True
-            _ -> False
-    )
-    typeObj
+  any (\case TypeObject (_, (_, derive)) -> "HttpInstance" `elem` derive) typeObj
 
 isEnum :: [(String, String)] -> Bool
 isEnum [("enum", _)] = True
@@ -164,12 +158,22 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
     generateEnum :: String -> [(String, String)] -> ([String], [String])
     generateEnum typeName [("enum", values)] =
       let enumValues = L.splitOn "," values
-       in ( ([i|data #{typeName} = #{L.intercalate " | " enumValues}|]) :
-            [[i|  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema#{if isHttpInstanceDerived typeObj then ", ToParamSchema" :: String else ""})|]],
-            ([i|$(mkBeamInstancesForEnum ''#{typeName})|]) :
-              [[i|$(mkHttpInstancesForEnum ''#{typeName})|] | isHttpInstanceDerived typeObj]
+       in ( ([__i|data #{typeName} = #{L.intercalate " | " enumValues}|]) :
+            [[i|  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema#{addRestDerivations'})\n\n|]],
+            [__i|$(mkBeamInstancesForEnum ''#{typeName})|] :
+              [[__i|$(mkHttpInstancesForEnum ''#{typeName})|] | isHttpInstanceDerived typeObj]
           )
     generateEnum _ _ = error "Invalid enum definition"
+
+    addRestDerivations' = addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj)
+
+    addRestDerivations :: [String] -> String
+    addRestDerivations [] = ""
+    addRestDerivations derivations = [__i|, #{L.intercalate ", " (map toInstanceName derivations)}|]
+
+    toInstanceName :: String -> String
+    toInstanceName "HttpInstance" = "ToParamSchema"
+    toInstanceName val = error $ pack $ ("Invalid instance derivation specified: " ++ val)
 
     generateDataStructure :: String -> [(String, String)] -> ([String], [String])
     generateDataStructure typeName fields =

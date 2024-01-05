@@ -88,6 +88,9 @@ dependencies:
   - stringbuilder
   - string-interpolate
   - pretty-show
+  - flatparse
+  - utf8-string
+  - containers
 
 ghc-options:
   - -Wall
