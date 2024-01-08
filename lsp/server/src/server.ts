@@ -114,9 +114,23 @@ documents.onDidChangeContent(change => {
 	connection.sendDiagnostics({ uri: change.document.uri, diagnostics });
 });
 
-function typeSplit(inputType: string): string[] {
-	return inputType.split(/[\[\]() ]+/)?.filter(Boolean);
+
+function typeSplit(inputType: string): [string, number][] {
+    const matches: [string, number][] = [];
+    let lastIndex = 0;
+    const regex = /[\[\]() ]+/;
+
+    inputType.split(regex).forEach((item) => {
+        if (item) {
+            const startIndex = inputType.indexOf(item, lastIndex);
+            matches.push([item, startIndex]);
+            lastIndex = startIndex + item.length;
+        }
+    });
+
+    return matches;
 }
+
 
 function validateStorage(){
 	let imports = parsedYAML.get('imports') ?? [];
@@ -136,25 +150,39 @@ function validateEachStorageData (data:any, imports:any, definedDataNames:any){
 
 function validateStorageDataFieldType (fieldType:any,imports:any,internalDefinedTypeName:any,definedDataNames:any) {
 	typeSplit(fieldType.value).forEach((type:any) => {
-		if (!defaultDataTypes.includes(type) && !imports.has(type) && !internalDefinedTypeName.includes(type) && !definedDataNames.includes(type)) {
+		if (!type[0].includes('.') && !defaultDataTypes.includes(type[0]) && !imports.has(type[0]) && !internalDefinedTypeName.includes(type[0]) && !definedDataNames.includes(type[0])) {
 			diagnostics.push({
 				severity: DiagnosticSeverity.Error,
 				range: {
-					start: currDocument.positionAt(fieldType.range[0]),
-					end: currDocument.positionAt(fieldType.range[1])
+					start: currDocument.positionAt(fieldType.range[0] + type[1]),
+					end: currDocument.positionAt(fieldType.range[0] + type[1] + type[0].length)
 				},
-				message: `Type ${type} is not defined or imported`,
+				message: `Type ${type[0]} is not defined or imported`,
 				source: 'Namma DSL',
 			});
 		}
 	});
 }
 
+function validateApi(){
+	//Todo:Fix Me
+	diagnostics.push({
+		severity: DiagnosticSeverity.Error,
+		range: {
+			start: currDocument.positionAt(0),
+			end: currDocument.positionAt(1)
+		},
+		message: "Ohh Looks like its api",
+		source: 'Namma DSL',
+	});
+}
+
 function validateDSL(document: TextDocument) {
 	currDocument = document;
 	let isValidYaml = false;
+	let content;
 	try {
-		const content = document.getText();
+		content = document.getText();
 		yaml.parse(content);
 		parsedYAML = yaml.parseDocument(content,{lineCounter: true});
 		isValidYaml = true;
@@ -170,7 +198,10 @@ function validateDSL(document: TextDocument) {
             });
 	}
 	if (isValidYaml) {
-		validateStorage();
+		if (content?.startsWith('#!api'))
+			validateApi();
+		else
+			validateStorage();
 	}
 }
 
