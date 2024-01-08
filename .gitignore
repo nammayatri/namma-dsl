@@ -18,7 +18,6 @@ cabal.sandbox.config
 *.aux
 *.hp
 *.eventlog
-.vscode/
 *.vim
 cabal.project.local
 cabal.project.local~

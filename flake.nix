@@ -22,6 +22,9 @@
         packages.default = self'.packages.namma-dsl;
         devShells.default = pkgs.mkShell {
           # cf. https://haskell.flake.page/devshell#composing-devshells
+          buildInputs = [
+            pkgs.nodejs-18_x
+          ];
           inputsFrom = [
             config.haskellProjects.default.outputs.devShell
             config.pre-commit.devShell
