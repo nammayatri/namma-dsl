@@ -22,9 +22,8 @@ export function activate(context: ExtensionContext) {
 		}
 	};
 
-	// TODO: FIX ME
 	const clientOptions: LanguageClientOptions = {
-		documentSelector: [{ scheme: 'file', language: 'yaml'}],
+		documentSelector: [{ scheme: 'file', language: 'yaml'}, { scheme: 'file', language: 'ndsl'}],
 		synchronize: {
 			fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
 		}

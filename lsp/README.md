@@ -13,7 +13,7 @@ Search `lsp-namma-dsl` in vscode extensions
 - Switch to the Run and Debug View in the Sidebar Command+Shift+D
 - Select `Launch Namma DSL Client` from the drop down
 - Press ▷ to run the launch config (F5).
-- Open a .yaml to file to trigger the extension in the new vscode window
+- Open a .yaml | .nd | .ndsl | .nammadsl to file to trigger the extension in the new vscode window
 
 ## Packing Namma DSL Extension
 To make a package (vsix) just run `npm run pack`
