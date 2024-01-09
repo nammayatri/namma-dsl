@@ -88,7 +88,8 @@ interface NammaDSLSettings {
 	maxNumberOfProblems: number;
 }
 
-const defaultSettings: NammaDSLSettings = { maxNumberOfProblems: 1000 };
+const defaultSettings: NammaDSLSettings = { maxNumberOfProblems: 100, };
+
 let globalSettings: NammaDSLSettings = defaultSettings;
 
 const documentSettings: Map<string, Thenable<NammaDSLSettings>> = new Map();
@@ -98,7 +99,7 @@ connection.onDidChangeConfiguration(change => {
 		documentSettings.clear();
 	} else {
 		globalSettings = <NammaDSLSettings>(
-			(change.settings.languageServerExample || defaultSettings)
+			(change.settings.nammaDSL || defaultSettings)
 		);
 	}
 	documents.all().forEach(validateDSL);
