@@ -648,8 +648,8 @@ mkListObject _ = []
 -- Default Fields --
 defaultFields :: [(String, String)]
 defaultFields =
-  [ ("merchantId", "Maybe (Id Domain.Types.Merchant.Merchant)"),
-    ("merchantOperatingCityId", "Maybe (Id Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity)"),
+  [ ("merchantId", "Maybe (Id Merchant)"),
+    ("merchantOperatingCityId", "Maybe (Id MerchantOperatingCity)"),
     ("createdAt", "UTCTime"),
     ("updatedAt", "UTCTime")
   ]
