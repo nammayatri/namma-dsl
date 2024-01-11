@@ -17,7 +17,7 @@ generateBeamTable tableDef =
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
-          _extensions = ["DerivingStrategies", "TemplateHaskell"],
+          _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
           _moduleNm = "Storage.Beam." <> (capitalize $ tableNameHaskell tableDef),
           _simpleImports = ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
           _qualifiedImports = ["Database.Beam as B"] <> imports tableDef,
