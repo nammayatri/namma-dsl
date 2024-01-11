@@ -8,6 +8,7 @@ import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
 
@@ -56,14 +57,10 @@ mkCodeBody = do
   onNewLine $
     intercalateA seperator (map handlerFunctionDef (_apis input))
   where
-    isAuthPresent :: ApiTT -> Bool
-    isAuthPresent apiT = case _authType apiT of
-      Just NoAuth -> False
-      _ -> True
-
     handlerFunctionDef :: ApiTT -> ApisM ()
     handlerFunctionDef apiT =
       let functionName = handlerFunctionText apiT
+          autoToType = apiAuthTypeMapper apiT
           allTypes = handlerSignature apiT
           showType = case filter (/= T.empty) (init allTypes) of
             [] -> T.empty
@@ -71,7 +68,9 @@ mkCodeBody = do
           handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.Flow " <> last allTypes
        in tellM $
             T.unpack $
-              functionName <> (if isAuthPresent apiT then " :: (Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)" else " ::") <> handlerTypes
+              functionName
+                <> (maybe " ::" (" :: " <>) autoToType)
+                <> handlerTypes
                 <> "\n"
                 <> functionName
                 <> " = error \"Logic yet to be decided\""

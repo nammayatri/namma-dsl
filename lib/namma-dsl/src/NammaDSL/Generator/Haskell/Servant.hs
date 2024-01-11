@@ -6,6 +6,7 @@ import Data.List.Extra (snoc)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 
@@ -82,6 +83,11 @@ mkCodeBody = do
       Just NoAuth -> False
       _ -> True
 
+    isDashboardAuth :: ApiTT -> Bool
+    isDashboardAuth apiT = case _authType apiT of
+      Just (DashboardAuth _) -> True
+      _ -> False
+
     generateParams :: Bool -> Bool -> Int -> Int -> Text
     generateParams _ _ _ 0 = ""
     generateParams isAuth isbackParam mx n =
@@ -90,12 +96,6 @@ mkCodeBody = do
           else " a" <> T.pack (show n)
       )
         <> generateParams isAuth isbackParam mx (n - 1)
-
-    generateAuthType :: ApiTT -> Text
-    generateAuthType apiT = case _authType apiT of
-      Just (DashboardAuth _) -> " :: TokenInfo -> "
-      Just NoAuth -> " :: "
-      _ -> " :: (Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant) -> "
 
     handlerFunctionDef :: Text -> ApiTT -> ApisM ()
     handlerFunctionDef moduleName' apiT =
@@ -107,16 +107,16 @@ mkCodeBody = do
           handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.FlowHandler " <> last allTypes
        in tellM $
             T.unpack $
-              functionName <> generateAuthType apiT <> handlerTypes
+              functionName <> maybe " :: " (\x -> " :: " <> x <> " -> ") (apiAuthTypeMapper apiT) <> handlerTypes
                 <> "\n"
                 <> functionName
-                <> generateParams (isAuthPresent apiT) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
+                <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
                 <> " = withFlowHandlerAPI $ "
                 <> "Domain.Action.UI."
                 <> moduleName'
                 <> "."
                 <> functionName
-                <> generateParams (isAuthPresent apiT) True (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
+                <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) True (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
                 <> "\n"
 
 apiTTToText :: ApiTT -> ApisM ()
