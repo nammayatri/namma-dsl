@@ -25,7 +25,7 @@ import qualified Debug.Trace as DT
 import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, _String)
+import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, valueToString, _String)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
@@ -417,10 +417,6 @@ parseQueries moduleName excludedList dList fields impObj obj = do
         then if any (\((k, _), _) -> k == "updatedAt") params then params else params <> [(("updatedAt", "Kernel.Prelude.UTCTime"), False)]
         else params
 
-    valueToString :: Value -> String
-    valueToString (String s) = T.unpack s
-    valueToString _ = error "Param not a string"
-
 parseWhereClause :: (String -> String) -> String -> [FieldDef] -> Value -> WhereClause
 parseWhereClause mkQTypeFunc operatorStr fields (String st) = do
   let ((key_, value), _) = searchForKey fields (T.unpack st)
@@ -515,7 +511,9 @@ parseExtraTypes moduleName dList importObj obj = do
 
 parseFields :: Maybe String -> Maybe [String] -> [String] -> [String] -> [TypeObject] -> Object -> Object -> [FieldDef]
 parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
-  let fields = (++) <$> preview (ix "fields" . _Value . to mkList . to filterOutAlreadyDefaultTypes) obj <*> pure defaultFields
+  let unfilteredFields = preview (ix "fields" . _Value . to mkList) obj
+      excludedDefaultFields = preview (ix "excludedFields" . _Array . to V.toList . to (map valueToString)) obj
+      fields = (++) <$> unfilteredFields <*> (getNotPresentDefaultFields excludedDefaultFields <$> unfilteredFields)
       --constraintsObj = obj ^? (ix "constraints" . _Object)
       --sqlTypeObj = obj ^? (ix "sqlType" . _Object)
       --beamTypeObj = obj ^? (ix "beamType" ._Object)
@@ -656,8 +654,8 @@ defaultFields =
     ("updatedAt", "UTCTime")
   ]
 
-filterOutAlreadyDefaultTypes :: [(String, String)] -> [(String, String)]
-filterOutAlreadyDefaultTypes = filter (\(k, _) -> k `notElem` map fst defaultFields)
+getNotPresentDefaultFields :: Maybe [String] -> [(String, String)] -> [(String, String)]
+getNotPresentDefaultFields excludedDefaultFields fields = filter (\(k, _) -> (k `notElem` map fst fields && k `notElem` (fromMaybe [] excludedDefaultFields))) defaultFields
 
 -- SQL Types --
 findMatchingSqlType :: [String] -> String -> String

@@ -49,6 +49,8 @@ defaultTypeImports tp = case tp of
   "Int" -> Just "Kernel.Prelude"
   "Bool" -> Just "Kernel.Prelude"
   "Id" -> Just "Kernel.Types.Id"
+  "ShortId" -> Just "Kernel.Types.Id"
+  "UTCTime" -> Just "Kernel.Prelude"
   "Meters" -> Just "Kernel.Types.Common"
   "HighPrecMeters" -> Just "Kernel.Types.Common"
   "Kilometers" -> Just "Kernel.Types.Common"
@@ -135,3 +137,8 @@ _String = _Value . prism (String . T.pack) (\v -> case v of String s -> Right $ 
 
 _Bool :: Prism' Value Bool
 _Bool = _Value . prism Bool (\v -> case v of Bool s -> Right s; _ -> Left v)
+
+valueToString :: Value -> String
+valueToString = \case
+  String a -> T.unpack a
+  _ -> ""
