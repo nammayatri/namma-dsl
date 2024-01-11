@@ -91,6 +91,12 @@ mkCodeBody = do
       )
         <> generateParams isAuth isbackParam mx (n - 1)
 
+    generateAuthType :: ApiTT -> Text
+    generateAuthType apiT = case _authType apiT of
+      Just (DashboardAuth _) -> " :: TokenInfo -> "
+      Just NoAuth -> " :: "
+      _ -> " :: (Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant) -> "
+
     handlerFunctionDef :: Text -> ApiTT -> ApisM ()
     handlerFunctionDef moduleName' apiT =
       let functionName = handlerFunctionText apiT
@@ -101,7 +107,7 @@ mkCodeBody = do
           handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.FlowHandler " <> last allTypes
        in tellM $
             T.unpack $
-              functionName <> (if isAuthPresent apiT then " :: (Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant) -> " else " :: ") <> handlerTypes
+              functionName <> generateAuthType apiT <> handlerTypes
                 <> "\n"
                 <> functionName
                 <> generateParams (isAuthPresent apiT) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
@@ -128,6 +134,7 @@ apiTTToText apiTT =
     addAuthToApi authtype apiDef = case authtype of
       Just AdminTokenAuth -> "AdminTokenAuth" <> apiDef
       Just TokenAuth -> "TokenAuth" <> apiDef
+      Just (DashboardAuth dashboardAuthType) -> "DashboardAuth '" <> T.pack (show dashboardAuthType) <> apiDef
       Just NoAuth -> fromMaybe apiDef (T.stripPrefix " :>" apiDef)
       Nothing -> "TokenAuth" <> apiDef
 
