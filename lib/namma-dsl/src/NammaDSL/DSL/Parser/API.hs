@@ -175,6 +175,11 @@ getAuthType = \case
   "AdminTokenAuth" -> AdminTokenAuth
   "TokenAuth" -> TokenAuth
   "NoAuth" -> NoAuth
+  "DashboardAuth DASHBOARD_USER" -> DashboardAuth DASHBOARD_USER
+  "DashboardAuth DASHBOARD_ADMIN" -> DashboardAuth DASHBOARD_ADMIN
+  "DashboardAuth FLEET_OWNER" -> DashboardAuth FLEET_OWNER
+  "DashboardAuth DASHBOARD_RELEASE_ADMIN" -> DashboardAuth DASHBOARD_RELEASE_ADMIN
+  "DashboardAuth MERCHANT_ADMIN" -> DashboardAuth MERCHANT_ADMIN
   _ -> error "Not a valid auth type"
 
 getApiType :: Text -> ApiType
