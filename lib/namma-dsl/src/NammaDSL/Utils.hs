@@ -2,7 +2,8 @@ module NammaDSL.Utils where
 
 import Control.Lens.Combinators
 import Data.Aeson
-import Data.Aeson.Key (fromString)
+import Data.Aeson.Key (fromString, toString)
+import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (key, _Value)
 import Data.Char (isLower, toLower, toUpper)
 import Data.List (intercalate, nub)
@@ -142,3 +143,10 @@ valueToString :: Value -> String
 valueToString = \case
   String a -> T.unpack a
   _ -> ""
+
+mkList :: Value -> [(String, String)]
+mkList (Object obj) =
+  KM.toList obj >>= \(k, v) -> case v of
+    String t -> [(toString k, T.unpack t)]
+    _ -> []
+mkList _ = []

@@ -1,5 +1,6 @@
 module NammaDSL.DSL.Syntax.Storage where
 
+import Data.Map (Map)
 import Kernel.Prelude
 import NammaDSL.GeneratorCore
 
@@ -23,6 +24,7 @@ data TableDef = TableDef
     tableNameSql :: String,
     fields :: [FieldDef],
     imports :: [String],
+    importPackageOverrides :: Map String String,
     queries :: [QueryDef],
     primaryKey :: [String],
     secondaryKey :: [String],

@@ -14,6 +14,7 @@ import Data.Aeson.Lens (_Array, _Object, _String, _Value)
 import Data.Bool
 import qualified Data.ByteString as BS
 import Data.List.Split (splitWhen)
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
@@ -41,7 +42,8 @@ parseApis obj =
     & apiTypes . typeImports .~ extractComplexTypeImports res
   where
     defaultImportModule = "Domain.Action.UI."
-    res = mkQApis (Apis modelName allApis [] (TypesInfo [] parseTyp))
+    parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to U.mkList . to M.fromList) obj
+    res = mkQApis (Apis modelName allApis [] parsedImportPackageOverrides (TypesInfo [] parseTyp))
     mkQualified = T.pack . U.makeTypeQualified Nothing Nothing Nothing defaultImportModule obj . T.unpack
     modelName = fromMaybe (error "Required module name") $ parseModule obj
     parseTyp = markQualifiedTypesInTypes modelName (typesToTypeObject (parseTypes obj)) obj

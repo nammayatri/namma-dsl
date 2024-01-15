@@ -5,19 +5,23 @@ import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 
 generateApiTypes :: Apis -> Code
 generateApiTypes input = generateCode generatorInput
   where
+    packageOverride :: [String] -> [String]
+    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = "API.Types.UI." <> T.unpack (_moduleName input),
-          _simpleImports = allSimpleImports,
-          _qualifiedImports = allQualifiedImports,
+          _simpleImports = packageOverride allSimpleImports,
+          _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
     qualifiedModuleName = T.unpack ("API.Types.UI." <> _moduleName input)

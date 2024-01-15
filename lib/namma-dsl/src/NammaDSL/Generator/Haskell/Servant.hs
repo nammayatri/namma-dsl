@@ -6,7 +6,7 @@ import Data.List.Extra (snoc)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper)
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper, checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 
@@ -14,14 +14,17 @@ generateServantAPI :: Apis -> Code
 generateServantAPI input =
   generateCode generatorInput
   where
+    packageOverride :: [String] -> [String]
+    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = "API.Action.UI." <> T.unpack (_moduleName input),
-          _simpleImports = allSimpleImports,
-          _qualifiedImports = allQualifiedImports,
+          _simpleImports = packageOverride allSimpleImports,
+          _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
     defaultQualifiedImport :: [String]

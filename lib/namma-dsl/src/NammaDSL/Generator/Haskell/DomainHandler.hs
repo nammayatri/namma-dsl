@@ -3,12 +3,12 @@ module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 -- import NammaDSL.DSL.Parser.API hiding (figureOutImports)
 
 -- import NammaDSL.Utils
-
+import Control.Lens ((^.))
 import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper)
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper, checkForPackageOverrides)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
 
@@ -16,14 +16,17 @@ generateDomainHandler :: Apis -> Code
 generateDomainHandler input =
   generateCode generatorInput
   where
+    packageOverride :: [String] -> [String]
+    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = "Domain.Action.UI." <> T.unpack (_moduleName input),
-          _simpleImports = allSimpleImports,
-          _qualifiedImports = allQualifiedImports,
+          _simpleImports = packageOverride allSimpleImports,
+          _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
     qualifiedModuleName = T.unpack ("Domain.Action.UI." <> _moduleName input)
