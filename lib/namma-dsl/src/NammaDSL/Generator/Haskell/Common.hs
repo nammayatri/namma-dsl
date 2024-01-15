@@ -1,6 +1,8 @@
 module NammaDSL.Generator.Haskell.Common where
 
-import Kernel.Prelude hiding (replicateM)
+import Data.Map (Map, lookup)
+import qualified Data.Text as T
+import Kernel.Prelude hiding (lookup, replicateM)
 import NammaDSL.DSL.Syntax.API
 
 apiAuthTypeMapper :: ApiTT -> Maybe Text
@@ -8,3 +10,15 @@ apiAuthTypeMapper apiT = case _authType apiT of
   Just (DashboardAuth _) -> Just "TokenInfo"
   Just NoAuth -> Nothing
   _ -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
+
+checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => Map a a -> [a] -> [a]
+checkForPackageOverrides packageOverrides = map (\x -> maybe x (\a -> "\"" <> a <> "\" " <> x) (lookup (getImportSignature x) packageOverrides))
+
+class Importable a where
+  getImportSignature :: a -> a
+
+instance Importable Text where
+  getImportSignature = head . T.words
+
+instance Importable String where
+  getImportSignature = head . words

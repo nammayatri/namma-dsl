@@ -4,6 +4,7 @@ import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
 import qualified Data.Text as Text
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 
@@ -11,14 +12,17 @@ generateBeamQueries :: TableDef -> Code
 generateBeamQueries tableDef = do
   generateCode generatorInput
   where
+    packageOverride :: [String] -> [String]
+    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = "Storage.Queries." ++ (capitalize $ tableNameHaskell tableDef),
-          _simpleImports = allSimpleImports,
-          _qualifiedImports = allQualifiedImports,
+          _simpleImports = packageOverride allSimpleImports,
+          _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody tableDef
         }
     allSimpleImports :: [String]

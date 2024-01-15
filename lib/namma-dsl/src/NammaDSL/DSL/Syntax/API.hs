@@ -3,6 +3,7 @@
 module NammaDSL.DSL.Syntax.API where
 
 import Control.Lens hiding (noneOf)
+import Data.Map (Map)
 import Kernel.Prelude
 import NammaDSL.GeneratorCore
 
@@ -53,6 +54,7 @@ data Apis = Apis
   { _moduleName :: Text,
     _apis :: [ApiTT],
     _imports :: [Text],
+    _importPackageOverrides :: Map String String,
     _apiTypes :: TypesInfo
   }
   deriving (Show)

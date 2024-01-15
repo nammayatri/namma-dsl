@@ -25,7 +25,7 @@ import qualified Debug.Trace as DT
 import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, valueToString, _String)
+import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, mkList, valueToString, _String)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
@@ -362,10 +362,11 @@ parseTableDef dList importObj (parseDomainName, obj) =
       parsedFields = parseFields (Just parseDomainName) excludedList dList enumList (fromMaybe [] parsedTypes) importObj obj
       containsEncryptedField = any isEncrypted parsedFields
       parsedImports = parseImports parsedFields (fromMaybe [] parsedTypes)
+      parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to mkList . to M.fromList) obj
       parsedQueries = parseQueries (Just parseDomainName) excludedList dList parsedFields importObj obj
       (primaryKey, secondaryKey) = extractKeys parsedFields
       relationalTableNamesHaskell = catMaybes $ map (.relationalTableNameHaskell) parsedFields
-   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell
+   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedImportPackageOverrides parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell
 
 parseImports :: [FieldDef] -> [TypeObject] -> [String]
 parseImports fields typObj =
@@ -624,13 +625,6 @@ getProperConstraint txt = case L.trim txt of
   "NotNull" -> NotNull
   "AUTOINCREMENT" -> AUTOINCREMENT
   _ -> error "No a proper contraint type"
-
-mkList :: Value -> [(String, String)]
-mkList (Object obj) =
-  KM.toList obj >>= \(k, v) -> case v of
-    String t -> [(toString k, T.unpack t)]
-    _ -> []
-mkList _ = []
 
 toModelList :: Object -> [(String, Object)]
 toModelList obj =

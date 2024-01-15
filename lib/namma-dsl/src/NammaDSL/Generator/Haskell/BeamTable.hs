@@ -6,6 +6,7 @@ import Data.List (intercalate, isInfixOf)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 
@@ -13,14 +14,17 @@ generateBeamTable :: TableDef -> Code
 generateBeamTable tableDef =
   generateCode generatorInput
   where
+    packageOverride :: [String] -> [String]
+    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
           _moduleNm = "Storage.Beam." <> (capitalize $ tableNameHaskell tableDef),
-          _simpleImports = ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
-          _qualifiedImports = ["Database.Beam as B"] <> imports tableDef,
+          _simpleImports = packageOverride ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
+          _qualifiedImports = packageOverride ["Database.Beam as B"] <> imports tableDef,
           _codeBody = generateCodeBody mkCodeBody tableDef
         }
 

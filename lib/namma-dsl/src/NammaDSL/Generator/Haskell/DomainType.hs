@@ -5,6 +5,7 @@ import qualified Data.List.Split as L
 import Data.Tuple.Extra (both)
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils (isMaybeType)
 
@@ -12,6 +13,9 @@ generateDomainType :: TableDef -> Code
 generateDomainType tableDef =
   generateCode generatorInput
   where
+    packageOverride :: [String] -> [String]
+    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+
     moduleName' = "Domain.Types." ++ tableNameHaskell tableDef
 
     allSimpleImports :: [String]
@@ -26,8 +30,8 @@ generateDomainType tableDef =
         { _ghcOptions = [],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
-          _simpleImports = allSimpleImports,
-          _qualifiedImports = allQualifiedImports,
+          _simpleImports = packageOverride allSimpleImports,
+          _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody tableDef
         }
 
