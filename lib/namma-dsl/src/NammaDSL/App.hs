@@ -1,4 +1,5 @@
 {-# LANGUAGE QuasiQuotes #-}
+{-# OPTIONS_GHC -Wno-ambiguous-fields #-}
 
 module NammaDSL.App where
 
@@ -12,6 +13,7 @@ import NammaDSL.Generator.Haskell
 import NammaDSL.Generator.Haskell.ApiTypes
 import NammaDSL.Generator.Purs
 import NammaDSL.Generator.SQL
+import qualified NammaDSL.Types as NT
 import NammaDSL.Utils
 import System.Directory
 import System.FilePath
@@ -63,3 +65,26 @@ mkFrontendAPIIntegration :: FilePath -> FilePath -> IO ()
 mkFrontendAPIIntegration filePath yaml = do
   apiDef <- apiParser yaml
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".purs") (generateAPIIntegrationCode apiDef)
+
+runGeneration :: NT.NammaDSLConfig -> IO ()
+runGeneration nammaDslConfigs = do
+  currentDir <- getCurrentDirectory
+  maybeGitRoot <- findGitRoot currentDir
+  let rootDir = fromMaybe (error "Could not find git root") maybeGitRoot
+  let storageConfig = NT.storage nammaDslConfigs
+  let apiConfig = NT.api nammaDslConfigs
+
+  applyDirectory (rootDir </> ((NT.inputPath :: NT.ApiConfigs -> String) apiConfig)) (processAPIDSL rootDir apiConfig)
+  applyDirectory (rootDir </> ((NT.inputPath :: NT.StorageConfigs -> String) storageConfig)) (processStorageDSL rootDir storageConfig)
+  where
+    processStorageDSL rootDir storageConfig inputFile = do
+      mkBeamTable (rootDir </> ((NT.outputPath :: NT.StorageConfigs -> String) storageConfig) </> "Storage/Beam") inputFile
+      mkBeamQueries (rootDir </> ((NT.outputPath :: NT.StorageConfigs -> String) storageConfig) </> "Storage/Queries") inputFile
+      mkDomainType (rootDir </> ((NT.outputPath :: NT.StorageConfigs -> String) storageConfig) </> "Domain/Types") inputFile
+    -- mkSQLFile (rootDir </> (NT.sqlOutputPath storageConfig)) inputFile
+
+    processAPIDSL rootDir apiConfig inputFile = do
+      -- NammaDSL.mkFrontendAPIIntegration (readOnlySrc </> "Domain/Action") inputFile
+      mkServantAPI (rootDir </> ((NT.outputPath :: NT.ApiConfigs -> String) apiConfig) </> "API/Action/UI") inputFile
+      mkApiTypes (rootDir </> ((NT.outputPath :: NT.ApiConfigs -> String) apiConfig) </> "API/Types/UI") inputFile
+      mkDomainHandler (rootDir </> ((NT.outputPath :: NT.ApiConfigs -> String) apiConfig) </> "Domain/Action/UI") inputFile

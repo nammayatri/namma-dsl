@@ -12,7 +12,8 @@ import qualified Data.Text as T
 import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
 import NammaDSL.DSL.Syntax.API (ApiType (..))
 import NammaDSL.DSL.Syntax.Storage (FieldRelation (..))
-import System.Directory (createDirectoryIfMissing)
+import System.Directory
+import System.FilePath
 import System.IO
 import Text.Regex.TDFA ((=~))
 
@@ -135,3 +136,21 @@ _String = _Value . prism (String . T.pack) (\v -> case v of String s -> Right $ 
 
 _Bool :: Prism' Value Bool
 _Bool = _Value . prism Bool (\v -> case v of Bool s -> Right s; _ -> Left v)
+
+findGitRoot :: FilePath -> IO (Maybe FilePath)
+findGitRoot dir = do
+  let gitPath = dir </> ".git"
+  exists <- doesDirectoryExist gitPath
+  if exists
+    then return (Just dir)
+    else
+      let parent = takeDirectory dir
+       in if parent == dir
+            then return Nothing -- No more directories to check
+            else findGitRoot parent
+
+applyDirectory :: FilePath -> (FilePath -> IO ()) -> IO ()
+applyDirectory dirPath processFile = do
+  files <- listDirectory dirPath
+  let yamlFiles = filter (\file -> takeExtension file `elem` [".yaml", ".yml"]) files
+  mapM_ (processFile . (dirPath </>)) yamlFiles

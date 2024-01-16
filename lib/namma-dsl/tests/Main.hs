@@ -4,6 +4,7 @@ module Main where
 
 import Kernel.Prelude
 import NammaDSL.App
+import NammaDSL.Types as NT
 import System.Directory (createDirectoryIfMissing)
 
 storageYamlFilePath :: FilePath
@@ -24,4 +25,21 @@ generateAllExample = do
   mkSQLFile "./output/Storage/SQL" storageYamlFilePath -- SQL File
 
 main :: IO ()
-main = pure ()
+main = do
+  let config =
+        NT.NammaDSLConfig
+          { api =
+              NT.ApiConfigs
+                { inputPath = "/Users/nisarg.trivedi/juspay/namma-dsl/sample-yaml/API/",
+                  outputPath = "api/output",
+                  enabled = True
+                },
+            storage =
+              NT.StorageConfigs
+                { inputPath = "/Users/nisarg.trivedi/juspay/namma-dsl/sample-yaml/Storage/",
+                  outputPath = "storage/output",
+                  sqlOutputPath = "storage/sql",
+                  enabled = True
+                }
+          }
+  runGeneration config
