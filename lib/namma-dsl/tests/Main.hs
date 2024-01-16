@@ -4,7 +4,7 @@ module Main where
 
 import Kernel.Prelude
 import NammaDSL.App
-import NammaDSL.Types as NT
+-- import NammaDSL.Types as NT
 import System.Directory (createDirectoryIfMissing)
 
 storageYamlFilePath :: FilePath
