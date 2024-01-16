@@ -25,21 +25,22 @@ generateAllExample = do
   mkSQLFile "./output/Storage/SQL" storageYamlFilePath -- SQL File
 
 main :: IO ()
-main = do
-  let config =
-        NT.NammaDSLConfig
-          { api =
-              NT.ApiConfigs
-                { inputPath = "/Users/nisarg.trivedi/juspay/namma-dsl/sample-yaml/API/",
-                  outputPath = "api/output",
-                  enabled = True
-                },
-            storage =
-              NT.StorageConfigs
-                { inputPath = "/Users/nisarg.trivedi/juspay/namma-dsl/sample-yaml/Storage/",
-                  outputPath = "storage/output",
-                  sqlOutputPath = "storage/sql",
-                  enabled = True
-                }
-          }
-  runGeneration config
+main = pure ()
+
+-- let config =
+--       NT.NammaDSLConfig
+--         { api =
+--             NT.ApiConfigs
+--               { inputPath = "/Users/nisarg.trivedi/juspay/namma-dsl/sample-yaml/API/",
+--                 outputPath = "api/output",
+--                 enabled = True
+--               },
+--           storage =
+--             NT.StorageConfigs
+--               { inputPath = "/Users/nisarg.trivedi/juspay/namma-dsl/sample-yaml/Storage/",
+--                 outputPath = "storage/output",
+--                 sqlOutputPath = "storage/sql",
+--                 enabled = True
+--               }
+--         }
+-- runGeneration config
