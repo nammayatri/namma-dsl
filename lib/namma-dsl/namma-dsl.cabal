@@ -101,6 +101,7 @@ library
     , parsec
     , persistent
     , persistent-postgresql
+    , pretty-show
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
@@ -108,6 +109,7 @@ library
     , scientific
     , servant-server
     , split
+    , string-interpolate
     , stringbuilder
     , template-haskell
     , text
@@ -202,6 +204,7 @@ test-suite namma-dsl-tests
     , parsec
     , persistent
     , persistent-postgresql
+    , pretty-show
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
@@ -209,6 +212,7 @@ test-suite namma-dsl-tests
     , scientific
     , servant-server
     , split
+    , string-interpolate
     , stringbuilder
     , template-haskell
     , text

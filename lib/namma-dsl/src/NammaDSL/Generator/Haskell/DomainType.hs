@@ -1,7 +1,11 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module NammaDSL.Generator.Haskell.DomainType where
 
 import qualified Data.List as L
 import qualified Data.List.Split as L
+import Data.String.Interpolate (i, __i)
+import Data.Text (pack)
 import Data.Tuple.Extra (both)
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
@@ -34,16 +38,14 @@ generateDomainType tableDef =
 mkCodeBody :: StorageM ()
 mkCodeBody = do
   def <- ask
-  let seperator = onNewLine $ tellM $ "  , "
-  onNewLine $
-    tellM $
-      "data " <> tableNameHaskellType def <> " = " <> tableNameHaskell def
-  onNewLine $
-    withSomeSpaces 2 $
-      withinCurls $
-        lineSpace $
-          withinSpaces $ intercalateA seperator (map fieldDefToHaskell (fields def))
-  onNewLine $ tellM $ "  deriving (" ++ L.intercalate "," (derivingInstances $ containsEncryptedField def) ++ ")\n\n"
+  -- let seperator = ((*>) "\n") $ "  , "
+  tellM $
+    [__i|
+    data #{tableNameHaskellType def} = #{tableNameHaskell def}
+      { #{L.intercalate ",\n    " (map fieldDefToHaskell (fields def))}
+      }
+      deriving (#{L.intercalate ", " (derivingInstances $ containsEncryptedField def)})
+  |]
   if def.containsEncryptedField then generateEncryptionInstance def else pure ()
   onNewLine $ tellM $ maybe "" (uncurry (++) . generateHaskellTypes) (types def)
 
@@ -60,56 +62,67 @@ derivingInstances containsEncryptedField =
     else ["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"]
 
 generateEncryptionInstance :: TableDef -> StorageM ()
-generateEncryptionInstance tableDef =
+generateEncryptionInstance tableDef = do
+  let baseType = tableNameHaskell tableDef
+      decryptBaseType = "Decrypted" ++ baseType
+      encryptedType = baseType ++ "E 'AsEncrypted"
+      decryptedType = baseType ++ "E 'AsUnencrypted"
+
   onNewLine $
-    tellM $
-      unlines $
-        [ "type " ++ baseType ++ " = " ++ encryptedType ++ "\n",
-          "type " ++ decryptBaseType ++ " = " ++ decryptedType ++ "\n",
-          "instance EncryptedItem " ++ baseType ++ " where",
-          "  type Unencrypted " ++ baseType ++ " = (" ++ decryptBaseType ++ ", HashSalt)",
-          "  encryptItem (" ++ baseType ++ " {..}, salt) = do",
-          unlines ((catMaybes $ map encryptField (fields tableDef)) ++ ["    return " ++ baseType ++ " {" ++ L.intercalate "," (catMaybes $ map mapFields (fields tableDef)) ++ ", ..}"]),
-          "  decryptItem " ++ baseType ++ " {..} = do",
-          unlines ((catMaybes $ map decryptField (fields tableDef)) ++ ["    return (" ++ baseType ++ " {" ++ L.intercalate "," (catMaybes $ map mapFields (fields tableDef)) ++ ", ..}, \"\")\n"]),
-          "instance EncryptedItem' " ++ baseType ++ " where",
-          "  type UnencryptedItem " ++ baseType ++ " = " ++ decryptBaseType,
-          "  toUnencrypted a salt = (a, salt)",
-          "  fromUnencrypted = fst\n\n"
-        ]
+    tellM
+      [__i|
+    type #{baseType} = #{encryptedType}
+
+    type #{decryptBaseType} = #{decryptedType}
+
+    instance EncryptedItem #{baseType} where
+      type Unencrypted #{baseType} = (#{decryptBaseType}, HashSalt)
+      encryptItem (#{baseType} {..}, salt) = do
+        #{unlines $ catMaybes $ map encryptField (fields tableDef)}
+        return #{baseType} {#{L.intercalate ", " $ catMaybes $ map mapFields (fields tableDef)}, ..}
+      decryptItem #{baseType} {..} = do
+        #{unlines $ catMaybes $ map decryptField (fields tableDef)}
+        return (#{baseType} {#{L.intercalate ", " $ catMaybes $ map mapFields (fields tableDef)}, ..}, "")
+
+    instance EncryptedItem' #{baseType} where
+      type UnencryptedItem #{baseType} = #{decryptBaseType}
+      toUnencrypted a salt = (a, salt)
+      fromUnencrypted = fst
+  |]
   where
-    baseType = tableNameHaskell tableDef
-    decryptBaseType = "Decrypted" ++ tableNameHaskell tableDef
-    encryptedType = baseType ++ "E 'AsEncrypted"
-    decryptedType = baseType ++ "E 'AsUnencrypted"
-    encryptField field = do
+    encryptField :: FieldDef -> Maybe String
+    encryptField field =
       if field.isEncrypted
         then
-          if isMaybeType field.haskellType
-            then Just $ "    " ++ field.fieldName ++ "_ <- encryptItem $ (,salt) <$> " ++ field.fieldName
-            else Just $ "    " ++ field.fieldName ++ "_ <- encryptItem $ (" ++ field.fieldName ++ ",salt)"
-        else Nothing
-    decryptField field = do
-      if field.isEncrypted
-        then
-          if isMaybeType field.haskellType
-            then Just $ "    " ++ field.fieldName ++ "_ <- fmap fst <$> decryptItem " ++ field.fieldName
-            else Just $ "    " ++ field.fieldName ++ "_ <- fst <$> decryptItem " ++ field.fieldName
+          Just $
+            if isMaybeType (field.haskellType)
+              then [i|    #{fieldName field}_ <- encryptItem $ (, salt) <$> #{fieldName field}|]
+              else [i|    #{fieldName field}_ <- encryptItem $ (#{fieldName field}, salt)|]
         else Nothing
 
-    mapFields field = do
+    decryptField :: FieldDef -> Maybe String
+    decryptField field =
       if field.isEncrypted
-        then Just $ field.fieldName ++ " = " ++ field.fieldName ++ "_"
+        then
+          Just $
+            if isMaybeType (field.haskellType)
+              then [i|    #{fieldName field}_ <- fmap fst <$> decryptItem #{fieldName field}|]
+              else [i|    #{fieldName field}_ <- fst <$> decryptItem #{fieldName field}|]
+        else Nothing
+
+    mapFields :: FieldDef -> Maybe String
+    mapFields field =
+      if field.isEncrypted
+        then Just $ [i|#{fieldName field} = #{fieldName field}_|]
         else Nothing
 
 removeDefaultImports :: [String] -> String -> [String] -> [String]
 removeDefaultImports defaultImports moduleName = filter ((/=) moduleName) . filter (`notElem` defaultImports)
 
 -- Convert FieldDef to Haskell field
-fieldDefToHaskell :: FieldDef -> StorageM ()
+fieldDefToHaskell :: FieldDef -> String
 fieldDefToHaskell fieldDef =
-  tellM $
-    fieldDef.fieldName ++ " :: " ++ fieldDef.haskellType
+  fieldDef.fieldName ++ " :: " ++ fieldDef.haskellType
 
 createDefaultImports :: TableDef -> [String]
 createDefaultImports tableDef =
@@ -145,26 +158,32 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
     generateEnum :: String -> [(String, String)] -> ([String], [String])
     generateEnum typeName [("enum", values)] =
       let enumValues = L.splitOn "," values
-       in ( ("data " <> typeName <> " = " <> L.intercalate " | " enumValues) :
-            ["  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj)],
-            ("$(mkBeamInstancesForEnum ''" <> typeName <> ")\n\n") :
-              ["$(mkHttpInstancesForEnum ''" <> typeName <> ")\n" | isHttpInstanceDerived typeObj]
+       in ( ([__i|data #{typeName} = #{L.intercalate " | " enumValues}|]) :
+            [[i|  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema#{addRestDerivations'})\n\n|]],
+            [__i|$(mkBeamInstancesForEnum ''#{typeName})|] :
+              [[__i|$(mkHttpInstancesForEnum ''#{typeName})|] | isHttpInstanceDerived typeObj]
           )
     generateEnum _ _ = error "Invalid enum definition"
 
-    addRestDerivations :: [String] -> String
-    addRestDerivations [] = ")\n\n"
-    addRestDerivations derivations = ", " <> L.intercalate ", " (map toInstanceName derivations) <> ")\n\n"
+    addRestDerivations' = addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj)
 
-    toInstanceName = \case
-      "HttpInstance" -> "ToParamSchema"
-      val -> error "Invalid instance derivation specified: " <> val
+    addRestDerivations :: [String] -> String
+    addRestDerivations [] = ""
+    addRestDerivations derivations = [__i|, #{L.intercalate ", " (map toInstanceName derivations)}|]
+
+    toInstanceName :: String -> String
+    toInstanceName "HttpInstance" = "ToParamSchema"
+    toInstanceName val = error $ pack $ ("Invalid instance derivation specified: " ++ val)
 
     generateDataStructure :: String -> [(String, String)] -> ([String], [String])
     generateDataStructure typeName fields =
-      ( ["data " <> typeName <> " = " <> typeName]
-          ++ ["  { " <> L.intercalate ",\n    " (map formatField fields) <> "\n  }"]
-          ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema)\n"],
+      ( [ [__i|
+          data #{typeName} = #{typeName}
+            {#{L.intercalate ",\n    " (map formatField fields)}
+            }
+            deriving (Generic, Show, ToJSON, FromJSON, ToSchema)
+        |]
+        ],
         []
       )
 

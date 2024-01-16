@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module NammaDSL.Generator.Haskell.BeamTable (generateBeamTable) where
 
 import Data.List (intercalate, isInfixOf)
+import Data.String.Interpolate (i, __i)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.Storage
@@ -79,103 +81,67 @@ primaryKeyToBeam = do
 dataSignature :: StorageM ()
 dataSignature = do
   def <- ask
-  let tableName = tellM (tableNameHaskell def)
-  onNewLine $ do
-    tellM "data"
-    space
-    tableName
-    tellM "T f ="
-    tableName
-    tellM "T"
+  let tableName = tableNameHaskell def
+
+  tellM $
+    [__i|
+    data #{tableName}T f = #{tableName}T\n
+  |]
 
 dataFields :: StorageM ()
 dataFields = do
   def <- ask
-  withSomeSpaces 2 $
-    withinCurls $
-      intercalateA
-        ( do
-            comma
-            newLine
-            replicateM 4 space
-        )
-        $ map fieldDefToBeam $ filter (isNothing . (.relation)) (fields def)
+  tellM $
+    [i|  { #{intercalate ",\n    " (map fieldDefToBeam $ filter (isNothing . relation) (fields def))}
+  }|]
 
 derivingInstances :: StorageM ()
-derivingInstances = onNewLine $
-  withSomeSpaces 3 $ do
-    tellM "deriving "
-    withinParens $
-      intercalateA comma (map tellM derives)
+derivingInstances =
+  onNewLine $
+    [i|    deriving (#{intercalate ", " derives})|]
   where
     derives = ["Generic", "B.Beamable"]
 
 tableInstancesToBeam :: StorageM ()
 tableInstancesToBeam = do
   def <- ask
-  let tableName = tellM (tableNameHaskell def)
-  onNewLine $ do
-    tellM "type"
-    withSpace tableName
-    withSpace $ tellM "="
-    withSpace tableName
-    tellM "T Identity"
-  onNewLine $ do
-    tellM "$(enableKVPG ''"
-    tableName
-    tellM "T ['"
-    tellM $ intercalate ", '" (primaryKey def)
-    tellM "] "
-    if (null (secondaryKey def))
-      then tellM "[]"
-      else
-        tellM $
-          "[['"
-            <> intercalate ", '" (secondaryKey def)
-            <> "]]"
-    tellM ")"
-  onNewLine $ do
-    newLine
-    tellM "$(mkTableInstances ''"
-    tableName
-    tellM "T \""
-    tellM (tableNameSql def)
-    tellM "\")"
+  let tableName = tableNameHaskell def
+  onNewLine $
+    [__i|
+    type #{tableName} = #{tableName}T Identity
 
-fieldDefToBeam :: FieldDef -> StorageM ()
+    $(enableKVPG ''#{tableName}T ['#{intercalate "', '" (primaryKey def)}] #{if null (secondaryKey def) then "[]" else "[['" <> intercalate ", '" (secondaryKey def) <> "]]"})
+
+    $(mkTableInstances ''#{tableName}T "#{tableNameSql def}")
+  |]
+
+fieldDefToBeam :: FieldDef -> String
 fieldDefToBeam hfield = do
-  intercalateA newLine $
+  intercalate "\n" $
     map
       ( \field ->
-          let bfName = tellM (bFieldName field)
-           in if bIsEncrypted field
-                then do
-                  bfName
-                  tellM "Encrypted :: B.C f"
-                  space
-                  wrapMaybe "Text" field
-                  comma
-                  replicateM 4 space
-                  bfName
-                  tellM "Hash :: B.C f"
-                  space
-                  wrapMaybe "DbHash" field
-                else do
-                  bfName
-                  withinSpaces $ tellM ":: B.C f"
-                  formatType $ bFieldType field
+          let bfName = (bFieldName field)
+              isEncrypted = bIsEncrypted field
+              encBlock =
+                if isEncrypted
+                  then
+                    [__i|
+                    #{bfName}Encrypted :: B.C f #{wrapMaybe "Text" field},
+                    #{bfName}Hash :: B.C f #{wrapMaybe "DbHash" field}
+                  |]
+                  else
+                    [__i|
+                    #{bfName} :: B.C f #{formatType (bFieldType field)}
+                  |]
+           in encBlock
       )
       (beamFields hfield)
   where
-    formatType :: String -> StorageM ()
-    formatType t = if " " `isInfixOf` t then withinParens $ tellM t else tellM t
+    formatType :: String -> String
+    formatType t = if " " `isInfixOf` t then [__i|(#{t})|] else t
 
-    wrapMaybe :: String -> BeamField -> StorageM ()
+    wrapMaybe :: String -> BeamField -> String
     wrapMaybe beamType field =
       if isMaybeType (bFieldType field)
-        then do
-          withinParens $ do
-            tellM "Maybe"
-            space
-            tellM beamType
-        else tellM beamType
+        then [__i|(Maybe #{beamType})|]
+        else beamType
