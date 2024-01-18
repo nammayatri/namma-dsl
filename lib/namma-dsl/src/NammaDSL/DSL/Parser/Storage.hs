@@ -376,16 +376,17 @@ parseImports fields typObj =
     figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
 
     figureOutInsideTypeImports :: TypeObject -> [String]
-    figureOutInsideTypeImports (TypeObject (_, (tps, _))) =
-      concatMap
-        ( ( \potentialImport ->
-              if "," `L.isInfixOf` potentialImport
-                then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
-                else [potentialImport]
-          )
-            . snd
-        )
-        tps
+    figureOutInsideTypeImports tobj@(TypeObject (_, (tps, _))) =
+      let isEnum = isEnumType tobj
+       in concatMap
+            ( ( \potentialImport ->
+                  if isEnum
+                    then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
+                    else [potentialImport]
+              )
+                . snd
+            )
+            tps
 
 --extraImports = concatMap (\f -> maybe [] pure (toTType f) <> maybe [] pure (fromTType f)) fields
 
@@ -484,9 +485,6 @@ parseExtraTypes moduleName dList importObj obj = do
   return (map (mkQualifiedTypeObject allExcludeQualified) _types, allExcludeQualified, map (\nm -> defaultImportModule ++ moduleName ++ "." ++ nm) allEnums ++ allEnums)
   where
     defaultImportModule = "Domain.Types."
-
-    isEnumType :: TypeObject -> Bool
-    isEnumType (TypeObject (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
 
     mkEnumTypeQualified :: [String] -> String -> String
     mkEnumTypeQualified excluded enumTp =
@@ -702,3 +700,6 @@ findMatchingHaskellType sqlType =
 
 haskellTypeWrtSqlType :: [(String, String)]
 haskellTypeWrtSqlType = map (first (T.unpack . T.replace "(" "\\(" . T.replace ")" "\\)" . T.replace "[" "\\[" . T.replace "]" "\\]" . T.pack) . second (T.unpack . T.replace "\\[" "[" . T.replace "\\]" "]" . T.pack) . swap) sqlTypeWrtType
+
+isEnumType :: TypeObject -> Bool
+isEnumType (TypeObject (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields

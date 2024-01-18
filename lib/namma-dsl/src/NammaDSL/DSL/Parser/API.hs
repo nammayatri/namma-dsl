@@ -90,17 +90,21 @@ markQualifiedTypesInTypes moduleName input obj =
 extractComplexTypeImports :: Apis -> [Text]
 extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
   where
+    isEnumType :: TypeObject -> Bool
+    isEnumType (_, arr) = any (\(a, _) -> a == "enum") arr
+
     figureOutImports' :: TypeObject -> [Text]
-    figureOutImports' (_, arr) =
-      concatMap
-        ( ( \potentialImport ->
-              if "," `T.isInfixOf` potentialImport
-                then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) (T.unpack potentialImport)
-                else [potentialImport]
-          )
-            . snd
-        )
-        arr
+    figureOutImports' tobj@(_, arr) =
+      let isEnum = isEnumType tobj
+       in concatMap
+            ( ( \potentialImport ->
+                  if isEnum
+                    then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) (T.unpack potentialImport)
+                    else [potentialImport]
+              )
+                . snd
+            )
+            arr
 
 extractImports :: Apis -> [Text]
 extractImports api =
