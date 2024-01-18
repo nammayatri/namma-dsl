@@ -63,17 +63,17 @@ mkCodeBody = do
     handlerFunctionDef :: ApiTT -> ApisM ()
     handlerFunctionDef apiT =
       let functionName = handlerFunctionText apiT
-          autoToType = apiAuthTypeMapper apiT
+          autoToType = maybe [] pure (apiAuthTypeMapper apiT)
           allTypes = handlerSignature apiT
-          showType = case filter (/= T.empty) (init allTypes) of
-            [] -> T.empty
-            ty -> " -> " <> T.intercalate " -> " ty
-          handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.Flow " <> last allTypes
+          showType = filter (/= T.empty) (init allTypes)
+          -- [] -> T.empty
+          -- ty -> " -> " <> T.intercalate " -> " ty
+          handlerTypes = autoToType <> showType <> ["Environment.Flow " <> last allTypes]
        in tellM $
             T.unpack $
               functionName
-                <> (maybe " ::" (" :: " <>) autoToType)
-                <> handlerTypes
+                <> " :: "
+                <> T.intercalate " -> " handlerTypes
                 <> "\n"
                 <> functionName
                 <> " = error \"Logic yet to be decided\""
