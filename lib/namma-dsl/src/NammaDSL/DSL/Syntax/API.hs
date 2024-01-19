@@ -19,7 +19,7 @@ data AuthType = AdminTokenAuth | TokenAuth TokenAuthType | NoAuth | DashboardAut
 
 data TokenAuthType = RIDER_TYPE | PROVIDER_TYPE deriving (Show)
 
-data DashboardAuthType = DASHBOARD_USER | DASHBOARD_ADMIN | FLEET_OWNER | DASHBOARD_RELEASE_ADMIN | MERCHANT_ADMIN
+data DashboardAuthType = DASHBOARD_USER | DASHBOARD_ADMIN | FLEET_OWNER | DASHBOARD_RELEASE_ADMIN | MERCHANT_ADMIN | MERCHANT_MAKER | MERCHANT_CHECKER
   deriving (Show)
 
 data HeaderType = Header Text Text deriving (Show)
