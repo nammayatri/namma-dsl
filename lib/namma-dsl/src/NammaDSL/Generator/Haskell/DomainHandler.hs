@@ -8,7 +8,7 @@ import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper, checkForPackageOverrides)
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperDomainHandler, checkForPackageOverrides)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
 
@@ -63,7 +63,7 @@ mkCodeBody = do
     handlerFunctionDef :: ApiTT -> ApisM ()
     handlerFunctionDef apiT =
       let functionName = handlerFunctionText apiT
-          autoToType = maybe [] pure (apiAuthTypeMapper apiT)
+          autoToType = maybe [] pure (apiAuthTypeMapperDomainHandler apiT)
           allTypes = handlerSignature apiT
           showType = filter (/= T.empty) (init allTypes)
           -- [] -> T.empty

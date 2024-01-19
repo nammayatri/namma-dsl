@@ -5,8 +5,14 @@ import qualified Data.Text as T
 import Kernel.Prelude hiding (lookup, replicateM)
 import NammaDSL.DSL.Syntax.API
 
-apiAuthTypeMapper :: ApiTT -> Maybe Text
-apiAuthTypeMapper apiT = case _authType apiT of
+apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe Text
+apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
+  Just (DashboardAuth _) -> Just "TokenInfo"
+  Just NoAuth -> Nothing
+  _ -> Just "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
+
+apiAuthTypeMapperServant :: ApiTT -> Maybe Text
+apiAuthTypeMapperServant apiT = case _authType apiT of
   Just (DashboardAuth _) -> Just "TokenInfo"
   Just NoAuth -> Nothing
   _ -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
