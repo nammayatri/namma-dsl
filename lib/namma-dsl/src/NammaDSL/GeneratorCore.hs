@@ -8,6 +8,7 @@ import Control.Lens hiding (noneOf)
 import Control.Monad.RWS (RWS, execRWS)
 import Control.Monad.Writer.Class (MonadWriter (tell))
 import Data.Functor (void)
+import Data.List (nub)
 import Data.String (IsString (..))
 import Data.String.Builder (Builder, build, literal)
 import Prelude
@@ -144,6 +145,6 @@ generateCode generatorCore =
         moduleName' = view moduleNm >>= onNewLine . mkModuleName . tellM
         pragmaClause = view ghcOptions >>= lineSpace . intercalateA newLine . map (mkGHCOptions . tellM)
         extensionClause = view extensions >>= onNewLine . intercalateA newLine . map (mkExtension . tellM)
-        simpleImportClause = view simpleImports >>= onNewLine . intercalateA newLine . map (mkImport . tellM)
-        qualifiedImportClause = view qualifiedImports >>= onNewLine . intercalateA newLine . map (mkImportQ . tellM)
+        simpleImportClause = view simpleImports >>= onNewLine . intercalateA newLine . map (mkImport . tellM) . nub
+        qualifiedImportClause = view qualifiedImports >>= onNewLine . intercalateA newLine . map (mkImportQ . tellM) . nub
         codeClause = view codeBody >>= afterFewLines . tellM . show

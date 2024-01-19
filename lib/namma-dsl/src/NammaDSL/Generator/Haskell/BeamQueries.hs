@@ -36,7 +36,8 @@ generateBeamQueries tableDef = do
         <> concatMap getStorageRelationImports tableDef.fields
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ "Storage.Beam." ++ (capitalize $ tableNameHaskell tableDef) ++ " as Beam",
+      [ "Domain.Types." ++ tableNameHaskell tableDef,
+        "Storage.Beam." ++ (capitalize $ tableNameHaskell tableDef) ++ " as Beam",
         "Sequelize as Se"
       ]
         <> imports tableDef
