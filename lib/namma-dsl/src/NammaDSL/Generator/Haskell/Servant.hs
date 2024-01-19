@@ -58,13 +58,23 @@ generateServantAPI input =
         "Servant",
         "Tools.Auth",
         "Kernel.Utils.Common",
-        "Storage.Beam.SystemConfigs ()",
         "API.Types.UI."
           <> T.unpack (_moduleName input)
           <> " ("
           <> intercalate ", " (map (T.unpack . fst) (input ^. apiTypes . types))
           <> ")"
       ]
+        <> ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
+
+    ifNotDashboard :: Bool
+    ifNotDashboard =
+      any
+        ( \authType' -> do
+            case authType' of
+              Just (DashboardAuth _) -> False
+              _ -> True
+        )
+        (map _authType $ _apis input)
 
 mkCodeBody :: ApisM ()
 mkCodeBody = do
@@ -115,13 +125,19 @@ mkCodeBody = do
                 <> "\n"
                 <> functionName
                 <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
-                <> " = withFlowHandlerAPI $ "
+                <> generateWithFlowHandlerAPI (isDashboardAuth apiT)
                 <> "Domain.Action.UI."
                 <> moduleName'
                 <> "."
                 <> functionName
                 <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) True (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
                 <> "\n"
+
+generateWithFlowHandlerAPI :: Bool -> Text
+generateWithFlowHandlerAPI isDashboardAuth = do
+  case isDashboardAuth of
+    True -> " = withFlowHandlerAPI' $ "
+    False -> " = withFlowHandlerAPI $ "
 
 apiTTToText :: ApiTT -> ApisM ()
 apiTTToText apiTT =
