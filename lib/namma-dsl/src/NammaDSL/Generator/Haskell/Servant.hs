@@ -6,7 +6,7 @@ import Data.List.Extra (snoc)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapper, checkForPackageOverrides)
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperServant, checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 
@@ -110,7 +110,7 @@ mkCodeBody = do
           handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.FlowHandler " <> last allTypes
        in tellM $
             T.unpack $
-              functionName <> maybe " :: " (\x -> " :: " <> x <> " -> ") (apiAuthTypeMapper apiT) <> handlerTypes
+              functionName <> maybe " :: " (\x -> " :: " <> x <> " -> ") (apiAuthTypeMapperServant apiT) <> handlerTypes
                 <> "\n"
                 <> functionName
                 <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
