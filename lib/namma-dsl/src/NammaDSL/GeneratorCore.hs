@@ -20,6 +20,17 @@ newtype Code = Code Builder
 instance Show Code where
   show (Code b) = build b
 
+instance Eq Code where
+  Code a == Code b = show (Code a) == show (Code b)
+
+instance Semigroup Code where
+  Code a <> Code b = Code (a <> b)
+
+instance Monoid Code where
+  mempty = Code mempty
+  mappend = (<>)
+  mconcat = foldr mappend mempty
+
 data GeneratorInput = GeneratorInput
   { _ghcOptions :: [String],
     _extensions :: [String],
