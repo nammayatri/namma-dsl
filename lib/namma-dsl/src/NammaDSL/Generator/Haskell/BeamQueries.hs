@@ -1,5 +1,6 @@
-module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries) where
+module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries, BeamQueryCode (..), DefaultQueryCode (..), ExtraQueryCode (..)) where
 
+import Control.Lens ((%~), (.~))
 import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
 import qualified Data.Text as Text
 import Kernel.Prelude
@@ -8,22 +9,97 @@ import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 
-generateBeamQueries :: TableDef -> Code
-generateBeamQueries tableDef = do
-  generateCode generatorInput
+data BeamQueryCode = DefaultQueryFile DefaultQueryCode | WithExtraQueryFile ExtraQueryCode
+
+data DefaultQueryCode = DefaultQueryCode
+  { readOnlyCode :: Code,
+    transformerCode :: Maybe Code
+  }
+  deriving (Show)
+
+data ExtraQueryCode = ExtraQueryCode
+  { defaultCode :: DefaultQueryCode,
+    instanceCode :: Code,
+    extraQueryFile :: Code
+  }
+  deriving (Show)
+
+generateBeamQueries :: TableDef -> BeamQueryCode
+generateBeamQueries tableDef =
+  if EXTRA_QUERY_FILE `elem` extaOperations tableDef
+    then
+      WithExtraQueryFile $
+        ExtraQueryCode
+          { defaultCode =
+              DefaultQueryCode
+                { readOnlyCode =
+                    generateCode $
+                      commonGeneratorInput
+                        & moduleNm .~ readOnlyCodeModuleName ++ " (module " ++ readOnlyCodeModuleName ++ ", module ReExport)"
+                        & codeBody .~ generateCodeBody mkCodeBody tableDef
+                        & simpleImports %~ (++ [readOnlyCodeModuleName ++ "Extra as ReExport"])
+                        & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
+                  transformerCode =
+                    if transformerCode' == mempty
+                      then Nothing
+                      else
+                        Just $
+                          generateCode $
+                            commonGeneratorInput
+                              & moduleNm .~ "Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)
+                              & codeBody .~ transformerCode'
+                },
+            instanceCode =
+              generateCode $
+                commonGeneratorInput
+                  & moduleNm .~ "Storage.Queries.OrphanInstances." ++ (capitalize $ tableNameHaskell tableDef)
+                  & codeBody .~ generateCodeBody mkTTypeInstance tableDef
+                  & simpleImports %~ (++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)])),
+            extraQueryFile =
+              generateCode $
+                commonGeneratorInput
+                  & moduleNm .~ readOnlyCodeModuleName ++ "Extra"
+                  & codeBody .~ generateCodeBody extraFileCodeBody tableDef
+                  & simpleImports %~ (++ ["Storage.Queries.OrphanInstances." ++ (capitalize $ tableNameHaskell tableDef)])
+          }
+    else
+      DefaultQueryFile $
+        DefaultQueryCode
+          { readOnlyCode =
+              generateCode $
+                commonGeneratorInput
+                  & moduleNm .~ readOnlyCodeModuleName
+                  & codeBody .~ generateCodeBody mkCodeBody tableDef
+                  & simpleImports %~ (++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)]))
+                  & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
+            transformerCode =
+              if transformerCode' == mempty
+                then Nothing
+                else
+                  Just $
+                    generateCode $
+                      commonGeneratorInput
+                        & moduleNm .~ "Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)
+                        & codeBody .~ transformerCode'
+          }
   where
+    transformerCode' :: Code
+    transformerCode' = generateCodeBody mkTransformerCodeBody tableDef
+
+    readOnlyCodeModuleName = "Storage.Queries." ++ (capitalize $ tableNameHaskell tableDef)
+
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
-    generatorInput :: GeneratorInput
-    generatorInput =
+    commonGeneratorInput :: GeneratorInput
+    commonGeneratorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = "Storage.Queries." ++ (capitalize $ tableNameHaskell tableDef),
+          _moduleNm = mempty,
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride allQualifiedImports,
-          _codeBody = generateCodeBody mkCodeBody tableDef
+          _codeBody = mempty
         }
     allSimpleImports :: [String]
     allSimpleImports =
@@ -47,13 +123,26 @@ generateBeamQueries tableDef = do
         Just (_, query) -> ["Storage.Queries." ++ query]
         Nothing -> []
 
+extraFileCodeBody :: StorageM ()
+extraFileCodeBody = do
+  onNewLine $ tellM "-- Extra code goes here -- "
+
 mkCodeBody :: StorageM ()
 mkCodeBody = do
+  tableDef <- ask
+  let isDefault = EXTRA_QUERY_FILE `notElem` extaOperations tableDef
   generateDefaultCreateQuery
   generateDefaultCreateManyQuery
   beamQueries
+  when isDefault mkTTypeInstance
+
+mkTTypeInstance :: StorageM ()
+mkTTypeInstance = do
   fromTTypeInstance
   toTTypeInstance
+
+mkTransformerCodeBody :: StorageM ()
+mkTransformerCodeBody = do
   generateToTTypeFuncs
   generateFromTypeFuncs
 
@@ -323,7 +412,10 @@ generateClause allFields isFullObjInp n i (Query (op, clauses)) =
 generateToTTypeFuncs :: StorageM ()
 generateToTTypeFuncs = do
   def <- ask
-  onNewLine $ tellM $ intercalate "\n" $ map generateToTTypeFunc (fields def)
+  let code = intercalate "\n" $ filter (not . null) $ map generateToTTypeFunc (fields def)
+  case code of
+    "" -> tellM mempty
+    _ -> onNewLine $ tellM code
   where
     generateToTTypeFunc :: FieldDef -> String
     generateToTTypeFunc field =
@@ -340,7 +432,10 @@ generateToTTypeFuncs = do
 generateFromTypeFuncs :: StorageM ()
 generateFromTypeFuncs = do
   def <- ask
-  onNewLine $ tellM $ intercalate "\n" $ filter (not . null) $ map generateFromTTypeFunc (fields def)
+  let code = intercalate "\n" $ filter (not . null) $ map generateFromTTypeFunc (fields def)
+  case code of
+    "" -> tellM mempty
+    _ -> onNewLine $ tellM code
   where
     generateFromTTypeFunc :: FieldDef -> String
     generateFromTTypeFunc field =

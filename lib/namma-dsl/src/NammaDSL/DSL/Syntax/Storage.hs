@@ -19,6 +19,8 @@ data MigrationFile = MigrationFile
   }
   deriving (Show)
 
+data ExtraOperations = EXTRA_QUERY_FILE deriving (Show, Eq)
+
 data TableDef = TableDef
   { tableNameHaskell :: String,
     tableNameSql :: String,
@@ -30,7 +32,8 @@ data TableDef = TableDef
     secondaryKey :: [String],
     types :: Maybe [TypeObject],
     containsEncryptedField :: Bool,
-    relationalTableNamesHaskell :: [String]
+    relationalTableNamesHaskell :: [String],
+    extaOperations :: [ExtraOperations]
   }
   deriving (Show)
 

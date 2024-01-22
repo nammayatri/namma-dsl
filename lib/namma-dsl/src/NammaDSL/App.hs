@@ -21,10 +21,26 @@ mkBeamTable filePath yaml = do
   tableDef <- storageParser yaml
   mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateBeamTable t)) tableDef
 
-mkBeamQueries :: FilePath -> FilePath -> IO ()
-mkBeamQueries filePath yaml = do
+mkBeamQueries :: FilePath -> Maybe FilePath -> FilePath -> IO ()
+mkBeamQueries defaultFilePath extraFilePath' yaml = do
+  let extraFilePath = fromMaybe defaultFilePath extraFilePath'
   tableDef <- storageParser yaml
-  mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateBeamQueries t)) tableDef
+  mapM_
+    ( \t -> do
+        let beamQ = generateBeamQueries t
+        case beamQ of
+          DefaultQueryFile (DefaultQueryCode {..}) -> do
+            writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show readOnlyCode)
+            when (isJust transformerCode) $ writeToFile (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust transformerCode)
+          WithExtraQueryFile (ExtraQueryCode {..}) -> do
+            writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show (readOnlyCode defaultCode))
+            writeToFile (defaultFilePath </> "OrphanInstances") (tableNameHaskell t ++ ".hs") (show instanceCode)
+            when (isJust $ transformerCode defaultCode) $ writeToFile (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust (transformerCode defaultCode))
+            let extraFileName = tableNameHaskell t ++ "Extra.hs"
+            extraFileExists <- doesFileExist (extraFilePath </> extraFileName)
+            unless extraFileExists $ writeToFile extraFilePath (tableNameHaskell t ++ "Extra.hs") (show extraQueryFile)
+    )
+    tableDef
 
 mkDomainType :: FilePath -> FilePath -> IO ()
 mkDomainType filePath yaml = do

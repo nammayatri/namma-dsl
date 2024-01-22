@@ -25,7 +25,7 @@ import qualified Debug.Trace as DT
 import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Utils (figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, mkList, valueToString, _String)
+import NammaDSL.Utils (extraOperation, figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, mkList, valueToString, _String)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
@@ -364,9 +364,10 @@ parseTableDef dList importObj (parseDomainName, obj) =
       parsedImports = parseImports parsedFields (fromMaybe [] parsedTypes)
       parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to mkList . to M.fromList) obj
       parsedQueries = parseQueries (Just parseDomainName) excludedList dList parsedFields importObj obj
+      parsedExtraOperations = fromMaybe [] $ preview (ix "extraOperations" . _Array . to V.toList . to (map (extraOperation . valueToString))) obj
       (primaryKey, secondaryKey) = extractKeys parsedFields
       relationalTableNamesHaskell = catMaybes $ map (.relationalTableNameHaskell) parsedFields
-   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedImportPackageOverrides parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell
+   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedImportPackageOverrides parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell parsedExtraOperations
 
 parseImports :: [FieldDef] -> [TypeObject] -> [String]
 parseImports fields typObj =

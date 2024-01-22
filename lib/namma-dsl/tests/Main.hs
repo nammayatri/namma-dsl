@@ -14,9 +14,9 @@ apiYamlFilePath = "./tests/api.yaml"
 
 generateAllExample :: IO ()
 generateAllExample = do
-  mapM_ (createDirectoryIfMissing True) ["./output/Beam", "./output/Queries", "./output/Domain/Type", "./output/SQL"]
+  mapM_ (createDirectoryIfMissing True) ["./output/Beam", "./output/src/Queries", "./output/Queries", "./output/Domain/Type", "./output/SQL"]
   mkBeamTable "./output/Beam" storageYamlFilePath
-  mkBeamQueries "./output/Queries" storageYamlFilePath
+  mkBeamQueries "./output/Queries" (Just "./output/src/Queries") storageYamlFilePath
   mkDomainType "./output/Domain/Type" storageYamlFilePath
   mkSQLFile "./output/SQL" storageYamlFilePath
   mkServantAPI "./output" apiYamlFilePath
