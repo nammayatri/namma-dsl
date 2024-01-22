@@ -41,12 +41,14 @@ parseApis obj =
     & imports .~ extractImports res
     & apiTypes . typeImports .~ extractComplexTypeImports res
   where
-    defaultImportModule = "Domain.Action.UI."
+    defaultImportModule = "API.Types.UI."
     parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to U.mkList . to M.fromList) obj
     res = mkQApis (Apis modelName allApis [] parsedImportPackageOverrides (TypesInfo [] parseTyp))
-    mkQualified = T.pack . U.makeTypeQualified Nothing Nothing Nothing defaultImportModule obj . T.unpack
+    mkQualified = T.pack . U.makeTypeQualified (Just $ T.unpack modelName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
     modelName = fromMaybe (error "Required module name") $ parseModule obj
-    parseTyp = markQualifiedTypesInTypes modelName (typesToTypeObject (parseTypes obj)) obj
+    parsedTypeObjects = typesToTypeObject (parseTypes obj)
+    parsedTypeDataNames = map (T.unpack . fst) parsedTypeObjects
+    parseTyp = markQualifiedTypesInTypes modelName parsedTypeObjects obj
     allApis = fromMaybe (error "Failed to parse apis") $ preview (ix "apis" . _Array . to V.toList) obj >>= mapM parseSingleApi
     mkQApis aps = aps & apis . traverse %~ mkQUrlApiTT
     mkQApiReq (ApiReq t1 t2) = ApiReq (mkQualified t1) t2
