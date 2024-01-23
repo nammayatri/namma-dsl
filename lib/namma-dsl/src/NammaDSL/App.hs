@@ -16,6 +16,9 @@ import NammaDSL.Utils
 import System.Directory
 import System.FilePath
 
+version :: String
+version = "1.0.0"
+
 mkBeamTable :: FilePath -> FilePath -> IO ()
 mkBeamTable filePath yaml = do
   tableDef <- storageParser yaml
