@@ -37,7 +37,7 @@ generateBeamQueries tableDef =
                       commonGeneratorInput
                         & moduleNm .~ readOnlyCodeModuleName ++ " (module " ++ readOnlyCodeModuleName ++ ", module ReExport)"
                         & codeBody .~ generateCodeBody mkCodeBody tableDef
-                        & simpleImports %~ (++ [readOnlyCodeModuleName ++ "Extra as ReExport"])
+                        & simpleImports %~ (++ ([readOnlyCodeModuleName ++ "Extra as ReExport"] ++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)])))
                         & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
                   transformerCode =
                     if transformerCode' == mempty
