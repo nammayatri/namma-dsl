@@ -181,8 +181,10 @@ mkHeaderList val =
 getAuthType :: Text -> AuthType
 getAuthType = \case
   "AdminTokenAuth" -> AdminTokenAuth
-  "TokenAuth" -> TokenAuth
+  "TokenAuth" -> TokenAuth RIDER_TYPE
   "NoAuth" -> NoAuth
+  "TokenAuth RIDER_TYPE" -> TokenAuth RIDER_TYPE
+  "TokenAuth PROVIDER_TYPE" -> TokenAuth PROVIDER_TYPE
   "DashboardAuth DASHBOARD_USER" -> DashboardAuth DASHBOARD_USER
   "DashboardAuth DASHBOARD_ADMIN" -> DashboardAuth DASHBOARD_ADMIN
   "DashboardAuth FLEET_OWNER" -> DashboardAuth FLEET_OWNER
