@@ -16,7 +16,8 @@ data NammaDSLConfig = NammaDSLConfig
 data ApiConfigs = ApiConfigs
   { inputPath :: String,
     outputPath :: String,
-    enabled :: Bool
+    enabled :: Bool,
+    uiIntegrationEnabled: Maybe Bool
   }
   deriving (Generic, Show, FromDhall)
 
