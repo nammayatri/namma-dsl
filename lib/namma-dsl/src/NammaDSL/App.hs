@@ -17,7 +17,7 @@ import System.Directory
 import System.FilePath
 
 version :: String
-version = "1.0.0"
+version = "1.0.2"
 
 mkBeamTable :: FilePath -> FilePath -> IO ()
 mkBeamTable filePath yaml = do

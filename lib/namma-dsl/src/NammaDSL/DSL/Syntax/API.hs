@@ -15,7 +15,9 @@ data UrlParts
 
 data ApiType = GET | POST | PUT | DELETE deriving (Show)
 
-data AuthType = AdminTokenAuth | TokenAuth | NoAuth | DashboardAuth DashboardAuthType deriving (Show)
+data AuthType = AdminTokenAuth | TokenAuth TokenAuthType | NoAuth | DashboardAuth DashboardAuthType deriving (Show)
+
+data TokenAuthType = RIDER_TYPE | PROVIDER_TYPE deriving (Show)
 
 data DashboardAuthType = DASHBOARD_USER | DASHBOARD_ADMIN | FLEET_OWNER | DASHBOARD_RELEASE_ADMIN | MERCHANT_ADMIN
   deriving (Show)

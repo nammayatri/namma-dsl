@@ -31,6 +31,7 @@ generateServantAPI input =
     defaultQualifiedImport =
       [ "Domain.Types.Person",
         "Kernel.Prelude",
+        "Control.Lens",
         "Domain.Types.Merchant",
         "Environment",
         "Kernel.Types.Id"
@@ -95,7 +96,7 @@ mkCodeBody = do
     generateParams _ _ _ 0 = ""
     generateParams isAuth isbackParam mx n =
       ( if mx == n && isbackParam && isAuth
-          then " (Kernel.Prelude.first Kernel.Prelude.Just a" <> T.pack (show n) <> ")"
+          then " (Control.Lens.over Control.Lens._1 Kernel.Prelude.Just a" <> T.pack (show n) <> ")"
           else " a" <> T.pack (show n)
       )
         <> generateParams isAuth isbackParam mx (n - 1)
@@ -136,7 +137,7 @@ apiTTToText apiTT =
     addAuthToApi :: Maybe AuthType -> Text -> Text
     addAuthToApi authtype apiDef = case authtype of
       Just AdminTokenAuth -> "AdminTokenAuth" <> apiDef
-      Just TokenAuth -> "TokenAuth" <> apiDef
+      Just (TokenAuth _) -> "TokenAuth" <> apiDef
       Just (DashboardAuth dashboardAuthType) -> "DashboardAuth '" <> T.pack (show dashboardAuthType) <> apiDef
       Just NoAuth -> fromMaybe apiDef (T.stripPrefix " :>" apiDef)
       Nothing -> "TokenAuth" <> apiDef
