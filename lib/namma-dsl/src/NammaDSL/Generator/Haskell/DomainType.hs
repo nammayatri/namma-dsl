@@ -22,7 +22,7 @@ generateDomainType tableDef =
     allSimpleImports = createDefaultImports tableDef
 
     allQualifiedImports :: [String]
-    allQualifiedImports = removeDefaultImports allSimpleImports moduleName' (imports tableDef)
+    allQualifiedImports = removeDefaultImports allSimpleImports moduleName' $ (imports tableDef) <> ["Tools.Beam.UtilsTH"]
 
     generatorInput :: GeneratorInput
     generatorInput =
@@ -134,6 +134,10 @@ isHttpInstanceDerived :: [TypeObject] -> Bool
 isHttpInstanceDerived typeObj =
   any (\case TypeObject (_, (_, derive)) -> "HttpInstance" `elem` derive) typeObj
 
+isListInstanceDerived :: [TypeObject] -> Bool
+isListInstanceDerived typeObj =
+  any (\case TypeObject (_, (_, derive)) -> "'ListInstance" `elem` derive) typeObj
+
 isEnum :: [(String, String)] -> Bool
 isEnum [("enum", _)] = True
 isEnum _ = False
@@ -158,7 +162,9 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
 
     addRestDerivations :: [String] -> String
     addRestDerivations [] = ""
-    addRestDerivations derivations = ", " <> L.intercalate ", " (map toInstanceName derivations)
+    addRestDerivations derivations = if length derives > 0 then ", " <> derives else ""
+      where
+        derives = L.intercalate ", " (map toInstanceName $ filter (\x -> not $ L.isPrefixOf "'" x) derivations)
 
     toInstanceName = \case
       "HttpInstance" -> "ToParamSchema"
@@ -169,7 +175,7 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
       ( ["data " <> typeName <> " = " <> typeName]
           ++ ["  { " <> L.intercalate ",\n    " (map formatField fields) <> "\n  }"]
           ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj) <> ")\n"],
-        []
+        ["$(Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList ''" <> typeName <> ")\n" | isListInstanceDerived typeObj]
       )
 
     formatField :: (String, String) -> String
