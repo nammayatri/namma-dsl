@@ -65,6 +65,7 @@ generateServantAPI input =
           <> ")"
       ]
         <> ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
+        <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
 
     ifNotDashboard :: Bool
     ifNotDashboard =
@@ -72,7 +73,18 @@ generateServantAPI input =
         ( \authType' -> do
             case authType' of
               Just (DashboardAuth _) -> False
+              Just (SafetyWebhookAuth _) -> False
               _ -> True
+        )
+        (map _authType $ _apis input)
+
+    ifSafetyDashboard :: Bool
+    ifSafetyDashboard =
+      any
+        ( \authType' -> do
+            case authType' of
+              Just (SafetyWebhookAuth _) -> True
+              _ -> False
         )
         (map _authType $ _apis input)
 
@@ -100,6 +112,7 @@ mkCodeBody = do
     isDashboardAuth :: ApiTT -> Bool
     isDashboardAuth apiT = case _authType apiT of
       Just (DashboardAuth _) -> True
+      Just (SafetyWebhookAuth _) -> True
       _ -> False
 
     generateParams :: Bool -> Bool -> Int -> Int -> Text
@@ -154,6 +167,7 @@ apiTTToText apiTT =
     addAuthToApi authtype apiDef = case authtype of
       Just AdminTokenAuth -> "AdminTokenAuth" <> apiDef
       Just (TokenAuth _) -> "TokenAuth" <> apiDef
+      Just (SafetyWebhookAuth dashboardAuthType) -> "SafetyWebhookAuth '" <> T.pack (show dashboardAuthType) <> apiDef
       Just (DashboardAuth dashboardAuthType) -> "DashboardAuth '" <> T.pack (show dashboardAuthType) <> apiDef
       Just NoAuth -> fromMaybe apiDef (T.stripPrefix " :>" apiDef)
       Nothing -> "TokenAuth" <> apiDef

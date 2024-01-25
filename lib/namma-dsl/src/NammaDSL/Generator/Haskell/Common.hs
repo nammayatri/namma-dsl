@@ -9,6 +9,7 @@ apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe Text
 apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
   Just (DashboardAuth _) -> Just "TokenInfo"
   Just NoAuth -> Nothing
+  Just (SafetyWebhookAuth _) -> Just "AuthToken"
   Just (TokenAuth tp) -> case tp of
     RIDER_TYPE -> Just "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
     PROVIDER_TYPE -> Just "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant, Kernel.Types.Id.Id Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity)"
@@ -17,6 +18,7 @@ apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
 apiAuthTypeMapperServant :: ApiTT -> Maybe Text
 apiAuthTypeMapperServant apiT = case _authType apiT of
   Just (DashboardAuth _) -> Just "TokenInfo"
+  Just (SafetyWebhookAuth _) -> Just "AuthToken"
   Just NoAuth -> Nothing
   Just (TokenAuth tp) -> case tp of
     RIDER_TYPE -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"

@@ -15,11 +15,11 @@ data UrlParts
 
 data ApiType = GET | POST | PUT | DELETE deriving (Show)
 
-data AuthType = AdminTokenAuth | TokenAuth TokenAuthType | NoAuth | DashboardAuth DashboardAuthType deriving (Show)
+data AuthType = AdminTokenAuth | TokenAuth TokenAuthType | NoAuth | SafetyWebhookAuth DashboardAuthType | DashboardAuth DashboardAuthType deriving (Show)
 
 data TokenAuthType = RIDER_TYPE | PROVIDER_TYPE deriving (Show)
 
-data DashboardAuthType = DASHBOARD_USER | DASHBOARD_ADMIN | FLEET_OWNER | DASHBOARD_RELEASE_ADMIN | MERCHANT_ADMIN | MERCHANT_MAKER | MERCHANT_CHECKER
+data DashboardAuthType = DASHBOARD_USER | DASHBOARD_ADMIN | FLEET_OWNER | DASHBOARD_RELEASE_ADMIN | MERCHANT_ADMIN | MERCHANT_MAKER | MERCHANT_CHECKER | MERCHANT_SERVER
   deriving (Show)
 
 data HeaderType = Header Text Text deriving (Show)

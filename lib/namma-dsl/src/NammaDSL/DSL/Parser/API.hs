@@ -183,6 +183,7 @@ getAuthType = \case
   "AdminTokenAuth" -> AdminTokenAuth
   "TokenAuth" -> TokenAuth RIDER_TYPE
   "NoAuth" -> NoAuth
+  "SafetyWebhookAuth MERCHANT_SERVER" -> SafetyWebhookAuth MERCHANT_SERVER
   "TokenAuth RIDER_TYPE" -> TokenAuth RIDER_TYPE
   "TokenAuth PROVIDER_TYPE" -> TokenAuth PROVIDER_TYPE
   "DashboardAuth DASHBOARD_USER" -> DashboardAuth DASHBOARD_USER
@@ -192,6 +193,7 @@ getAuthType = \case
   "DashboardAuth MERCHANT_ADMIN" -> DashboardAuth MERCHANT_ADMIN
   "DashboardAuth MERCHANT_MAKER" -> DashboardAuth MERCHANT_MAKER
   "DashboardAuth MERCHANT_CHECKER" -> DashboardAuth MERCHANT_CHECKER
+  "DashboardAuth MERCHANT_SERVER" -> DashboardAuth MERCHANT_SERVER
   _ -> error "Not a valid auth type"
 
 getApiType :: Text -> ApiType
