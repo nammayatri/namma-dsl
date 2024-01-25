@@ -150,25 +150,25 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
     generateEnum typeName [("enum", values)] =
       let enumValues = L.splitOn "," values
        in ( ("data " <> typeName <> " = " <> L.intercalate " | " enumValues) :
-            ["  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj)],
+            ["  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj) <> ")\n\n"],
             ("$(mkBeamInstancesForEnum ''" <> typeName <> ")\n\n") :
               ["$(mkHttpInstancesForEnum ''" <> typeName <> ")\n" | isHttpInstanceDerived typeObj]
           )
     generateEnum _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [String] -> String
-    addRestDerivations [] = ")\n\n"
-    addRestDerivations derivations = ", " <> L.intercalate ", " (map toInstanceName derivations) <> ")\n\n"
+    addRestDerivations [] = ""
+    addRestDerivations derivations = ", " <> L.intercalate ", " (map toInstanceName derivations)
 
     toInstanceName = \case
       "HttpInstance" -> "ToParamSchema"
-      val -> error "Invalid instance derivation specified: " <> val
+      val -> val
 
     generateDataStructure :: String -> [(String, String)] -> ([String], [String])
     generateDataStructure typeName fields =
       ( ["data " <> typeName <> " = " <> typeName]
           ++ ["  { " <> L.intercalate ",\n    " (map formatField fields) <> "\n  }"]
-          ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema)\n"],
+          ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj) <> ")\n"],
         []
       )
 
