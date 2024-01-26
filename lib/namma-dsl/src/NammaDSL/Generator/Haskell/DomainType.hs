@@ -27,7 +27,7 @@ generateDomainType tableDef =
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
-        { _ghcOptions = [],
+        { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
           _simpleImports = packageOverride allSimpleImports,
