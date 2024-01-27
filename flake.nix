@@ -12,10 +12,6 @@
           imports = [
             inputs.shared-kernel.haskellFlakeProjectModules.output
           ];
-          packages = { };
-          settings = {
-            generic-deriving.check = false;
-          };
           autoWire = [ "packages" "checks" ];
         };
         process-compose = { };

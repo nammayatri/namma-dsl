@@ -45,6 +45,7 @@ data QueryDef = QueryDef
     kvFunction :: String,
     params :: [((String, String), Bool)],
     whereClause :: WhereClause,
+    orderBy :: (String, Order),
     takeFullObjectAsInput :: Bool
   }
   deriving (Show)
@@ -52,6 +53,8 @@ data QueryDef = QueryDef
 data WhereClause = EmptyWhere | Leaf (String, String, Maybe Operator) | Query (Operator, [WhereClause]) deriving (Show)
 
 data Operator = And | Or | In | Eq | GreaterThan | LessThan | GreaterThanOrEq | LessThanOrEq deriving (Show, Eq)
+
+data Order = Asc | Desc deriving (Show, Eq)
 
 comparisonOperator :: [Operator]
 comparisonOperator = [In, Eq, GreaterThan, LessThan, GreaterThanOrEq, LessThanOrEq]

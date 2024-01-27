@@ -12,7 +12,7 @@ import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
 import NammaDSL.DSL.Syntax.API (ApiType (..))
-import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..))
+import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
 import System.Directory (createDirectoryIfMissing)
 import System.IO
 import Text.Regex.TDFA ((=~))
@@ -154,3 +154,6 @@ mkList _ = []
 extraOperation :: String -> ExtraOperations
 extraOperation "EXTRA_QUERY_FILE" = EXTRA_QUERY_FILE
 extraOperation _ = error "Invalid extra operation"
+
+defaultOrderBy :: (String, Order)
+defaultOrderBy = ("createdAt", Desc)

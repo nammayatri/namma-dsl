@@ -25,7 +25,7 @@ import qualified Debug.Trace as DT
 import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Utils (extraOperation, figureOutImports, getFieldRelationAndHaskellType, isMaybeType, lowercaseFirstLetter, makeTypeQualified, mkList, valueToString, _String)
+import NammaDSL.Utils hiding (typeDelimiter)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
@@ -335,6 +335,7 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                         haskellType,
                         Just Eq
                       ),
+                  orderBy = defaultOrderBy,
                   takeFullObjectAsInput = False
                 },
               QueryDef
@@ -347,6 +348,7 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                         haskellType,
                         Just Eq
                       ),
+                  orderBy = defaultOrderBy,
                   takeFullObjectAsInput = False
                 }
             ]
@@ -393,7 +395,7 @@ parseImports fields typObj =
 
 searchForKey :: [FieldDef] -> String -> ((String, String), Bool)
 searchForKey fields inputKey = do
-  let errorMsg = error $ T.pack $ "Query param " ++ inputKey ++ " not found in fields"
+  let errorMsg = error $ T.pack $ "Param " ++ inputKey ++ " not found in fields"
   let filedDef = fromMaybe errorMsg $ find ((== inputKey) . fieldName) fields
   ((inputKey, haskellType filedDef), isEncrypted filedDef)
 
@@ -408,7 +410,8 @@ parseQueries moduleName excludedList dList fields impObj obj = do
             params = addDefaultUpdatedAtToQueryParams queryName $ map (first (second makeTypeQualified')) $ fromMaybe [] (queryDataObj ^? ix "params" . _Array . to V.toList . to (map (searchForKey fields . valueToString)))
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix "kvFunction" . _String)
             whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix "where" . to (parseWhereClause makeTypeQualified' "eq" fields))
-         in QueryDef queryName kvFunction params whereClause False
+            orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix "orderBy" . to (parseOrderBy fields))
+         in QueryDef queryName kvFunction params whereClause orderBy False
 
   case mbQueries of
     Just queries -> map parseQuery queries
@@ -419,6 +422,33 @@ parseQueries moduleName excludedList dList fields impObj obj = do
       if "update" `L.isPrefixOf` queryName
         then if any (\((k, _), _) -> k == "updatedAt") params then params else params <> [(("updatedAt", "Kernel.Prelude.UTCTime"), False)]
         else params
+
+parseOrderBy :: [FieldDef] -> Value -> (String, Order)
+parseOrderBy fields (String st) = do
+  let ((key_, _), _) = searchForKey fields (T.unpack st)
+  (key_, Desc)
+parseOrderBy fields (Object obj) = do
+  let obj' = KM.toList obj
+  extractFieldOrder fields obj'
+parseOrderBy _ val = error $ T.pack $ "Invalid orderBy: Must be a string or an object: " <> show val
+
+extractFieldOrder :: [FieldDef] -> [(Key, Value)] -> (String, Order)
+extractFieldOrder fields input = do
+  let fieldValue = fromMaybe (error "`field` param is missing for orderBy") $ lookupString "field" input
+  let orderValue = fromMaybe (error "`order` param is missing for orderBy") $ lookupString "order" input
+  if unique "field" input && unique "order" input
+    then do
+      let ((key_, _), _) = searchForKey fields fieldValue
+      (key_, castOrder orderValue)
+    else error "`field` and `order` should be unique"
+  where
+    lookupString key = fmap valueToString . lookup (fromString key)
+    unique key xs = length (filter ((== fromString key) . fst) xs) == 1
+
+    castOrder :: String -> Order
+    castOrder "desc" = Desc
+    castOrder "asc" = Asc
+    castOrder _ = error "Order type can be either `desc` or `asc`"
 
 parseWhereClause :: (String -> String) -> String -> [FieldDef] -> Value -> WhereClause
 parseWhereClause mkQTypeFunc operatorStr fields (String st) = do

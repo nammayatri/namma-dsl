@@ -291,7 +291,7 @@ orderAndLimit :: QueryDef -> String
 orderAndLimit query = do
   if query.kvFunction `elem` ["findAllWithOptionsKV", "findAllWithOptionsKV'", "findAllWithOptionsKVScheduler", "findAllWithOptionsDb"]
     then
-      "    (Se.Desc Beam.createdAt)\n"
+      "    (Se." ++ show (snd query.orderBy) ++ " Beam." ++ (fst query.orderBy) ++ ")\n"
         ++ "    limit\n"
         ++ "    offset\n\n"
     else "\n"
@@ -461,8 +461,8 @@ spaces n = replicate n ' '
 
 defaultQueryDefs :: TableDef -> [QueryDef]
 defaultQueryDefs tableDef =
-  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimayKeyWhereClause False,
-    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimayKeyWhereClause True
+  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimayKeyWhereClause defaultOrderBy False,
+    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimayKeyWhereClause defaultOrderBy True
   ]
   where
     getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [((String, String), Bool)]
