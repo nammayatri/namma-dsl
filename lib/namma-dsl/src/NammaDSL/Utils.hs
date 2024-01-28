@@ -56,6 +56,7 @@ defaultTypeImports tp = case tp of
   "HighPrecMeters" -> Just "Kernel.Types.Common"
   "Kilometers" -> Just "Kernel.Types.Common"
   "HighPrecMoney" -> Just "Kernel.Types.Common"
+  "Seconds" -> Just "Kernel.Types.Common"
   _ -> Nothing
 
 removeOccurrence :: String -> String -> String
