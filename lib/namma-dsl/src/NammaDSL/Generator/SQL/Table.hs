@@ -14,35 +14,35 @@ mkSnake :: BeamField -> String
 mkSnake = quietSnake . bFieldName
 
 -- Generates SQL for creating a table and altering it to add columns
-generateSQL :: Maybe MigrationFile -> TableDef -> String
-generateSQL (Just oldSqlFile) tableDef = do
+generateSQL :: Database -> Maybe MigrationFile -> TableDef -> String
+generateSQL database (Just oldSqlFile) tableDef = do
   let (updatedFields, newFields, deletedFields, pkChanged) = getUpdatesAndRest oldSqlFile tableDef
       tableName = tableNameSql tableDef
       anyChanges = length (updatedFields <> newFields <> deletedFields) > 0
-      updateQueries = generateUpdateSQL tableName updatedFields
-      pkChangeQuery = if pkChanged then "ALTER TABLE atlas_app." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL tableDef else ""
-      newColumnQueries = addColumnSQL tableName newFields
-      deleteQueries = generateDeleteSQL tableName deletedFields
+      updateQueries = generateUpdateSQL database tableName updatedFields
+      pkChangeQuery = if pkChanged then "ALTER TABLE " <> database <> "." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL database tableDef else ""
+      newColumnQueries = addColumnSQL database tableName newFields
+      deleteQueries = generateDeleteSQL database tableName deletedFields
   if anyChanges || pkChanged
     then oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, deleteQueries, pkChangeQuery])
     else oldSqlFile.rawLastSqlFile
-generateSQL Nothing tableDef =
-  createTableSQL tableDef ++ "\n" ++ alterTableSQL tableDef ++ "\n" ++ addKeySQL tableDef
+generateSQL database Nothing tableDef =
+  createTableSQL database tableDef ++ "\n" ++ alterTableSQL database tableDef ++ "\n" ++ addKeySQL database tableDef
 
 updateStamp :: String
 updateStamp = "\n\n\n------- SQL updates -------\n\n"
 
-generateDeleteSQL :: String -> [BeamField] -> String
-generateDeleteSQL tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> do
-  "ALTER TABLE atlas_app." ++ tableName ++ " DROP COLUMN " ++ (mkSnake beamField) ++ ";"
+generateDeleteSQL :: Database -> String -> [BeamField] -> String
+generateDeleteSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> do
+  ("ALTER TABLE " <> database <> ".") ++ tableName ++ " DROP COLUMN " ++ (mkSnake beamField) ++ ";"
 
-generateUpdateSQL :: String -> [BeamField] -> String
-generateUpdateSQL tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdaes -> case fieldUpdaes of
-  DropDefault -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP DEFAULT;"
-  AddDefault _ -> maybe "" (\dv -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET DEFAULT " <> dv <> ";") (bDefaultVal beamField)
-  TypeChange -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " TYPE " <> (bSqlType beamField) <> ";"
-  DropNotNull -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP NOT NULL;"
-  AddNotNull -> "ALTER TABLE atlas_app." <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET NOT NULL;"
+generateUpdateSQL :: Database -> String -> [BeamField] -> String
+generateUpdateSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdaes -> case fieldUpdaes of
+  DropDefault -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP DEFAULT;"
+  AddDefault _ -> maybe "" (\dv -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET DEFAULT " <> dv <> ";") (bDefaultVal beamField)
+  TypeChange -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " TYPE " <> (bSqlType beamField) <> ";"
+  DropNotNull -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP NOT NULL;"
+  AddNotNull -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET NOT NULL;"
   DropColumn -> ""
 
 whichChanges :: BeamField -> BeamField -> [SqlFieldUpdates]
@@ -105,41 +105,41 @@ getUpdatesAndRest oldSqlFile tableDef = do
   (updatedFields, newFields, deletedFields, isPkChanged)
 
 -- SQL for creating an empty table
-createTableSQL :: TableDef -> String
-createTableSQL tableDef =
-  "CREATE TABLE atlas_app." ++ tableNameSql tableDef ++ " ();\n"
+createTableSQL :: Database -> TableDef -> String
+createTableSQL database tableDef =
+  "CREATE TABLE " <> database <> "." ++ tableNameSql tableDef ++ " ();\n"
 
 -- SQL for altering the table to add each column
-alterTableSQL :: TableDef -> String
-alterTableSQL tableDef =
-  intercalate "\n" $ map (addColumnSQL (tableNameSql tableDef) . beamFields) $ filter (isNothing . relation) (fields tableDef)
+alterTableSQL :: Database -> TableDef -> String
+alterTableSQL database tableDef =
+  intercalate "\n" $ map (addColumnSQL database (tableNameSql tableDef) . beamFields) $ filter (isNothing . relation) (fields tableDef)
 
 -- SQL for adding a single column with constraints
-addColumnSQL :: String -> [BeamField] -> String
-addColumnSQL tableName beamFields =
+addColumnSQL :: Database -> String -> [BeamField] -> String
+addColumnSQL database tableName beamFields =
   intercalate "\n" $
     map
       ( \fieldDef ->
           if bIsEncrypted fieldDef
             then
-              generateAlterColumnSQL (mkSnake fieldDef ++ "_hash") "bytea" fieldDef
+              generateAlterColumnSQL database (mkSnake fieldDef ++ "_hash") "bytea" fieldDef
                 ++ "\n"
-                ++ generateAlterColumnSQL (mkSnake fieldDef ++ "_encrypted") "character varying(255)" fieldDef
-            else generateAlterColumnSQL (mkSnake fieldDef) (bSqlType fieldDef) fieldDef
+                ++ generateAlterColumnSQL database (mkSnake fieldDef ++ "_encrypted") "character varying(255)" fieldDef
+            else generateAlterColumnSQL database (mkSnake fieldDef) (bSqlType fieldDef) fieldDef
       )
       beamFields
   where
-    generateAlterColumnSQL :: String -> String -> BeamField -> String
-    generateAlterColumnSQL fieldName_ sqlType_ beamField =
-      "ALTER TABLE atlas_app." ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [fieldName_, sqlType_]) ++ " "
+    generateAlterColumnSQL :: Database -> String -> String -> BeamField -> String
+    generateAlterColumnSQL database' fieldName_ sqlType_ beamField =
+      ("ALTER TABLE " <> database' <> ".") ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [fieldName_, sqlType_]) ++ " "
         ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
         ++ maybe "" (" default " ++) (bDefaultVal beamField)
         ++ ";"
 
-addKeySQL :: TableDef -> String
-addKeySQL tableDef =
+addKeySQL :: Database -> TableDef -> String
+addKeySQL database tableDef =
   let keys = map quietSnake $ primaryKey tableDef <> secondaryKey tableDef
-   in "ALTER TABLE atlas_app." ++ (tableNameSql tableDef) ++ " ADD PRIMARY KEY ( "
+   in ("ALTER TABLE " <> database <> ".") ++ (tableNameSql tableDef) ++ " ADD PRIMARY KEY ( "
         ++ intercalate ", " keys
         ++ ");"
 

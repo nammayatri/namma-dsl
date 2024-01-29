@@ -50,14 +50,15 @@ mkDomainType filePath yaml = do
   tableDef <- storageParser yaml
   mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateDomainType t)) tableDef
 
-mkSQLFile :: FilePath -> FilePath -> IO ()
-mkSQLFile filePath yaml = do
+mkSQLFile :: Maybe String -> FilePath -> FilePath -> IO ()
+mkSQLFile db filePath yaml = do
+  let database = fromMaybe "atlas_app" db
   tableDef <- storageParser yaml
   mapM_
     ( \t -> do
         let filename = (tableNameSql t ++ ".sql")
         mbOldMigrationFile <- getOldSqlFile $ filePath </> filename
-        writeToFile filePath filename (generateSQL mbOldMigrationFile t)
+        writeToFile filePath filename (generateSQL database mbOldMigrationFile t)
     )
     tableDef
 
