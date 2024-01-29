@@ -21,6 +21,8 @@ data MigrationFile = MigrationFile
 
 data ExtraOperations = EXTRA_QUERY_FILE deriving (Show, Eq)
 
+type Database = String
+
 data TableDef = TableDef
   { tableNameHaskell :: String,
     tableNameSql :: String,

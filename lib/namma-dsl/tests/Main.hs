@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module Main where
@@ -18,7 +19,7 @@ generateAllExample = do
   mkBeamTable "./output/Beam" storageYamlFilePath
   mkBeamQueries "./output/Queries" (Just "./output/src/Queries") storageYamlFilePath
   mkDomainType "./output/Domain/Type" storageYamlFilePath
-  mkSQLFile "./output/SQL" storageYamlFilePath
+  mkSQLFile (Just "atlas_bpp") "./output/SQL" storageYamlFilePath
   mkServantAPI "./output" apiYamlFilePath
   mkDomainHandler "./output/Domain" apiYamlFilePath
 
