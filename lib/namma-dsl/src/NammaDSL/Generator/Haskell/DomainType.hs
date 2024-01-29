@@ -117,26 +117,30 @@ fieldDefToHaskell fieldDef =
 
 createDefaultImports :: TableDef -> [String]
 createDefaultImports tableDef =
-  ["Kernel.Prelude"] <> ["Tools.Beam.UtilsTH" | shouldImportUtilsTH (fromMaybe [] $ types tableDef)]
+  ["Kernel.Prelude"] -- <> ["Tools.Beam.UtilsTH" | shouldImportUtilsTH (fromMaybe [] $ types tableDef)]
     <> ["Kernel.Utils.TH" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
     <> ["Data.Aeson" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
     <> ["Kernel.External.Encryption" | tableDef.containsEncryptedField]
 
-shouldImportUtilsTH :: [TypeObject] -> Bool
-shouldImportUtilsTH typeObj =
-  any
-    ( \case
-        TypeObject (_, (fields, _)) -> isEnum fields
-    )
-    typeObj
+-- shouldImportUtilsTH :: [TypeObject] -> Bool
+-- shouldImportUtilsTH typeObj =
+--   any
+--     ( \case
+--         TypeObject (_, (fields, _)) -> isEnum fields
+--     )
+--     typeObj
 
 isHttpInstanceDerived :: [TypeObject] -> Bool
 isHttpInstanceDerived typeObj =
   any (\case TypeObject (_, (_, derive)) -> "HttpInstance" `elem` derive) typeObj
 
-isListInstanceDerived :: [TypeObject] -> Bool
-isListInstanceDerived typeObj =
-  any (\case TypeObject (_, (_, derive)) -> "'ListInstance" `elem` derive) typeObj
+isListInstanceDerived :: [TypeObject] -> String -> Bool
+isListInstanceDerived typeObj tpName =
+  any (\case TypeObject (nm, (_, derive)) -> (tpName == nm) && "'ListInstance" `elem` derive) typeObj
+
+isJsonInstanceDerived :: [TypeObject] -> String -> Bool
+isJsonInstanceDerived typeObj tpName =
+  any (\case TypeObject (nm, (_, derive)) -> (tpName == nm) && "'JsonInstance" `elem` derive) typeObj
 
 isEnum :: [(String, String)] -> Bool
 isEnum [("enum", _)] = True
@@ -155,8 +159,10 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
       let enumValues = L.splitOn "," values
        in ( ("data " <> typeName <> " = " <> L.intercalate " | " enumValues) :
             ["  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj) <> ")\n\n"],
-            ("$(mkBeamInstancesForEnum ''" <> typeName <> ")\n\n") :
-              ["$(mkHttpInstancesForEnum ''" <> typeName <> ")\n" | isHttpInstanceDerived typeObj]
+            ("$(Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList ''" <> typeName <> ")\n\n") :
+            ( ["$(mkHttpInstancesForEnum ''" <> typeName <> ")\n" | isHttpInstanceDerived typeObj]
+                ++ ["$(Tools.Beam.UtilsTH.mkBeamInstancesForJson ''" <> typeName <> ")\n" | isJsonInstanceDerived typeObj typeName]
+            )
           )
     generateEnum _ _ = error "Invalid enum definition"
 
@@ -175,7 +181,8 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
       ( ["data " <> typeName <> " = " <> typeName]
           ++ ["  { " <> L.intercalate ",\n    " (map formatField fields) <> "\n  }"]
           ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\case TypeObject (_, (_, d)) -> d) typeObj) <> ")\n"],
-        ["$(Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList ''" <> typeName <> ")\n" | isListInstanceDerived typeObj]
+        ["$(Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList ''" <> typeName <> ")\n" | isListInstanceDerived typeObj typeName]
+          ++ ["$(Tools.Beam.UtilsTH.mkBeamInstancesForJson ''" <> typeName <> ")\n" | isJsonInstanceDerived typeObj typeName]
       )
 
     formatField :: (String, String) -> String
