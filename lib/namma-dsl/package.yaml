@@ -89,6 +89,7 @@ dependencies:
   - flatparse
   - utf8-string
   - containers
+  - process
 
 ghc-options:
   - -Wall

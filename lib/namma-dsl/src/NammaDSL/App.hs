@@ -15,9 +15,42 @@ import NammaDSL.Generator.SQL
 import NammaDSL.Utils
 import System.Directory
 import System.FilePath
+import System.Process (readProcess)
 
 version :: String
 version = "1.0.2"
+
+data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
+
+getHashObjectAtHEAD :: FilePath -> IO (Maybe String)
+getHashObjectAtHEAD filePath = do
+  let gitCommand = "git ls-tree -r HEAD " ++ filePath
+  result <- readProcess "bash" ["-c", gitCommand] []
+  let hashObject = if result == "" then Nothing else Just $ words result !! 2
+  return hashObject
+
+getHashObject :: FilePath -> IO (Maybe String)
+getHashObject filePath = do
+  let gitCommand = "git hash-object " ++ filePath
+  result <- readProcess "bash" ["-c", gitCommand] []
+  let hashObject = if result == "" then Nothing else Just $ init result
+  return hashObject
+
+getFileState :: FilePath -> IO FileState
+getFileState filePath = do
+  exists <- doesFileExist filePath
+  if exists
+    then do
+      hashObjectAtHEAD <- getHashObjectAtHEAD filePath
+      hashObject <- getHashObject filePath
+      return $
+        if isNothing hashObjectAtHEAD
+          then NEW
+          else
+            if hashObjectAtHEAD /= hashObject
+              then CHANGED
+              else UNCHANGED
+    else return NOT_EXIST
 
 mkBeamTable :: FilePath -> FilePath -> IO ()
 mkBeamTable filePath yaml = do
