@@ -102,6 +102,7 @@ library
     , parsec
     , persistent
     , persistent-postgresql
+    , process
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
@@ -204,6 +205,7 @@ test-suite namma-dsl-tests
     , parsec
     , persistent
     , persistent-postgresql
+    , process
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
