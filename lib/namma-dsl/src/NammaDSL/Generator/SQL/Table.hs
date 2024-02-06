@@ -8,6 +8,7 @@ import qualified Data.Set as DS
 -- import qualified Debug.Trace as DT
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.Utils (removeBeamFieldsWRTRelation)
 import Text.Casing (quietSnake)
 
 mkSnake :: BeamField -> String
@@ -112,7 +113,7 @@ createTableSQL database tableDef =
 -- SQL for altering the table to add each column
 alterTableSQL :: Database -> TableDef -> String
 alterTableSQL database tableDef =
-  intercalate "\n" $ map (addColumnSQL database (tableNameSql tableDef) . beamFields) $ filter (isNothing . relation) (fields tableDef)
+  intercalate "\n" $ map (addColumnSQL database (tableNameSql tableDef) . beamFields) $ filter (removeBeamFieldsWRTRelation . relation) (fields tableDef)
 
 -- SQL for adding a single column with constraints
 addColumnSQL :: Database -> String -> [BeamField] -> String

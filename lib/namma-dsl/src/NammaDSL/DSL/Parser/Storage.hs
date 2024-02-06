@@ -294,6 +294,45 @@ storageParser filepath = do
           tableDef = map (parseTableDef dList yml) $ filter ((/= "imports") . fst) modelList
       pure $ map (modifyRelationalTableDef tableDef) tableDef
 
+modifyWithIdRelationalField :: FieldDef -> FieldDef
+modifyWithIdRelationalField fieldDef =
+  case relation fieldDef of
+    Just WithId ->
+      fieldDef
+        { beamFields =
+            [ BeamField
+                { bFieldName = (fieldName fieldDef) ++ "Id",
+                  hFieldType = haskellType fieldDef,
+                  bFieldType = "Kernel.Prelude.Maybe Kernel.Prelude.Text",
+                  bConstraints = [],
+                  bSqlType = "character varying(36)",
+                  bDefaultVal = Nothing,
+                  bFieldUpdates = [],
+                  bfieldExtractor = ["Kernel.Types.Id.getId", "(.id) <$>"],
+                  bToTType = Nothing,
+                  bIsEncrypted = False
+                }
+            ]
+        }
+    Just WithIdStrict ->
+      fieldDef
+        { beamFields =
+            [ BeamField
+                { bFieldName = (fieldName fieldDef) ++ "Id",
+                  hFieldType = haskellType fieldDef,
+                  bFieldType = "Kernel.Prelude.Text",
+                  bConstraints = [NotNull],
+                  bSqlType = "character varying(36)",
+                  bDefaultVal = Nothing,
+                  bFieldUpdates = [],
+                  bfieldExtractor = ["Kernel.Types.Id.getId", "(.id)"],
+                  bToTType = Nothing,
+                  bIsEncrypted = False
+                }
+            ]
+        }
+    _ -> fieldDef
+
 modifyRelationalTableDef :: [TableDef] -> TableDef -> TableDef
 modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
   let mbForeignTable = find (\tDef -> tableDef.tableNameHaskell `elem` tDef.relationalTableNamesHaskell) allTableDefs
@@ -361,7 +400,7 @@ parseTableDef dList importObj (parseDomainName, obj) =
       parsedTypes = view _1 <$> parsedTypesAndExcluded
       excludedList = view _2 <$> parsedTypesAndExcluded
       enumList = maybe [] (view _3) parsedTypesAndExcluded
-      parsedFields = parseFields (Just parseDomainName) excludedList dList enumList (fromMaybe [] parsedTypes) importObj obj
+      parsedFields = map modifyWithIdRelationalField $ parseFields (Just parseDomainName) excludedList dList enumList (fromMaybe [] parsedTypes) importObj obj
       containsEncryptedField = any isEncrypted parsedFields
       parsedImports = parseImports parsedFields (fromMaybe [] parsedTypes)
       parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to mkList . to M.fromList) obj
@@ -550,7 +589,7 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
       --defaultsObj = obj ^? (ix "default" . _Object)
       getFieldDef field =
         let fieldName = fst field
-            haskellType = snd field
+            (haskellType, optionalRelation) = break (== '|') $ snd field
             fieldKey = fromString fieldName
             --sqlType = fromMaybe (findMatchingSqlType enumList haskellType) (sqlTypeObj >>= preview (ix fieldKey . _String))
             --beamType = fromMaybe (findBeamType haskellType) (beamTypeObj >>= preview (ix fieldKey . _String))
@@ -561,7 +600,7 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
             defaultImportModule = "Domain.Types."
             getbeamFields = makeBeamFields (fromMaybe (error "Module name not found") moduleName) excludedList dataList enumList fieldName haskellType definedTypes impObj obj
             typeQualifiedHaskellType = makeTypeQualified moduleName excludedList (Just dataList) defaultImportModule impObj haskellType
-            fieldRelationAndModule = getFieldRelationAndHaskellType typeQualifiedHaskellType
+            fieldRelationAndModule = getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
          in FieldDef
               { fieldName = fieldName,
                 haskellType = typeQualifiedHaskellType,
