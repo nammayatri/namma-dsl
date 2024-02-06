@@ -72,7 +72,7 @@ data FieldDef = FieldDef
   }
   deriving (Show)
 
-data FieldRelation = OneToOne | MaybeOneToOne | OneToMany deriving (Show, Eq)
+data FieldRelation = OneToOne | MaybeOneToOne | OneToMany | WithId | WithIdStrict deriving (Show, Eq)
 
 data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT deriving (Show, Eq, Ord)
 

@@ -9,12 +9,14 @@ import Data.Char (isLower, toLower, toUpper)
 import Data.List (intercalate, nub)
 import qualified Data.List as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
+import qualified Data.List.Split as L
 import qualified Data.Text as T
 import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
 import NammaDSL.DSL.Syntax.API (ApiType (..))
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
 import System.Directory (createDirectoryIfMissing)
 import System.IO
+--import Debug.Trace(traceShowId)
 import Text.Regex.TDFA ((=~))
 
 apiTypeToText :: ApiType -> Text
@@ -70,20 +72,30 @@ regexExec str pattern' = do
     snd4 (_, _, _, x) = x
 
 getFieldRelationAndHaskellType :: String -> Maybe (FieldRelation, String)
-getFieldRelationAndHaskellType str = do
+getFieldRelationAndHaskellType str' = do
   let patternOneToOne' :: String = "^Domain\\.Types\\..*\\.(.*)$"
       patternMaybeOneToOne' :: String = "^Kernel.Prelude.Maybe Domain\\.Types\\..*\\.(.*)$"
       patternOneToMany' :: String = "^\\[Domain\\.Types\\..*\\.(.*)\\]$"
-      fieldRelationAndHaskellType =
-        case (regexExec str patternOneToOne', regexExec str patternMaybeOneToOne', regexExec str patternOneToMany') of
-          (Just haskellType, Nothing, Nothing) -> Just (OneToOne, haskellType)
-          (Nothing, Just haskellType, Nothing) -> Just (MaybeOneToOne, haskellType)
-          (Nothing, Nothing, Just haskellType) -> Just (OneToMany, haskellType)
-          (_, _, _) -> Nothing
-  if isJust fieldRelationAndHaskellType && validatePattern
-    then fieldRelationAndHaskellType
-    else Nothing
+      patternWithId :: String = "WithId"
+  if patternWithId `L.isInfixOf` optionalRelation
+    then
+      if "Kernel.Prelude.Maybe" `L.isPrefixOf` str
+        then Just (WithId, getModuleNameAfterLastDot str)
+        else Just (WithIdStrict, getModuleNameAfterLastDot str)
+    else
+      let fieldRelationAndHaskellType = case (regexExec str patternOneToOne', regexExec str patternMaybeOneToOne', regexExec str patternOneToMany') of
+            (Just haskellType, Nothing, Nothing) -> Just (OneToOne, haskellType)
+            (Nothing, Just haskellType, Nothing) -> Just (MaybeOneToOne, haskellType)
+            (Nothing, Nothing, Just haskellType) -> Just (OneToMany, haskellType)
+            (_, _, _) -> Nothing
+       in if isJust fieldRelationAndHaskellType && validatePattern
+            then fieldRelationAndHaskellType
+            else Nothing
   where
+    getModuleNameAfterLastDot :: String -> String
+    getModuleNameAfterLastDot = last . L.splitOn "."
+
+    (str, optionalRelation) = break (== '|') str'
     validatePattern =
       case splitOn "." str of
         [_, _, third, fourth] -> third == fourth
@@ -91,8 +103,9 @@ getFieldRelationAndHaskellType str = do
 
 -- makeTypeQualified (Maybe Module name)
 makeTypeQualified :: Maybe String -> Maybe [String] -> Maybe [String] -> String -> Object -> String -> String
-makeTypeQualified moduleName excludedList dList defaultImportModule obj str = concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str)
+makeTypeQualified moduleName excludedList dList defaultImportModule obj str' = (concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str)) <> opt
   where
+    (str, opt) = break (== '|') str'
     getQualifiedImport :: String -> Maybe String
     getQualifiedImport tk = case preview (ix "imports" . key (fromString tk) . _String) obj of
       Just t -> Just t
@@ -158,3 +171,10 @@ extraOperation _ = error "Invalid extra operation"
 
 defaultOrderBy :: (String, Order)
 defaultOrderBy = ("createdAt", Desc)
+
+removeBeamFieldsWRTRelation :: Maybe FieldRelation -> Bool
+removeBeamFieldsWRTRelation = \case
+  Just WithId -> True
+  Just WithIdStrict -> True
+  Nothing -> True
+  _ -> False
