@@ -22,7 +22,7 @@ generateBeamTable tableDef =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
-          _moduleNm = "Storage.Beam." <> (capitalize $ tableNameHaskell tableDef),
+          _moduleNm = "Storage.Beam." <> capitalize (tableNameHaskell tableDef),
           _simpleImports = packageOverride $ ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
           _qualifiedImports = packageOverride $ ["Database.Beam as B"] <> imports tableDef,
           _codeBody = generateCodeBody mkCodeBody tableDef

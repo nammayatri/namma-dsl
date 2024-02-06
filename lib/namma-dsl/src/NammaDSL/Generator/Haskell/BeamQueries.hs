@@ -338,7 +338,7 @@ beamQueries = do
 
 toTTypeConversionFunction :: Maybe TransformerFunction -> String -> String -> String -> String
 toTTypeConversionFunction transformer haskellType fieldName beamFieldName
-  | isJust transformer = if tfType (fromJust transformer) == MonadicT then beamFieldName ++ "'" else tfName (fromJust transformer) ++ " ( " ++ fieldName ++ " )"
+  | isJust transformer = if tfType (fromJust transformer) == MonadicT then beamFieldName ++ "'" else tfName (fromJust transformer) ++ " " ++ fieldName
   | "Kernel.Types.Id.Id " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.getId " ++ fieldName
   | "Kernel.Types.Id.Id " `Text.isInfixOf` Text.pack haskellType = "Kernel.Types.Id.getId <$> " ++ fieldName
   | "Kernel.Types.Id.ShortId " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.getShortId " ++ fieldName
@@ -356,15 +356,14 @@ fromTTypeConversionFunction fromTTypeFunc haskellType fieldName relation dFieldN
   | otherwise = fieldName
 
 fromTTypeMConversionFunction :: String -> String -> String -> Maybe FieldRelation -> String
-fromTTypeMConversionFunction tableNameHaskell haskellType fieldName relation
-  | isJust relation =
-    case fromJust relation of
+fromTTypeMConversionFunction tableNameHaskell haskellType fieldName relation = \case
+  Just relation -> case fromJust relation of
       OneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id) >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
       MaybeOneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
       OneToMany -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findAllBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
       WithIdStrict _ isCached -> fieldName ++ "' <- " ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById (Kernel.Types.Id.Id " ++ fieldName ++ "Id)" ++ " >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
       WithId _ isCached -> fieldName ++ "' <- maybe (pure Nothing) (" ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById . Kernel.Types.Id.Id) " ++ fieldName ++ "Id"
-  | otherwise = ""
+  Nothing -> ""
   where
     getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
 
@@ -461,8 +460,8 @@ generateQueryParam allFields ((field, tp), encrypted) =
             ( \bField ->
                 if isJust fieldDef.relation
                   then case fromJust fieldDef.relation of
-                    WithIdStrict _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
-                    WithId _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
+                    WithIdStrict _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " " ++ correctSetField field tp bField
+                    WithId _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " " ++ correctSetField field tp bField
                     _ -> ""
                   else
                     if encrypted
@@ -471,7 +470,7 @@ generateQueryParam allFields ((field, tp), encrypted) =
                         let encryptedField = "Se.Set Beam." ++ field ++ "Encrypted $ " ++ field ++ mapOperator ++ "unEncrypted . (.encrypted)"
                         let hashField = "Se.Set Beam." ++ field ++ "Hash $ " ++ field ++ mapOperator ++ "(.hash)"
                         encryptedField ++ ",\n      " ++ hashField
-                      else "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
+                      else "Se.Set Beam." ++ bFieldName bField ++ " " ++ correctSetField field tp bField
             )
             fieldDef.beamFields
 
@@ -488,7 +487,7 @@ correctSetField field tp beamField
         pure $
           if tfType tf == MonadicT
             then bFieldName beamField ++ "'"
-            else tfName tf ++ " $ " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
+            else "$ " ++ tfName tf ++ " " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
 
 correctEqField :: String -> String -> BeamField -> String
 correctEqField field tp beamField
@@ -500,7 +499,7 @@ correctEqField field tp beamField
         pure $
           if tfType tf == MonadicT
             then bFieldName beamField ++ "'"
-            else tfName tf ++ " $ " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
+            else "$ " + tfName tf ++ " " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
 
 mapWithIndex :: (Int -> a -> b) -> [a] -> [b]
 mapWithIndex f = zipWith f [0 ..]
@@ -510,7 +509,7 @@ generateClause :: [FieldDef] -> Bool -> Int -> Int -> WhereClause -> String
 generateClause _ _ _ _ EmptyWhere = ""
 generateClause allFields isFullObjInp n i (Leaf (field, tp, op)) =
   let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
-   in intercalate " , " $ filter (/= "") $ map (\bfield -> (if i == 0 then " " else spaces n) ++ "Se.Is Beam." ++ bFieldName bfield ++ " $ " ++ operator (fromMaybe Eq op) ++ " $ " ++ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)) fieldDef.beamFields
+   in intercalate " , " $ filter (/= "") $ map (\bfield -> (if i == 0 then " " else spaces n) ++ "Se.Is Beam." ++ bFieldName bfield ++ " $ " ++ operator (fromMaybe Eq op) ++ " " ++ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)) fieldDef.beamFields
 generateClause allFields isFullObjInp n i (Query (op, clauses)) =
   (if i == 0 then " " else spaces n)
     ++ ( if op `elem` comparisonOperator
@@ -576,22 +575,15 @@ generateFromTypeFuncs = do
 
 -- Helper to determine the operator
 operator :: Operator -> String
-operator And = "Se.And"
-operator Or = "Se.Or"
-operator In = "Se.In"
-operator Eq = "Se.Eq"
-operator LessThan = "Se.LessThan"
-operator LessThanOrEq = "Se.LessThanOrEq"
-operator GreaterThan = "Se.GreaterThan"
-operator GreaterThanOrEq = "Se.GreaterThanOrEq"
+operator = ("Se." <>) . show
 
 spaces :: Int -> String
 spaces n = replicate n ' '
 
 defaultQueryDefs :: TableDef -> [QueryDef]
 defaultQueryDefs tableDef =
-  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimayKeyWhereClause defaultOrderBy False,
-    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimayKeyWhereClause defaultOrderBy True
+  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimaryKeyWhereClause defaultOrderBy False,
+    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimaryKeyWhereClause defaultOrderBy True
   ]
   where
     getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [((String, String), Bool)]
@@ -603,8 +595,8 @@ defaultQueryDefs tableDef =
     primaryKeysAndTypes :: [(String, String, Maybe Operator)]
     primaryKeysAndTypes = getAllPrimaryKeyWithTypes (primaryKey tableDef) (fields tableDef)
 
-    findByPrimayKeyWhereClause :: WhereClause
-    findByPrimayKeyWhereClause = Query (And, Leaf <$> primaryKeysAndTypes)
+    findByPrimaryKeyWhereClause :: WhereClause
+    findByPrimaryKeyWhereClause = Query (And, Leaf <$> primaryKeysAndTypes)
 
 makeExtractorFunction :: [String] -> Maybe String
 makeExtractorFunction funcs = if null funcs then Nothing else Just $ "( " ++ intercalate " . " funcs ++ " )"

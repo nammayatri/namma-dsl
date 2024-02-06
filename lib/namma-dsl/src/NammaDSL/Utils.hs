@@ -67,7 +67,7 @@ removeOccurrence remove str = T.unpack $ T.replace (T.pack remove) (T.pack "") (
 regexExec :: String -> String -> Maybe String
 regexExec str pattern' = do
   let match = str =~ pattern' :: (String, String, String, [String])
-  listToMaybe $ filter (/= "") $ snd4 match
+  find (/= "") (snd4 match)
   where
     snd4 (_, _, _, x) = x
 
@@ -108,7 +108,7 @@ getFieldRelationAndHaskellType str' = do
 
 -- makeTypeQualified (Maybe Module name)
 makeTypeQualified :: Maybe String -> Maybe [String] -> Maybe [String] -> String -> Object -> String -> String
-makeTypeQualified moduleName excludedList dList defaultImportModule obj str' = (concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str)) <> opt
+makeTypeQualified moduleName excludedList dList defaultImportModule obj str' = concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str) <> opt
   where
     (str, opt) = break (== '|') str'
     getQualifiedImport :: String -> Maybe String
@@ -117,20 +117,15 @@ makeTypeQualified moduleName excludedList dList defaultImportModule obj str' = (
       Nothing -> defaultTypeImports tk
 
     replaceOrKeep :: String -> String
-    replaceOrKeep word =
-      if '.' `elem` word || ',' `elem` word
-        then word
-        else
-          if isJust moduleName && isJust excludedList && word `elem` (fromJust excludedList)
-            then defaultImportModule ++ fromJust moduleName ++ "." ++ word
-            else
-              if isJust dList && L.elem word (fromJust dList)
-                then defaultImportModule ++ word ++ "." ++ word
-                else maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e"] then word else error $ T.pack ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
+    replaceOrKeep word
+      | '.' `elem` word || ',' `elem` word = word
+      | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = defaultImportModule ++ fromJust moduleName ++ "." ++ word
+      | isJust dList && L.elem word (fromJust dList) = defaultImportModule ++ word ++ "." ++ word
+      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e"] then word else error $ T.pack ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
 
 figureOutImports :: [String] -> [String]
 figureOutImports fieldTypes =
-  nub $ filter (not . null) $ concatMap (map (extractUptoLastDot)) extractWords
+  nub $ filter (not . null) $ concatMap (map extractUptoLastDot) extractWords
   where
     extractWords = splitWhen (`elem` typeDelimiter) <$> fieldTypes
     extractUptoLastDot str =
