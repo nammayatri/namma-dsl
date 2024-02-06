@@ -46,6 +46,17 @@ generateDomainHandler input =
         preventSameModuleImports $
           (T.unpack <$> _imports input)
             <> defaultQualifiedImport
+            <> ["Domain.Types.Merchant.MerchantOperatingCity" | ifProviderPlatform]
+
+    ifProviderPlatform :: Bool
+    ifProviderPlatform =
+      any
+        ( \authType' -> do
+            case authType' of
+              Just (TokenAuth PROVIDER_TYPE) -> True
+              _ -> False
+        )
+        (map _authType $ _apis input)
 
     preventSameModuleImports :: [String] -> [String]
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))

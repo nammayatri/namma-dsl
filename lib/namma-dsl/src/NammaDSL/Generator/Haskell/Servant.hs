@@ -51,6 +51,7 @@ generateServantAPI input =
                         (T.unpack <$> concatMap handlerSignature (_apis input))
                     )
            )
+        <> ["Domain.Types.Merchant.MerchantOperatingCity" | ifProviderPlatform]
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -84,6 +85,16 @@ generateServantAPI input =
         ( \authType' -> do
             case authType' of
               Just (SafetyWebhookAuth _) -> True
+              _ -> False
+        )
+        (map _authType $ _apis input)
+
+    ifProviderPlatform :: Bool
+    ifProviderPlatform =
+      any
+        ( \authType' -> do
+            case authType' of
+              Just (TokenAuth PROVIDER_TYPE) -> True
               _ -> False
         )
         (map _authType $ _apis input)
