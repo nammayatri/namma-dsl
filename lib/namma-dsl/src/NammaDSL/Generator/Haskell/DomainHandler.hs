@@ -67,9 +67,9 @@ generateDomainHandler input =
 mkCodeBody :: ApisM ()
 mkCodeBody = do
   input <- ask
-  let seperator = newLine *> newLine
+  let separator = newLine *> newLine
   onNewLine $
-    intercalateA seperator (map handlerFunctionDef (_apis input))
+    intercalateA separator (map handlerFunctionDef (_apis input))
   where
     handlerFunctionDef :: ApiTT -> ApisM ()
     handlerFunctionDef apiT =

@@ -37,7 +37,7 @@ data TableDef = TableDef
     relationalTableNamesHaskell :: [String],
     derives :: Maybe String,
     beamTableInstance :: BeamInstance,
-    extaOperations :: [ExtraOperations]
+    extraOperations :: [ExtraOperations]
   }
   deriving (Show)
 

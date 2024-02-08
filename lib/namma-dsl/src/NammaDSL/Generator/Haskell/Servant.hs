@@ -158,10 +158,9 @@ mkCodeBody = do
                 <> "\n"
 
 generateWithFlowHandlerAPI :: Bool -> Text
-generateWithFlowHandlerAPI isDashboardAuth = do
-  case isDashboardAuth of
-    True -> " = withFlowHandlerAPI' $ "
-    False -> " = withFlowHandlerAPI $ "
+generateWithFlowHandlerAPI = \case
+  True -> " = withFlowHandlerAPI' $ "
+  False -> " = withFlowHandlerAPI $ "
 
 apiTTToText :: ApiTT -> ApisM ()
 apiTTToText apiTT =

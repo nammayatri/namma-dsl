@@ -26,7 +26,7 @@ data ExtraQueryCode = ExtraQueryCode
 
 generateBeamQueries :: TableDef -> BeamQueryCode
 generateBeamQueries tableDef =
-  if EXTRA_QUERY_FILE `elem` extaOperations tableDef
+  if EXTRA_QUERY_FILE `elem` extraOperations tableDef
     then
       WithExtraQueryFile $
         ExtraQueryCode
@@ -112,7 +112,7 @@ generateBeamQueries tableDef =
     allQualifiedImports :: [String]
     allQualifiedImports =
       [ "Domain.Types." ++ tableNameHaskell tableDef,
-        "Storage.Beam." ++ (capitalize $ tableNameHaskell tableDef) ++ " as Beam",
+        "Storage.Beam." ++ capitalize (tableNameHaskell tableDef) ++ " as Beam",
         "Sequelize as Se"
       ]
         <> imports tableDef
@@ -157,7 +157,7 @@ extraFileCodeBody = do
 mkCodeBody :: StorageM ()
 mkCodeBody = do
   tableDef <- ask
-  let isDefault = EXTRA_QUERY_FILE `notElem` extaOperations tableDef
+  let isDefault = EXTRA_QUERY_FILE `notElem` extraOperations tableDef
   generateDefaultCreateQuery
   generateDefaultCreateManyQuery
   beamQueries
@@ -228,9 +228,9 @@ fromTTypeInstance = do
         ++ "      Just\n"
         ++ "        "
         ++ "Domain.Types."
-        ++ (tableNameHaskell tableDef)
+        ++ tableNameHaskell tableDef
         ++ "."
-        ++ (tableNameHaskell tableDef)
+        ++ tableNameHaskell tableDef
         ++ "\n"
         ++ "          { "
         ++ intercalate ",\n           " (map fromField (fields tableDef))
@@ -304,9 +304,9 @@ toTTypeInstance = do
       "instance ToTType' Beam." ++ tableNameHaskell tableDef ++ " Domain.Types." ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
         ++ "  toTType' "
         ++ "Domain.Types."
-        ++ (tableNameHaskell tableDef)
+        ++ tableNameHaskell tableDef
         ++ "."
-        ++ (tableNameHaskell tableDef)
+        ++ tableNameHaskell tableDef
         ++ " {..} = do\n"
         ++ (show $ generateCodeBody (monadicToTTypeTransformerCode Nothing 4) tableDef)
         ++ "\n    Beam."
@@ -356,13 +356,13 @@ fromTTypeConversionFunction fromTTypeFunc haskellType fieldName relation dFieldN
   | otherwise = fieldName
 
 fromTTypeMConversionFunction :: String -> String -> String -> Maybe FieldRelation -> String
-fromTTypeMConversionFunction tableNameHaskell haskellType fieldName relation = \case
-  Just relation -> case fromJust relation of
-      OneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id) >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
-      MaybeOneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
-      OneToMany -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findAllBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
-      WithIdStrict _ isCached -> fieldName ++ "' <- " ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById (Kernel.Types.Id.Id " ++ fieldName ++ "Id)" ++ " >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
-      WithId _ isCached -> fieldName ++ "' <- maybe (pure Nothing) (" ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById . Kernel.Types.Id.Id) " ++ fieldName ++ "Id"
+fromTTypeMConversionFunction tableNameHaskell haskellType fieldName = \case
+  Just relation -> case relation of
+    OneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id) >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
+    MaybeOneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
+    OneToMany -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findAllBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
+    WithIdStrict _ isCached -> fieldName ++ "' <- " ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById (Kernel.Types.Id.Id " ++ fieldName ++ "Id)" ++ " >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
+    WithId _ isCached -> fieldName ++ "' <- maybe (pure Nothing) (" ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById . Kernel.Types.Id.Id) " ++ fieldName ++ "Id"
   Nothing -> ""
   where
     getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
@@ -499,7 +499,7 @@ correctEqField field tp beamField
         pure $
           if tfType tf == MonadicT
             then bFieldName beamField ++ "'"
-            else "$ " + tfName tf ++ " " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
+            else "$ " ++ tfName tf ++ " " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
 
 mapWithIndex :: (Int -> a -> b) -> [a] -> [b]
 mapWithIndex f = zipWith f [0 ..]

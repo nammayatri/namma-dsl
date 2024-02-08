@@ -95,7 +95,7 @@ requestType apiTT =
     Just (ApiReq reqType _) -> getLastElement reqType
     Nothing -> do
       let apiName = handlerFunctionName apiTT
-      T.pack $ (capitalize (T.unpack apiName)) <> "Request"
+      T.pack $ capitalize (T.unpack apiName) <> "Request"
 
 responseType :: ApiTT -> Text
 responseType apiTT =
@@ -110,8 +110,8 @@ getUrlText api = do
   foldl urlPartToText T.empty (_urlParts api)
   where
     urlPartToText :: Text -> UrlParts -> Text
-    urlPartToText acc (UnitPath name) = acc <> (T.pack " <> \"/") <> name <> (T.pack "\"")
-    urlPartToText acc (Capture name _) = acc <> (T.pack " <> \"/\" <> ") <> name
+    urlPartToText acc (UnitPath name) = acc <> T.pack " <> \"/" <> name <> T.pack "\""
+    urlPartToText acc (Capture name _) = acc <> T.pack " <> \"/\" <> " <> name
     urlPartToText acc (QueryParam name _ _) =
       if "?" `T.isInfixOf` acc
         then acc <> " <> \"&" <> name <> "=\" <> " <> name
