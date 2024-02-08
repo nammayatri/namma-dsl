@@ -62,7 +62,7 @@ generateServantAPI input =
         "API.Types.UI."
           <> T.unpack (_moduleName input)
           <> " ("
-          <> intercalate ", " (map (T.unpack . fst) (input ^. apiTypes . types))
+          <> intercalate ", " (map (\(TypeObject (nm, _)) -> T.unpack nm) (input ^. apiTypes . types))
           <> ")"
       ]
         <> ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]

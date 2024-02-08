@@ -42,7 +42,7 @@ data ApiTT = ApiTT
 
 $(makeLenses ''ApiTT)
 
-type TypeObject = (Text, [(Text, Text)])
+newtype TypeObject = TypeObject (Text, ([(Text, Text)], [Text])) deriving (Show)
 
 data TypesInfo = TypesInfo
   { _typeImports :: [Text],

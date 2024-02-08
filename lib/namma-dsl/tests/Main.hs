@@ -21,6 +21,7 @@ generateAllExample = do
   mkDomainType "./output/Domain/Type" storageYamlFilePath
   mkSQLFile (Just "atlas_bpp") "./output/SQL" storageYamlFilePath
   mkServantAPI "./output" apiYamlFilePath
+  mkApiTypes "./output/Api/Types" apiYamlFilePath
   mkDomainHandler "./output/Domain" apiYamlFilePath
 
 main :: IO ()

@@ -60,7 +60,7 @@ generateHaskellTypes typeObj =
         T.unlines (concatMap processType typeObj)
   where
     processType :: TypeObject -> [Text]
-    processType (typeName, fields)
+    processType (TypeObject (typeName, (fields, _)))
       | isEnum fields = generateEnum typeName fields
       | otherwise = generateDataStructure typeName fields
 
@@ -72,14 +72,20 @@ generateHaskellTypes typeObj =
     generateEnum typeName [("enum", values)] =
       let enumValues = T.splitOn "," values
        in ("data " <> typeName <> " = " <> T.intercalate " | " enumValues) :
-          ["  deriving (Eq, Show, Generic, ToJSON, FromJSON, ToSchema)\n"]
+          ["  deriving (Eq, Show, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"]
     generateEnum _ _ = error "Invalid enum definition"
+
+    addRestDerivations :: [Text] -> Text
+    addRestDerivations [] = ""
+    addRestDerivations derivations = if T.length derives > 0 then ", " <> derives else ""
+      where
+        derives = T.intercalate ", " (filter (\x -> not $ T.isPrefixOf "'" x) derivations)
 
     generateDataStructure :: Text -> [(Text, Text)] -> [Text]
     generateDataStructure typeName fields =
       ["data " <> typeName <> " = " <> typeName]
         ++ ["  { " <> T.intercalate ",\n    " (map formatField fields) <> "\n  }"]
-        ++ ["  deriving (Generic, ToJSON, FromJSON, ToSchema)\n"]
+        ++ ["  deriving (Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"]
 
     formatField :: (Text, Text) -> Text
     formatField (fieldName, fieldType) = fieldName <> " :: " <> fieldType
