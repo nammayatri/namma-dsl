@@ -9,7 +9,7 @@ import Control.Lens.Operators
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
 import qualified Data.Aeson.KeyMap as KM
-import Data.Aeson.Lens (_Array, _Object, _Value)
+import Data.Aeson.Lens (key, _Array, _Object, _Value)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.Char (toUpper)
@@ -481,8 +481,8 @@ extractFieldOrder fields input = do
       (key_, castOrder orderValue)
     else error "`field` and `order` should be unique"
   where
-    lookupString key = fmap valueToString . lookup (fromString key)
-    unique key xs = length (filter ((== fromString key) . fst) xs) == 1
+    lookupString _key = fmap valueToString . lookup (fromString _key)
+    unique _key xs = length (filter ((== fromString _key) . fst) xs) == 1
 
     castOrder :: String -> Order
     castOrder "desc" = Desc
@@ -596,7 +596,7 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
             --constraints = L.nub $ getDefaultFieldConstraints fieldName haskellType ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
             --defaultValue = maybe (sqlDefaultsWrtName fieldName) pure (defaultsObj >>= preview (ix fieldKey . _String))
             --parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String)
-            parseFromTType = obj ^? (ix "fromTType" . _Object) >>= preview (ix fieldKey . _String)
+            parseFromTType = obj ^? (ix "fromTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
             defaultImportModule = "Domain.Types."
             getbeamFields = makeBeamFields (fromMaybe (error "Module name not found") moduleName) excludedList dataList enumList fieldName haskellType definedTypes impObj obj
             typeQualifiedHaskellType = makeTypeQualified moduleName excludedList (Just dataList) defaultImportModule impObj haskellType
@@ -635,6 +635,24 @@ beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTy
     findIfComplexType :: String -> Maybe TypeObject
     findIfComplexType tpp = find (\(TypeObject (nm, (arrOfFields, _))) -> (nm == tpp || tpp == "Domain.Types." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
 
+makeTF :: Object -> String -> TransformerFunction
+makeTF impObj func =
+  TransformerFunction
+    { tfName = qualifiedName,
+      tfType = tfType'
+    }
+  where
+    (name, details) = L.break (== '|') func
+    tfType' = if 'M' `L.elem` details then MonadicT else PureT
+    isImported = 'I' `L.elem` details || '.' `L.elem` name
+    qualifiedName =
+      if isImported
+        then
+          if '.' `L.elem` name
+            then name
+            else maybe (error $ T.pack $ "Function " <> func <> " not imported") (\nm -> nm <> "." <> name) $ impObj ^? ix "imports" . key (fromString name) . _String
+        else name
+
 makeBeamFields :: String -> Maybe [String] -> [String] -> [String] -> String -> String -> [TypeObject] -> Object -> Object -> [BeamField]
 makeBeamFields moduleName excludedList dataList enumList fieldName haskellType definedTypes impObj obj =
   let constraintsObj = obj ^? (ix "constraints" . _Object)
@@ -649,7 +667,7 @@ makeBeamFields moduleName excludedList dataList enumList fieldName haskellType d
             sqlType = fromMaybe (findMatchingSqlType enumList tpp) (sqlTypeObj >>= preview (ix fieldKey . _String))
             defaultImportModule = "Domain.Types."
             defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
-            parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String)
+            parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
             constraints = L.nub $ getDefaultFieldConstraints fName tpp ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
             isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
          in BeamField

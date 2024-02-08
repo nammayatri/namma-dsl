@@ -65,7 +65,7 @@ data FieldDef = FieldDef
   { fieldName :: String,
     haskellType :: String,
     beamFields :: [BeamField],
-    fromTType :: Maybe String,
+    fromTType :: Maybe TransformerFunction,
     isEncrypted :: Bool,
     relation :: Maybe FieldRelation,
     relationalTableNameHaskell :: Maybe String
@@ -87,6 +87,14 @@ instance Eq SqlFieldUpdates where
   (==) TypeChange TypeChange = True
   (==) _ _ = False
 
+data TFType = PureT | MonadicT deriving (Show, Eq)
+
+data TransformerFunction = TransformerFunction
+  { tfName :: String,
+    tfType :: TFType
+  }
+  deriving (Show)
+
 data BeamField = BeamField
   { bFieldName :: String,
     hFieldType :: String,
@@ -96,9 +104,11 @@ data BeamField = BeamField
     bSqlType :: String,
     bDefaultVal :: Maybe String,
     bfieldExtractor :: [String],
-    bToTType :: Maybe String,
+    bToTType :: Maybe TransformerFunction,
     bIsEncrypted :: Bool
   }
   deriving (Show)
 
 type StorageM = BuilderM TableDef
+
+type Spaces = Int
