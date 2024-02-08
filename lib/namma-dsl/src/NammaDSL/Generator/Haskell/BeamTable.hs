@@ -148,8 +148,13 @@ tableInstancesToBeam = do
 
 fieldDefToBeam :: FieldDef -> StorageM ()
 fieldDefToBeam hfield = do
-  intercalateA newLine $
-    map
+  intercalateA
+    ( do
+        comma
+        newLine
+        replicateM 4 space
+    )
+    $ map
       ( \field ->
           let bfName = tellM (bFieldName field)
            in if bIsEncrypted field

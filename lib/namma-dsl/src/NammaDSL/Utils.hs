@@ -178,3 +178,6 @@ removeBeamFieldsWRTRelation = \case
   Just WithIdStrict -> True
   Nothing -> True
   _ -> False
+
+getAllJust :: [Maybe a] -> [a]
+getAllJust x = fromMaybe [] $ sequence $ filter isJust x
