@@ -23,7 +23,7 @@ generateBeamTable tableDef =
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
           _moduleNm = "Storage.Beam." <> capitalize (tableNameHaskell tableDef),
-          _simpleImports = packageOverride $ ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
+          _simpleImports = packageOverride ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
           _qualifiedImports = packageOverride $ ["Database.Beam as B"] <> imports tableDef,
           _codeBody = generateCodeBody mkCodeBody tableDef
         }
@@ -58,13 +58,13 @@ primaryKeyToBeam = do
     onNewLine $ withSpace $ withinSpaces $ tellM "primaryKey ="
     tableName
     "Id "
-      `followedBy` (tellM $ fromMaybe (error $ T.pack ("Primary Key not found for " ++ tableNameHaskell def)) (getPrimaryKeys (primaryKey def)))
+      `followedBy` tellM (fromMaybe (error $ T.pack ("Primary Key not found for " ++ tableNameHaskell def)) (getPrimaryKeys (primaryKey def)))
   where
     fetchPrimaryKey tableDef = tellM $ fromMaybe (error $ T.pack ("Primary Key not found for " ++ tableNameHaskell tableDef)) (generateKeyTypes (filter (\f -> fieldName f `elem` primaryKey tableDef) $ fields tableDef))
     getPrimaryKeys [] = Nothing
     getPrimaryKeys [xs] = Just $ ". " <> xs
     getPrimaryKeys xs = Just $ foldl' handleAccPrimary "<$> " xs
-    handleAccPrimary acc x = if acc == "<$> " then (acc ++ x) else acc ++ " <*> " ++ x
+    handleAccPrimary acc x = if acc == "<$> " then acc ++ x else acc ++ " <*> " ++ x
 
     getBeamTypeOfPrimaryKey :: FieldDef -> String
     getBeamTypeOfPrimaryKey field = case beamFields field of
@@ -134,7 +134,7 @@ tableInstancesToBeam = do
     tellM "T ['"
     tellM $ intercalate ", '" (primaryKey def)
     tellM "] "
-    if (null (secondaryKey def))
+    if null (secondaryKey def)
       then tellM "[]"
       else
         tellM $
@@ -169,7 +169,7 @@ fieldDefToBeam hfield = do
                   space
                   wrapMaybe "Text" field
                   comma
-                  replicateM 4 space
+                  replicateM_ 4 space
                   bfName
                   tellM "Hash :: B.C f"
                   space

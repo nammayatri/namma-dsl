@@ -74,9 +74,9 @@ generateEncryptionInstance tableDef =
           "instance EncryptedItem " ++ baseType ++ " where",
           "  type Unencrypted " ++ baseType ++ " = (" ++ decryptBaseType ++ ", HashSalt)",
           "  encryptItem (" ++ baseType ++ " {..}, salt) = do",
-          unlines ((catMaybes $ map encryptField (fields tableDef)) ++ ["    return " ++ baseType ++ " {" ++ L.intercalate "," (catMaybes $ map mapFields (fields tableDef)) ++ ", ..}"]),
+          unlines (mapMaybe encryptField (fields tableDef) ++ ["    return " ++ baseType ++ " {" ++ L.intercalate "," (mapMaybe mapFields (fields tableDef)) ++ ", ..}"]),
           "  decryptItem " ++ baseType ++ " {..} = do",
-          unlines ((catMaybes $ map decryptField (fields tableDef)) ++ ["    return (" ++ baseType ++ " {" ++ L.intercalate "," (catMaybes $ map mapFields (fields tableDef)) ++ ", ..}, \"\")\n"]),
+          unlines (mapMaybe decryptField (fields tableDef) ++ ["    return (" ++ baseType ++ " {" ++ L.intercalate "," (mapMaybe mapFields (fields tableDef)) ++ ", ..}, \"\")\n"]),
           "instance EncryptedItem' " ++ baseType ++ " where",
           "  type UnencryptedItem " ++ baseType ++ " = " ++ decryptBaseType,
           "  toUnencrypted a salt = (a, salt)",
@@ -108,7 +108,7 @@ generateEncryptionInstance tableDef =
         else Nothing
 
 removeDefaultImports :: [String] -> String -> [String] -> [String]
-removeDefaultImports defaultImports moduleName = filter ((/=) moduleName) . filter (`notElem` defaultImports)
+removeDefaultImports defaultImports moduleName = filter (moduleName /=) . filter (`notElem` defaultImports)
 
 -- Convert FieldDef to Haskell field
 fieldDefToHaskell :: FieldDef -> StorageM ()
@@ -132,8 +132,7 @@ createDefaultImports tableDef =
 --     typeObj
 
 isHttpInstanceDerived :: [TypeObject] -> Bool
-isHttpInstanceDerived typeObj =
-  any (\case TypeObject (_, (_, derive)) -> "HttpInstance" `elem` derive) typeObj
+isHttpInstanceDerived = any (\case TypeObject (_, (_, derive)) -> "HttpInstance" `elem` derive)
 
 isListInstanceDerived :: [TypeObject] -> String -> Bool
 isListInstanceDerived typeObj tpName =
@@ -169,7 +168,7 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
 
     addRestDerivations :: [String] -> String
     addRestDerivations [] = ""
-    addRestDerivations derivations = if length derives > 0 then ", " <> derives else ""
+    addRestDerivations derivations = if not (null derives) then ", " <> derives else ""
       where
         derives = L.intercalate ", " (map toInstanceName $ filter (\x -> not $ L.isPrefixOf "'" x) derivations)
 

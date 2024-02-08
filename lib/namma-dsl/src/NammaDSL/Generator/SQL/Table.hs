@@ -19,7 +19,7 @@ generateSQL :: Database -> Maybe MigrationFile -> TableDef -> String
 generateSQL database (Just oldSqlFile) tableDef = do
   let (updatedFields, newFields, deletedFields, pkChanged) = getUpdatesAndRest oldSqlFile tableDef
       tableName = tableNameSql tableDef
-      anyChanges = length (updatedFields <> newFields <> deletedFields) > 0
+      anyChanges = not (null (updatedFields <> newFields <> deletedFields))
       updateQueries = generateUpdateSQL database tableName updatedFields
       pkChangeQuery = if pkChanged then "ALTER TABLE " <> database <> "." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL database tableDef else ""
       newColumnQueries = addColumnSQL database tableName newFields
@@ -35,10 +35,10 @@ updateStamp = "\n\n\n------- SQL updates -------\n\n"
 
 generateDeleteSQL :: Database -> String -> [BeamField] -> String
 generateDeleteSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> do
-  ("ALTER TABLE " <> database <> ".") ++ tableName ++ " DROP COLUMN " ++ (mkSnake beamField) ++ ";"
+  ("ALTER TABLE " <> database <> ".") ++ tableName ++ " DROP COLUMN " ++ mkSnake beamField ++ ";"
 
 generateUpdateSQL :: Database -> String -> [BeamField] -> String
-generateUpdateSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdaes -> case fieldUpdaes of
+generateUpdateSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdates -> case fieldUpdates of
   DropDefault -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " DROP DEFAULT;"
   AddDefault _ -> maybe "" (\dv -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET DEFAULT " <> dv <> ";") (bDefaultVal beamField)
   TypeChange -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " TYPE " <> (bSqlType beamField) <> ";"
@@ -140,7 +140,7 @@ addColumnSQL database tableName beamFields =
 addKeySQL :: Database -> TableDef -> String
 addKeySQL database tableDef =
   let keys = map quietSnake $ primaryKey tableDef <> secondaryKey tableDef
-   in ("ALTER TABLE " <> database <> ".") ++ (tableNameSql tableDef) ++ " ADD PRIMARY KEY ( "
+   in ("ALTER TABLE " <> database <> ".") ++ tableNameSql tableDef ++ " ADD PRIMARY KEY ( "
         ++ intercalate ", " keys
         ++ ");"
 
