@@ -47,7 +47,7 @@ parseApis obj =
     mkQualified = T.pack . U.makeTypeQualified (Just $ T.unpack modelName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
     modelName = fromMaybe (error "Required module name") $ parseModule obj
     parsedTypeObjects = typesToTypeObject (parseTypes obj)
-    parsedTypeDataNames = map (T.unpack . fst) parsedTypeObjects
+    parsedTypeDataNames = map (\(TypeObject (nm, _)) -> T.unpack nm) parsedTypeObjects
     parseTyp = markQualifiedTypesInTypes modelName parsedTypeObjects obj
     allApis = fromMaybe (error "Failed to parse apis") $ preview (ix "apis" . _Array . to V.toList) obj >>= mapM parseSingleApi
     mkQApis aps = aps & apis . traverse %~ mkQUrlApiTT
@@ -67,22 +67,25 @@ parseApis obj =
 markQualifiedTypesInTypes :: Text -> [TypeObject] -> Object -> [TypeObject]
 markQualifiedTypesInTypes moduleName input obj =
   map
-    ( \(x, y) ->
-        ( x,
-          map
-            ( \(a, b) ->
-                ( a,
-                  if a == "enum"
-                    then mkEnumTypeQualified dataNames b
-                    else T.pack $ U.makeTypeQualified (Just $ T.unpack moduleName) (Just dataNames) Nothing defaultTypeImportModule obj (T.unpack b)
+    ( \(TypeObject (x, (y, z))) ->
+        TypeObject
+          ( x,
+            ( map
+                ( \(a, b) ->
+                    ( a,
+                      if a == "enum"
+                        then mkEnumTypeQualified dataNames b
+                        else T.pack $ U.makeTypeQualified (Just $ T.unpack moduleName) (Just dataNames) Nothing defaultTypeImportModule obj (T.unpack b)
+                    )
                 )
+                y,
+              z
             )
-            y
-        )
+          )
     )
     input
   where
-    dataNames = map (T.unpack . fst) input
+    dataNames = map (\(TypeObject (nm, _)) -> T.unpack nm) input
     defaultTypeImportModule = "API.Types.UI."
     mkEnumTypeQualified :: [String] -> Text -> Text
     mkEnumTypeQualified excluded enumTp =
@@ -93,10 +96,10 @@ extractComplexTypeImports :: Apis -> [Text]
 extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
   where
     isEnumType :: TypeObject -> Bool
-    isEnumType (_, arr) = any (\(a, _) -> a == "enum") arr
+    isEnumType (TypeObject (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
 
     figureOutImports' :: TypeObject -> [Text]
-    figureOutImports' tobj@(_, arr) =
+    figureOutImports' tobj@(TypeObject (_, (tps, _))) =
       let isEnum = isEnumType tobj
        in concatMap
             ( ( \potentialImport ->
@@ -106,7 +109,7 @@ extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (a
               )
                 . snd
             )
-            arr
+            tps
 
 extractImports :: Apis -> [Text]
 extractImports api =
@@ -230,7 +233,7 @@ figureOutImports imps = T.pack <$> U.figureOutImports (T.unpack <$> imps)
 
 typesToTypeObject :: Maybe Value -> [TypeObject]
 typesToTypeObject (Just (Object obj)) =
-  map (processType1) $ KM.toList obj
+  map processType1 (KM.toList obj)
   where
     extractFields :: KM.KeyMap Value -> [(T.Text, T.Text)]
     extractFields = map (first toText) . KM.toList . fmap extractString
@@ -242,8 +245,17 @@ typesToTypeObject (Just (Object obj)) =
       _ -> error "Unexpected type in array: "
     extractString _ = error "Non-string type found in field definition"
 
+    splitTypeAndDerivation :: [(Text, Text)] -> ([(Text, Text)], [Text])
+    splitTypeAndDerivation fields = (filter (\(k, _) -> k /= "derive") fields, extractDerive fields)
+      where
+        extractDerive :: [(Text, Text)] -> [Text]
+        extractDerive [] = []
+        extractDerive ((k, value) : xs)
+          | k == "derive" = T.split (== ',') value
+          | otherwise = extractDerive xs
+
     processType1 :: (Key, Value) -> TypeObject
     processType1 (typeName, Object typeDef) =
-      (toText typeName, extractFields typeDef)
+      TypeObject (toText typeName, splitTypeAndDerivation $ extractFields typeDef)
     processType1 _ = error "Expected an object in fields"
 typesToTypeObject _ = error "Expecting Object in Types"
