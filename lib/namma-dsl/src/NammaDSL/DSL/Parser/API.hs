@@ -197,6 +197,7 @@ getAuthType = \case
   "DashboardAuth MERCHANT_MAKER" -> DashboardAuth MERCHANT_MAKER
   "DashboardAuth MERCHANT_CHECKER" -> DashboardAuth MERCHANT_CHECKER
   "DashboardAuth MERCHANT_SERVER" -> DashboardAuth MERCHANT_SERVER
+  "DashboardAuth MERCHANT_USER" -> DashboardAuth MERCHANT_USER
   _ -> error "Not a valid auth type"
 
 getApiType :: Text -> ApiType
