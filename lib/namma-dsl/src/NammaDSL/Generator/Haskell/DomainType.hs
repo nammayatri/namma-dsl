@@ -38,6 +38,7 @@ generateDomainType tableDef =
 mkCodeBody :: StorageM ()
 mkCodeBody = do
   def <- ask
+  let derivations = fromMaybe (L.intercalate "," (derivingInstances $ containsEncryptedField def)) (derives def)
   let seperator = onNewLine $ tellM $ "  , "
   onNewLine $
     tellM $
@@ -47,7 +48,7 @@ mkCodeBody = do
       withinCurls $
         lineSpace $
           withinSpaces $ intercalateA seperator (map fieldDefToHaskell (fields def))
-  onNewLine $ tellM $ "  deriving (" ++ L.intercalate "," (derivingInstances $ containsEncryptedField def) ++ ")\n\n"
+  onNewLine $ tellM $ "  deriving (" ++ derivations ++ ")\n\n"
   if def.containsEncryptedField then generateEncryptionInstance def else pure ()
   onNewLine $ tellM $ maybe "" (uncurry (++) . generateHaskellTypes) (types def)
 

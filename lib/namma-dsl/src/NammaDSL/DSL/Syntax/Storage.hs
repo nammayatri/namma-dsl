@@ -35,8 +35,16 @@ data TableDef = TableDef
     types :: Maybe [TypeObject],
     containsEncryptedField :: Bool,
     relationalTableNamesHaskell :: [String],
+    derives :: Maybe String,
+    beamTableInstance :: BeamInstance,
     extaOperations :: [ExtraOperations]
   }
+  deriving (Show)
+
+data BeamInstance
+  = MakeTableInstances
+  | MakeTableInstancesGenericSchema
+  | MakeTableInstancesWithTModifier String
   deriving (Show)
 
 newtype TypeObject = TypeObject (String, ([(String, String)], [String])) --  (TypeName, ([(Field, HaskellType)], [InstanceToDerive]))
@@ -72,7 +80,11 @@ data FieldDef = FieldDef
   }
   deriving (Show)
 
-data FieldRelation = OneToOne | MaybeOneToOne | OneToMany | WithId | WithIdStrict deriving (Show, Eq)
+data FieldRelation = OneToOne | MaybeOneToOne | OneToMany | WithId Create FromCached | WithIdStrict Create FromCached deriving (Show, Eq)
+
+type Create = Bool
+
+type FromCached = Bool
 
 data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT deriving (Show, Eq, Ord)
 
