@@ -109,7 +109,6 @@ generateBeamQueries tableDef =
         "Kernel.Utils.Common (MonadFlow, CacheFlow, EsqDBFlow, getCurrentTime, fromMaybeM)",
         "Kernel.Types.Error"
       ]
-        <> concatMap getStorageRelationImports tableDef.fields
     allQualifiedImports :: [String]
     allQualifiedImports =
       [ "Domain.Types." ++ tableNameHaskell tableDef,
@@ -118,6 +117,7 @@ generateBeamQueries tableDef =
       ]
         <> imports tableDef
         <> getAllFunctionImports
+        <> concatMap getStorageRelationImports tableDef.fields
 
     getAllFunctionImports :: [String]
     getAllFunctionImports = fromTTypeFuncImports ++ toTTypeFuncImports
@@ -139,12 +139,15 @@ generateBeamQueries tableDef =
     getStorageRelationImports :: FieldDef -> [String]
     getStorageRelationImports fieldDef =
       case rel of
+        Just (WithId _ isCached, query) -> [getModule isCached ++ query]
+        Just (WithIdStrict _ isCached, query) -> [getModule isCached ++ query]
         Just (_, query) -> ["Storage.Queries." ++ query]
         Nothing -> []
       where
+        getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
         rel =
-          if isJust (relation fieldDef) && fromJust (relation fieldDef) `elem` [WithId, WithIdStrict]
-            then getFieldRelationAndHaskellType (fieldDef.haskellType <> "|WithId")
+          if isJust (relation fieldDef) && isWithIdRelation (fromJust (relation fieldDef))
+            then (\(_, b) -> (fromJust (relation fieldDef), b)) <$> getFieldRelationAndHaskellType (fieldDef.haskellType <> "|WithId")
             else getFieldRelationAndHaskellType fieldDef.haskellType
 
 extraFileCodeBody :: StorageM ()
@@ -190,12 +193,14 @@ generateDefaultCreateQuery = do
     makeCreateWithIdFunctionLine :: FieldDef -> String
     makeCreateWithIdFunctionLine field =
       case fromJust (relation field) of
-        WithId -> "  Kernel.Prelude.whenJust tbl." ++ fieldName field ++ " Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType ((haskellType field) <> "|WithId")) ++ ".create"
-        WithIdStrict -> "  Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType ((haskellType field) <> "|WithId")) ++ ".create tbl." ++ fieldName field
+        WithId True cache -> "  Kernel.Prelude.whenJust tbl." ++ fieldName field ++ " " ++ getModule cache ++ fromJust (snd <$> getFieldRelationAndHaskellType ((haskellType field) <> "|WithId")) ++ ".create"
+        WithIdStrict True cache -> "  " ++ getModule cache ++ fromJust (snd <$> getFieldRelationAndHaskellType ((haskellType field) <> "|WithId")) ++ ".create tbl." ++ fieldName field
         _ -> ""
+      where
+        getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
 
     getAllFieldsWithIdRelation :: [FieldDef] -> [FieldDef]
-    getAllFieldsWithIdRelation = filter (\f -> isJust (relation f) && fromJust (relation f) `elem` [WithId, WithIdStrict])
+    getAllFieldsWithIdRelation = filter (\f -> isJust (relation f) && isWithIdRelation (fromJust (relation f)))
 
 generateDefaultCreateManyQuery :: StorageM ()
 generateDefaultCreateManyQuery = do
@@ -339,12 +344,11 @@ toTTypeConversionFunction transformer haskellType fieldName beamFieldName
   | "Kernel.Types.Id.ShortId " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.getShortId " ++ fieldName
   | "Kernel.Types.Id.ShortId " `Text.isInfixOf` Text.pack haskellType = "Kernel.Types.Id.getShortId <$> " ++ fieldName
   | otherwise = fieldName
-  where
 
 fromTTypeConversionFunction :: Maybe TransformerFunction -> String -> String -> Maybe FieldRelation -> String -> String
 fromTTypeConversionFunction fromTTypeFunc haskellType fieldName relation dFieldName
   | isJust fromTTypeFunc = if tfType (fromJust fromTTypeFunc) == MonadicT then dFieldName ++ "'" else tfName (fromJust fromTTypeFunc) ++ " " ++ fieldName
-  | isJust relation = if fromJust relation `elem` [WithId, WithIdStrict] then dFieldName ++ "'" else fieldName ++ "'"
+  | isJust relation = if isWithIdRelation (fromJust relation) then dFieldName ++ "'" else fieldName ++ "'"
   | "Kernel.Types.Id.Id " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.Id " ++ fieldName
   | "Kernel.Types.Id.Id " `Text.isInfixOf` Text.pack haskellType = "Kernel.Types.Id.Id <$> " ++ fieldName
   | "Kernel.Types.Id.ShortId " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.ShortId " ++ fieldName
@@ -358,9 +362,11 @@ fromTTypeMConversionFunction tableNameHaskell haskellType fieldName relation
       OneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id) >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
       MaybeOneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
       OneToMany -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findAllBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
-      WithIdStrict -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById (Kernel.Types.Id.Id " ++ fieldName ++ "Id)" ++ " >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
-      WithId -> fieldName ++ "' <- maybe (pure Nothing) (Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById . Kernel.Types.Id.Id) " ++ fieldName ++ "Id"
+      WithIdStrict _ isCached -> fieldName ++ "' <- " ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById (Kernel.Types.Id.Id " ++ fieldName ++ "Id)" ++ " >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
+      WithId _ isCached -> fieldName ++ "' <- maybe (pure Nothing) (" ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById . Kernel.Types.Id.Id) " ++ fieldName ++ "Id"
   | otherwise = ""
+  where
+    getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
 
 toTTypeExtractor :: Maybe String -> String -> String
 toTTypeExtractor extractor field
@@ -440,7 +446,7 @@ getWhereClauseFieldNamesAndTypes (Query (_, clauses)) = concatMap getWhereClause
 
 generateBeamFunctionCall :: String -> String
 generateBeamFunctionCall kvFunction =
-  (if "update" `isPrefixOf` kvFunction then "\n   " ++ "now <- getCurrentTime" else "") ++ "\n   " ++ kvFunction ++ "\n"
+  (if "update" `isPrefixOf` kvFunction then "\n   " ++ "_now <- getCurrentTime" else "") ++ "\n   " ++ kvFunction ++ "\n"
 
 generateQueryParams :: [FieldDef] -> [((String, String), Bool)] -> String
 generateQueryParams _ [] = ""
@@ -455,8 +461,8 @@ generateQueryParam allFields ((field, tp), encrypted) =
             ( \bField ->
                 if isJust fieldDef.relation
                   then case fromJust fieldDef.relation of
-                    WithIdStrict -> "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
-                    WithId -> "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
+                    WithIdStrict _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
+                    WithId _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " $ " ++ correctSetField field tp bField
                     _ -> ""
                   else
                     if encrypted
@@ -475,7 +481,7 @@ correctSetField field tp beamField
   | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = "(Kernel.Types.Id.getShortId <$> " ++ field ++ ")"
   | "Kernel.Types.Id.Id " `isPrefixOf` tp = "(Kernel.Types.Id.getId " ++ field ++ ")"
   | "Kernel.Types.Id.ShortId " `isPrefixOf` tp = "(Kernel.Types.Id.getShortId " ++ field ++ ")"
-  | field == "updatedAt" = "now"
+  | field == "updatedAt" && isNothing (bToTType beamField) = "_now"
   | otherwise =
     fromMaybe (toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field) $
       bToTType beamField >>= \tf ->
@@ -602,3 +608,9 @@ defaultQueryDefs tableDef =
 
 makeExtractorFunction :: [String] -> Maybe String
 makeExtractorFunction funcs = if null funcs then Nothing else Just $ "( " ++ intercalate " . " funcs ++ " )"
+
+isWithIdRelation :: FieldRelation -> Bool
+isWithIdRelation = \case
+  WithId _ _ -> True
+  WithIdStrict _ _ -> True
+  _ -> False

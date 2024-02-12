@@ -76,12 +76,17 @@ getFieldRelationAndHaskellType str' = do
   let patternOneToOne' :: String = "^Domain\\.Types\\..*\\.(.*)$"
       patternMaybeOneToOne' :: String = "^Kernel.Prelude.Maybe Domain\\.Types\\..*\\.(.*)$"
       patternOneToMany' :: String = "^\\[Domain\\.Types\\..*\\.(.*)\\]$"
-      patternWithId :: String = "WithId"
-  if patternWithId `L.isInfixOf` optionalRelation
+      patternWithId :: String = "With(Cached){0,1}Id(Create){0,1}"
+      patternWithIdCreate :: String = "With(Cached){0,1}IdCreate"
+      patternFromCache :: String = "WithCachedId(Create){0,1}"
+      needToCreate = optionalRelation =~ patternWithIdCreate
+      isFromCached = optionalRelation =~ patternFromCache
+
+  if optionalRelation =~ patternWithId -- patternWithId `L.isInfixOf` optionalRelation
     then
       if "Kernel.Prelude.Maybe" `L.isPrefixOf` str
-        then Just (WithId, getModuleNameAfterLastDot str)
-        else Just (WithIdStrict, getModuleNameAfterLastDot str)
+        then Just (WithId needToCreate isFromCached, getModuleNameAfterLastDot str)
+        else Just (WithIdStrict needToCreate isFromCached, getModuleNameAfterLastDot str)
     else
       let fieldRelationAndHaskellType = case (regexExec str patternOneToOne', regexExec str patternMaybeOneToOne', regexExec str patternOneToMany') of
             (Just haskellType, Nothing, Nothing) -> Just (OneToOne, haskellType)
@@ -174,8 +179,8 @@ defaultOrderBy = ("createdAt", Desc)
 
 removeBeamFieldsWRTRelation :: Maybe FieldRelation -> Bool
 removeBeamFieldsWRTRelation = \case
-  Just WithId -> True
-  Just WithIdStrict -> True
+  Just (WithId _ _) -> True
+  Just (WithIdStrict _ _) -> True
   Nothing -> True
   _ -> False
 

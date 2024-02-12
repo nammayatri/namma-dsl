@@ -297,7 +297,7 @@ storageParser filepath = do
 modifyWithIdRelationalField :: FieldDef -> FieldDef
 modifyWithIdRelationalField fieldDef =
   case relation fieldDef of
-    Just WithId ->
+    Just (WithId _ _) ->
       fieldDef
         { beamFields =
             [ BeamField
@@ -314,7 +314,7 @@ modifyWithIdRelationalField fieldDef =
                 }
             ]
         }
-    Just WithIdStrict ->
+    Just (WithIdStrict _ _) ->
       fieldDef
         { beamFields =
             [ BeamField
@@ -406,9 +406,21 @@ parseTableDef dList importObj (parseDomainName, obj) =
       parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to mkList . to M.fromList) obj
       parsedQueries = parseQueries (Just parseDomainName) excludedList dList parsedFields importObj obj
       parsedExtraOperations = fromMaybe [] $ preview (ix "extraOperations" . _Array . to V.toList . to (map (extraOperation . valueToString))) obj
+      parsedDerives = preview (ix "derives" ._String) obj
+      parsedBeamTypeInstance = fromMaybe MakeTableInstances $ preview (ix "beamInstance" . _String . to mkBeamInstance) obj
       (primaryKey, secondaryKey) = extractKeys parsedFields
       relationalTableNamesHaskell = catMaybes $ map (.relationalTableNameHaskell) parsedFields
-   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedImportPackageOverrides parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell parsedExtraOperations
+   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedImportPackageOverrides parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell parsedDerives parsedBeamTypeInstance parsedExtraOperations
+
+mkBeamInstance :: String -> BeamInstance
+mkBeamInstance rw =
+  case instanceName of
+    "MakeTableInstances" -> MakeTableInstances
+    "MakeTableInstancesGenericSchema" -> MakeTableInstancesGenericSchema
+    "MakeTableInstancesWithTModifier" -> MakeTableInstancesWithTModifier extraParams
+    _ -> error $ T.pack $ "Unknow Beam Instance " <> instanceName
+  where
+    (instanceName, extraParams) = L.break (== ' ') rw
 
 parseImports :: [FieldDef] -> [TypeObject] -> [String]
 parseImports fields typObj =

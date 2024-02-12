@@ -118,6 +118,10 @@ tableInstancesToBeam :: StorageM ()
 tableInstancesToBeam = do
   def <- ask
   let tableName = tellM (tableNameHaskell def)
+  let (instanceName, extraInstanceParam) = case beamTableInstance def of
+        MakeTableInstances -> ("mkTableInstances", mempty)
+        MakeTableInstancesGenericSchema -> ("mkTableInstancesGenericSchema", mempty)
+        MakeTableInstancesWithTModifier prm -> ("mkTableInstancesWithTModifier", prm)
   onNewLine $ do
     tellM "type"
     withSpace tableName
@@ -140,11 +144,12 @@ tableInstancesToBeam = do
     tellM ")"
   onNewLine $ do
     newLine
-    tellM "$(mkTableInstances ''"
+    tellM $ "$(" ++ instanceName ++ " ''"
     tableName
     tellM "T \""
     tellM (tableNameSql def)
-    tellM "\")"
+    tellM "\""
+    tellM $ extraInstanceParam ++ ")"
 
 fieldDefToBeam :: FieldDef -> StorageM ()
 fieldDefToBeam hfield = do
