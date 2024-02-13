@@ -291,7 +291,7 @@ monadicToTTypeTransformerCode specificFields spaceCount = do
         ( \field ->
             bToTType field >>= \tf ->
               case tfType tf of
-                MonadicT -> Just $ bFieldName field ++ "' <- " ++ tfName tf ++ " $ " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor field) (fieldName hfield)
+                MonadicT -> Just $ bFieldName field ++ "' <- " ++ tfName tf ++$ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor field) (fieldName hfield)
                 PureT -> Nothing
         )
         (beamFields hfield)
@@ -338,7 +338,7 @@ beamQueries = do
 
 toTTypeConversionFunction :: Maybe TransformerFunction -> String -> String -> String -> String
 toTTypeConversionFunction transformer haskellType fieldName beamFieldName
-  | isJust transformer = if tfType (fromJust transformer) == MonadicT then beamFieldName ++ "'" else tfName (fromJust transformer) ++ " " ++ fieldName
+  | isJust transformer = if tfType (fromJust transformer) == MonadicT then beamFieldName ++ "'" else tfName (fromJust transformer) ++$ fieldName
   | "Kernel.Types.Id.Id " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.getId " ++ fieldName
   | "Kernel.Types.Id.Id " `Text.isInfixOf` Text.pack haskellType = "Kernel.Types.Id.getId <$> " ++ fieldName
   | "Kernel.Types.Id.ShortId " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.getShortId " ++ fieldName
@@ -347,7 +347,7 @@ toTTypeConversionFunction transformer haskellType fieldName beamFieldName
 
 fromTTypeConversionFunction :: Maybe TransformerFunction -> String -> String -> Maybe FieldRelation -> String -> String
 fromTTypeConversionFunction fromTTypeFunc haskellType fieldName relation dFieldName
-  | isJust fromTTypeFunc = if tfType (fromJust fromTTypeFunc) == MonadicT then dFieldName ++ "'" else tfName (fromJust fromTTypeFunc) ++ " " ++ fieldName
+  | isJust fromTTypeFunc = if tfType (fromJust fromTTypeFunc) == MonadicT then dFieldName ++ "'" else tfName (fromJust fromTTypeFunc) ++$ fieldName
   | isJust relation = if isWithIdRelation (fromJust relation) then dFieldName ++ "'" else fieldName ++ "'"
   | "Kernel.Types.Id.Id " `Text.isPrefixOf` Text.pack haskellType = "Kernel.Types.Id.Id " ++ fieldName
   | "Kernel.Types.Id.Id " `Text.isInfixOf` Text.pack haskellType = "Kernel.Types.Id.Id <$> " ++ fieldName
@@ -368,9 +368,7 @@ fromTTypeMConversionFunction tableNameHaskell haskellType fieldName = \case
     getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
 
 toTTypeExtractor :: Maybe String -> String -> String
-toTTypeExtractor extractor field
-  | isJust extractor = fromJust extractor ++ " (" ++ field ++ " )"
-  | otherwise = field
+toTTypeExtractor extractor field = maybe field (\x -> x ++ " " ++ field) extractor
 
 generateBeamQuery :: [FieldDef] -> String -> QueryDef -> StorageM ()
 generateBeamQuery allHaskellFields tableNameHaskell query = do
@@ -460,8 +458,8 @@ generateQueryParam allFields ((field, tp), encrypted) =
             ( \bField ->
                 if isJust fieldDef.relation
                   then case fromJust fieldDef.relation of
-                    WithIdStrict _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " " ++ correctSetField field tp bField
-                    WithId _ _ -> "Se.Set Beam." ++ bFieldName bField ++ " " ++ correctSetField field tp bField
+                    WithIdStrict _ _ -> "Se.Set Beam." ++ bFieldName bField ++$ correctSetField field tp bField
+                    WithId _ _ -> "Se.Set Beam." ++ bFieldName bField ++$ correctSetField field tp bField
                     _ -> ""
                   else
                     if encrypted
@@ -470,7 +468,7 @@ generateQueryParam allFields ((field, tp), encrypted) =
                         let encryptedField = "Se.Set Beam." ++ field ++ "Encrypted $ " ++ field ++ mapOperator ++ "unEncrypted . (.encrypted)"
                         let hashField = "Se.Set Beam." ++ field ++ "Hash $ " ++ field ++ mapOperator ++ "(.hash)"
                         encryptedField ++ ",\n      " ++ hashField
-                      else "Se.Set Beam." ++ bFieldName bField ++ " " ++ correctSetField field tp bField
+                      else "Se.Set Beam." ++ bFieldName bField ++$ correctSetField field tp bField
             )
             fieldDef.beamFields
 
@@ -487,7 +485,7 @@ correctSetField field tp beamField
         pure $
           if tfType tf == MonadicT
             then bFieldName beamField ++ "'"
-            else "$ " ++ tfName tf ++ " " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
+            else tfName tf ++$ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
 
 correctEqField :: String -> String -> BeamField -> String
 correctEqField field tp beamField
@@ -499,7 +497,7 @@ correctEqField field tp beamField
         pure $
           if tfType tf == MonadicT
             then bFieldName beamField ++ "'"
-            else "$ " ++ tfName tf ++ " " ++ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
+            else tfName tf ++$ toTTypeExtractor (makeExtractorFunction $ bfieldExtractor beamField) field
 
 mapWithIndex :: (Int -> a -> b) -> [a] -> [b]
 mapWithIndex f = zipWith f [0 ..]
@@ -509,7 +507,7 @@ generateClause :: [FieldDef] -> Bool -> Int -> Int -> WhereClause -> String
 generateClause _ _ _ _ EmptyWhere = ""
 generateClause allFields isFullObjInp n i (Leaf (field, tp, op)) =
   let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
-   in intercalate " , " $ filter (/= "") $ map (\bfield -> (if i == 0 then " " else spaces n) ++ "Se.Is Beam." ++ bFieldName bfield ++ " $ " ++ operator (fromMaybe Eq op) ++ " " ++ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)) fieldDef.beamFields
+   in intercalate " , " $ filter (/= "") $ map (\bfield -> (if i == 0 then " " else spaces n) ++ "Se.Is Beam." ++ bFieldName bfield ++$ operator (fromMaybe Eq op) ++$ (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)) fieldDef.beamFields
 generateClause allFields isFullObjInp n i (Query (op, clauses)) =
   (if i == 0 then " " else spaces n)
     ++ ( if op `elem` comparisonOperator
@@ -599,7 +597,10 @@ defaultQueryDefs tableDef =
     findByPrimaryKeyWhereClause = Query (And, Leaf <$> primaryKeysAndTypes)
 
 makeExtractorFunction :: [String] -> Maybe String
-makeExtractorFunction funcs = if null funcs then Nothing else Just $ "( " ++ intercalate " . " funcs ++ " )"
+makeExtractorFunction funcs =
+  if null funcs then Nothing else Just $ if length funcs > 1 then "( " ++ extractor ++ " )" else extractor
+  where
+    extractor = intercalate " . " funcs
 
 isWithIdRelation :: FieldRelation -> Bool
 isWithIdRelation = \case

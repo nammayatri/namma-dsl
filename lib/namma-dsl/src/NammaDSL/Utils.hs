@@ -181,3 +181,14 @@ removeBeamFieldsWRTRelation = \case
 
 getAllJust :: [Maybe a] -> [a]
 getAllJust x = fromMaybe [] $ sequence $ filter isJust x
+
+checkParentheses :: String -> Bool
+checkParentheses str = not (null str) && length str >= 2 && head str == '(' && last str == ')'
+
+(++$) :: String -> String -> String
+(++$) a b
+  | checkParentheses b = a ++ " " ++ b
+  | length (words b) > 1 = a ++ " $ " ++ b
+  | otherwise = a ++ " " ++ b
+
+infixr 5 ++$
