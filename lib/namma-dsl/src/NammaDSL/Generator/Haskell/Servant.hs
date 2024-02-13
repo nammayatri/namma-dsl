@@ -1,7 +1,7 @@
 module NammaDSL.Generator.Haskell.Servant (generateServantAPI, handlerSignature, handlerFunctionText) where
 
 import Control.Lens ((^.))
-import Data.List (intercalate, nub)
+import Data.List (nub)
 import Data.List.Extra (snoc)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
@@ -58,12 +58,7 @@ generateServantAPI input =
       [ "EulerHS.Prelude",
         "Servant",
         "Tools.Auth",
-        "Kernel.Utils.Common",
-        "API.Types.UI."
-          <> T.unpack (_moduleName input)
-          <> " ("
-          <> intercalate ", " (map (\(TypeObject (nm, _)) -> T.unpack nm) (input ^. apiTypes . types))
-          <> ")"
+        "Kernel.Utils.Common"
       ]
         <> ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]

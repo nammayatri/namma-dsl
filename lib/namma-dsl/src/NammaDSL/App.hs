@@ -18,7 +18,7 @@ import System.FilePath
 import System.Process (readProcess)
 
 version :: String
-version = "1.0.7"
+version = "1.0.8"
 
 data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
 
@@ -103,7 +103,7 @@ mkServantAPI filePath yaml = do
 mkApiTypes :: FilePath -> FilePath -> IO ()
 mkApiTypes filePath yaml = do
   apiDef <- apiParser yaml
-  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateApiTypes apiDef)
+  when (isApiExtraTypesPresent apiDef) $ writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateApiTypes apiDef)
 
 mkDomainHandler :: FilePath -> FilePath -> IO ()
 mkDomainHandler filePath yaml = do
