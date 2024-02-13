@@ -36,8 +36,7 @@ generateDomainHandler input =
       [ "EulerHS.Prelude hiding (id)",
         "Servant",
         "Tools.Auth",
-        "Data.OpenApi (ToSchema)",
-        "API.Types.UI." <> T.unpack (_moduleName input)
+        "Data.OpenApi (ToSchema)"
       ]
 
     allQualifiedImports :: [String]

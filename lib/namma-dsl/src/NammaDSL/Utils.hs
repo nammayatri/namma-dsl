@@ -1,5 +1,6 @@
 module NammaDSL.Utils where
 
+import Control.Lens ((^.))
 import Control.Lens.Combinators
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
@@ -12,7 +13,8 @@ import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.List.Split as L
 import qualified Data.Text as T
 import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
-import NammaDSL.DSL.Syntax.API (ApiType (..))
+import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
+import qualified NammaDSL.DSL.Syntax.API as APISyntax
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
 import System.Directory (createDirectoryIfMissing)
 import System.IO
@@ -192,3 +194,6 @@ checkParentheses str = not (null str) && length str >= 2 && head str == '(' && l
   | otherwise = a ++ " " ++ b
 
 infixr 5 ++$
+
+isApiExtraTypesPresent :: Apis -> Bool
+isApiExtraTypesPresent apiDef = not $ L.null (apiDef ^. APISyntax.apiTypes . APISyntax.types)
