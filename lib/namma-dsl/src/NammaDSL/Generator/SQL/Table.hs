@@ -4,8 +4,8 @@ module NammaDSL.Generator.SQL.Table (generateSQL) where
 
 import Data.List (intercalate)
 import qualified Data.Map as M
-import qualified Data.Set as DS
 -- import qualified Debug.Trace as DT
+import qualified Data.Set as DS
 import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils (removeBeamFieldsWRTRelation)

@@ -44,9 +44,16 @@ snakeCaseToCamelCase = concat . makeMeCamel . map (T.unpack . T.strip) . T.split
     captialise (x : xs) = toUpper x : xs
     captialise [] = error "got two underscores together in field name, feeling sad...."
 
-sqlAlterAddPrimaryKeyParser :: Parser e ([String], [String])
-sqlAlterAddPrimaryKeyParser = do
-  $(string "ALTER TABLE atlas_app.") -- TODO: need to make schema dynamic, will do when fixing in generator code
+parseAlterTablePrefix :: String -> Parser e ()
+parseAlterTablePrefix dbName =
+  case dbName of
+    "atlas_app" -> $(string $ "ALTER TABLE atlas_app.")
+    "atlas_driver_offer_bpp" -> $(string $ "ALTER TABLE atlas_driver_offer_bpp.")
+    _ -> error "I need it, please add this in sqlCreateParser function as well"
+
+sqlAlterAddPrimaryKeyParser :: String -> Parser e ([String], [String])
+sqlAlterAddPrimaryKeyParser dbName = do
+  parseAlterTablePrefix dbName
   _tableName <- many $ notFollowedBy anyChar $(string "ADD PRIMARY KEY (")
   $(string " ADD PRIMARY KEY ( ")
   keys <- many $ notFollowedBy anyChar $(string ";")
@@ -75,9 +82,9 @@ parseConstraint = do
      )
   return constarint
 
-sqlAlterTableAddColumn :: Parser e FieldDef
-sqlAlterTableAddColumn = do
-  $(string "ALTER TABLE atlas_app.") -- TODO: need to make schema dynamic, will do when fixing in generator code
+sqlAlterTableAddColumn :: String -> Bool -> Parser e FieldDef
+sqlAlterTableAddColumn dbName _fromUpdatesSection = do
+  parseAlterTablePrefix dbName
   _tableName <- many $ notFollowedBy anyChar ($(string "ADD COLUMN") <|> $(string "ADD PRIMARY KEY"))
   $(string " ADD COLUMN ")
   fieldNameStart <- many $ notFollowedBy anyChar $(string " ")
@@ -93,6 +100,7 @@ sqlAlterTableAddColumn = do
   when isEncrypted $ do
     _ignoreNextLine <- many $ notFollowedBy anyChar $(string "\n")
     $(string ";\n")
+  if _fromUpdatesSection then debugParser "" else pure ()
   let fromTType = Nothing
       beamFields = [bf]
       bf =
@@ -118,15 +126,21 @@ sqlAlterTableAddColumn = do
       Nothing
       Nothing
 
-sqlCreateParser :: Parser e String
-sqlCreateParser = do
-  $(string "CREATE TABLE atlas_app.") -- need to fix the generator as well to take tablename as a argument.
+sqlCreateParser :: String -> Parser e String
+sqlCreateParser dd = do
+  case dd of
+    "atlas_app" -> $(string $ "CREATE TABLE atlas_app.") -- need to fix the generator as well to take tablename as a argument.
+    "atlas_driver_offer_bpp" -> $(string $ "CREATE TABLE atlas_driver_offer_bpp.") -- need to fix the generator as well to take tablename as a argument.
+    _ -> error "I need it, do this in parseAlterTablePrefix function as well" -- need to fix the generator as well to take tablename as a argument.
   tableName <- many $ notFollowedBy anyChar $(char '(')
-  $(string " ();\n\n")
+  $(string " ();\n")
   pure tableName
 
+updateStamp :: String
+updateStamp = "------- SQL updates -------"
+
 sqlUpdateStampParser :: Parser e ()
-sqlUpdateStampParser = $(string "\n\n------- SQL updates -------\n\n")
+sqlUpdateStampParser = $(string "------- SQL updates -------\n")
 
 columnUpdateActionParser :: Parser e SqlFieldUpdates
 columnUpdateActionParser = do
@@ -145,9 +159,9 @@ columnUpdateActionParser = do
   $(string ";\n") <|> $(string ";")
   return finalAction
 
-sqlUpdatesParser :: Parser e SqlUpdates
-sqlUpdatesParser = do
-  $(string "ALTER TABLE atlas_app.")
+sqlUpdatesParser :: String -> Parser e SqlUpdates
+sqlUpdatesParser dbName = do
+  parseAlterTablePrefix dbName
   _tableNameStart <- many (notFollowedBy anyChar $(string " "))
   _tableNameEndChar <- anyChar
   sqlAction :: String <-
@@ -173,29 +187,30 @@ sqlUpdatesParser = do
     "DROP CONSTRAINT" -> do
       _ <- many $ notFollowedBy anyChar $(string "pkey;\n")
       $(string "_pkey;\n") <|> $(string "_pkey;")
-      (pk, sk) <- sqlAlterAddPrimaryKeyParser <|> return ([], [])
+      (pk, sk) <- (sqlAlterAddPrimaryKeyParser dbName) <|> return ([], [])
       pure $
         SqlUpdates
           Nothing
           (pk <> sk)
     _ -> pure $ SqlUpdates Nothing []
 
-updateParser :: Parser e [(Maybe SqlUpdates, Maybe FieldDef)]
-updateParser = do
+updateParser :: String -> Parser e [(Maybe SqlUpdates, Maybe FieldDef)]
+updateParser dbName = do
   sqlUpdateStampParser
-  many (asFst sqlUpdatesParser <|> asSnd sqlAlterTableAddColumn)
+  res <- many ((asFst (sqlUpdatesParser dbName)) <|> (asSnd (sqlAlterTableAddColumn dbName True)))
+  pure res
   where
     asSnd f = (Nothing,) . Just <$> f
     asFst f = (,Nothing) . Just <$> f
 
-migrationFileParser :: String -> Parser e MigrationFile
-migrationFileParser lastSqlFile = do
-  !tableName <- sqlCreateParser
-  fields' <- many sqlAlterTableAddColumn
-  keys <- sqlAlterAddPrimaryKeyParser <|> return ([], [])
+migrationFileParser :: String -> String -> Parser e MigrationFile
+migrationFileParser dbName lastSqlFile = do
+  !tableName <- sqlCreateParser dbName
+  fields' <- many (sqlAlterTableAddColumn dbName False)
+  keys <- (sqlAlterAddPrimaryKeyParser dbName) <|> return ([], [])
   fieldUpdates' <-
     concat
-      <$> many updateParser
+      <$> many (updateParser dbName)
   let !(columnUpdates, newFields) = second catMaybes . first catMaybes $ unzip fieldUpdates'
   let !deletedFields = L.nub . map fst . filter ((== DropColumn) . snd) $ mapMaybe fieldUpdates columnUpdates
   let !finalFieldsDeleted =
@@ -270,16 +285,29 @@ runAnyParser parser str = do
     go (OK r _) = Just r
     go _ = Nothing
 
-getOldSqlFile :: FilePath -> IO (Maybe MigrationFile)
-getOldSqlFile filepath = do
+getOldSqlFile :: String -> FilePath -> IO (Maybe MigrationFile)
+getOldSqlFile dbName filepath = do
   fileExist <- doesFileExist filepath
   if fileExist
     then do
       lastSqlFile <- BS.readFile filepath
-      print ("loading old file" :: String)
-      pure $ go (runParser (migrationFileParser (BSU.toString lastSqlFile)) lastSqlFile)
+      print ("loading old sql file" <> filepath :: String)
+      pure $ go (runParser (migrationFileParser dbName (BSU.toString lastSqlFile)) $ cleanedFile lastSqlFile)
     else pure Nothing
   where
+    cleanedFile = joinCleanWithNewLine . removeInlineComments . removeFullLineComments . clearExtraLines
+    joinCleanWithNewLine ls = BS.append (BS.intercalate (BSU.fromString "\n") ls) (BSU.fromString "\n")
+    removeFullLineComments = filter (\line -> BS.isInfixOf (BSU.fromString "SQL updates") line || not (BS.isPrefixOf (BSU.fromString "--") line))
+    removeInlineComments =
+      map
+        ( \line -> do
+            let splitWithColonRev = reverse $ BS.split 59 line -- 59 = ";"
+            case splitWithColonRev of
+              [] -> line
+              [res] -> if res == BSU.fromString updateStamp then res else error "Line neither a comment nor a correct query."
+              (_revComment : revQuery) -> BS.concat [BS.intercalate (BSU.fromString ";") $ reverse revQuery, BSU.fromString ";"]
+        )
+    clearExtraLines = filter (not . BS.null) . BS.split 10 -- 10 = "\n"
     go (OK r _) = Just r
     go _ = Nothing
 

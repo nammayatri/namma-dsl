@@ -90,7 +90,7 @@ mkSQLFile db filePath yaml = do
   mapM_
     ( \t -> do
         let filename = (tableNameSql t ++ ".sql")
-        mbOldMigrationFile <- getOldSqlFile $ filePath </> filename
+        mbOldMigrationFile <- getOldSqlFile database $ filePath </> filename
         writeToFile filePath filename (generateSQL database mbOldMigrationFile t)
     )
     tableDef
