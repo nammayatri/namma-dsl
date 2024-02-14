@@ -156,6 +156,7 @@ This tutorial provides a comprehensive guide to understanding and working with t
 - `{dataTypeName}`: Specifies the name of the module.
   - `tableName`: Optional name of the table, It takes the snake_case of the `dataTypeName` if not defined.
   - `fields`: Lists all fields of the table with Haskell type. [See More](#fields)
+  - `constraints`: PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT
   - `importPackageOverrides`: Used to override import packages [See More](#import-package-override)
   - `types`: User-defined types, similar to API types. [See More](#complex-types)
   - `derives`: Override derives of the main Data type.
