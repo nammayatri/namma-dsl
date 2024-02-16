@@ -20,6 +20,7 @@ import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import Kernel.Prelude hiding (toText)
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.DSL.Syntax.Common
 import qualified NammaDSL.Utils as U
 
 apiParser :: FilePath -> IO Apis
@@ -47,7 +48,7 @@ parseApis obj =
     mkQualified = T.pack . U.makeTypeQualified (Just $ T.unpack modelName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
     modelName = fromMaybe (error "Required module name") $ parseModule obj
     parsedTypeObjects = typesToTypeObject (parseTypes obj)
-    parsedTypeDataNames = map (\(TypeObject (nm, _)) -> T.unpack nm) parsedTypeObjects
+    parsedTypeDataNames = map (\(TypeObject _ (nm, _)) -> T.unpack nm) parsedTypeObjects
     parseTyp = markQualifiedTypesInTypes modelName parsedTypeObjects obj
     allApis = fromMaybe (error "Failed to parse apis") $ preview (ix "apis" . _Array . to V.toList) obj >>= mapM parseSingleApi
     mkQApis aps = aps & apis . traverse %~ mkQUrlApiTT
@@ -67,8 +68,9 @@ parseApis obj =
 markQualifiedTypesInTypes :: Text -> [TypeObject] -> Object -> [TypeObject]
 markQualifiedTypesInTypes moduleName input obj =
   map
-    ( \(TypeObject (x, (y, z))) ->
+    ( \(TypeObject rt (x, (y, z))) ->
         TypeObject
+          rt
           ( x,
             ( map
                 ( \(a, b) ->
@@ -85,7 +87,7 @@ markQualifiedTypesInTypes moduleName input obj =
     )
     input
   where
-    dataNames = map (\(TypeObject (nm, _)) -> T.unpack nm) input
+    dataNames = map (\(TypeObject _ (nm, _)) -> T.unpack nm) input
     defaultTypeImportModule = "API.Types.UI."
     mkEnumTypeQualified :: [String] -> Text -> Text
     mkEnumTypeQualified excluded enumTp =
@@ -96,10 +98,10 @@ extractComplexTypeImports :: Apis -> [Text]
 extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
   where
     isEnumType :: TypeObject -> Bool
-    isEnumType (TypeObject (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+    isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
 
     figureOutImports' :: TypeObject -> [Text]
-    figureOutImports' tobj@(TypeObject (_, (tps, _))) =
+    figureOutImports' tobj@(TypeObject _ (_, (tps, _))) =
       let isEnum = isEnumType tobj
        in concatMap
             ( ( \potentialImport ->
@@ -236,6 +238,21 @@ typesToTypeObject :: Maybe Value -> [TypeObject]
 typesToTypeObject (Just (Object obj)) =
   map processType1 (KM.toList obj)
   where
+    extractRecordType :: Object -> RecordType
+    extractRecordType =
+      (fromMaybe Data)
+        . ( preview
+              ( ix "recordType" . _String
+                  . to
+                    ( \case
+                        "NewType" -> NewType
+                        "Data" -> Data
+                        "Type" -> Type
+                        _ -> error "Not a valid"
+                    )
+              )
+          )
+
     extractFields :: KM.KeyMap Value -> [(T.Text, T.Text)]
     extractFields = map (first toText) . KM.toList . fmap extractString
 
@@ -247,7 +264,7 @@ typesToTypeObject (Just (Object obj)) =
     extractString _ = error "Non-string type found in field definition"
 
     splitTypeAndDerivation :: [(Text, Text)] -> ([(Text, Text)], [Text])
-    splitTypeAndDerivation fields = (filter (\(k, _) -> k /= "derive") fields, extractDerive fields)
+    splitTypeAndDerivation fields = (filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
       where
         extractDerive :: [(Text, Text)] -> [Text]
         extractDerive [] = []
@@ -257,6 +274,6 @@ typesToTypeObject (Just (Object obj)) =
 
     processType1 :: (Key, Value) -> TypeObject
     processType1 (typeName, Object typeDef) =
-      TypeObject (toText typeName, splitTypeAndDerivation $ extractFields typeDef)
+      TypeObject (extractRecordType typeDef) (toText typeName, splitTypeAndDerivation $ extractFields typeDef)
     processType1 _ = error "Expected an object in fields"
 typesToTypeObject _ = error "Expecting Object in Types"

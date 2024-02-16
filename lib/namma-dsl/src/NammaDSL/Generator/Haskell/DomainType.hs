@@ -4,8 +4,9 @@ import qualified Data.List as L
 import qualified Data.List.Split as L
 import Data.Tuple.Extra (both)
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils (isMaybeType)
 
@@ -132,15 +133,15 @@ createDefaultImports tableDef =
 --     typeObj
 
 isHttpInstanceDerived :: [TypeObject] -> Bool
-isHttpInstanceDerived = any (\case TypeObject (_, (_, derive)) -> "HttpInstance" `elem` derive)
+isHttpInstanceDerived = any (\case TypeObject _ (_, (_, derive)) -> "HttpInstance" `elem` derive)
 
 isListInstanceDerived :: [TypeObject] -> String -> Bool
 isListInstanceDerived typeObj tpName =
-  any (\case TypeObject (nm, (_, derive)) -> (tpName == nm) && "'ListInstance" `elem` derive) typeObj
+  any (\case TypeObject _ (nm, (_, derive)) -> (tpName == nm) && "'ListInstance" `elem` derive) typeObj
 
 isJsonInstanceDerived :: [TypeObject] -> String -> Bool
 isJsonInstanceDerived typeObj tpName =
-  any (\case TypeObject (nm, (_, derive)) -> (tpName == nm) && "'JsonInstance" `elem` derive) typeObj
+  any (\case TypeObject _ (nm, (_, derive)) -> (tpName == nm) && "'JsonInstance" `elem` derive) typeObj
 
 isEnum :: [(String, String)] -> Bool
 isEnum [("enum", _)] = True
@@ -150,21 +151,21 @@ generateHaskellTypes :: [TypeObject] -> (String, String)
 generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . processType)) typeObj
   where
     processType :: TypeObject -> ([String], [String])
-    processType (TypeObject (typeName, (fields, _)))
-      | isEnum fields = generateEnum typeName fields
-      | otherwise = generateDataStructure typeName fields
+    processType (TypeObject recType (typeName, (fields, _)))
+      | isEnum fields = generateEnum recType typeName fields
+      | otherwise = generateDataStructure recType typeName fields
 
-    generateEnum :: String -> [(String, String)] -> ([String], [String])
-    generateEnum typeName [("enum", values)] =
+    generateEnum :: RecordType -> String -> [(String, String)] -> ([String], [String])
+    generateEnum recType typeName [("enum", values)] =
       let enumValues = L.splitOn "," values
-       in ( ("data " <> typeName <> " = " <> L.intercalate " | " enumValues) :
-            ["  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n\n"],
+       in ( (getRecordType recType <> " " <> typeName <> " = " <> L.intercalate " | " enumValues) :
+            ["  deriving (Eq, Ord, Show, Read, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n\n"],
             ("$(Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList ''" <> typeName <> ")\n\n") :
             ( ["$(mkHttpInstancesForEnum ''" <> typeName <> ")\n" | isHttpInstanceDerived typeObj]
                 ++ ["$(Tools.Beam.UtilsTH.mkBeamInstancesForJson ''" <> typeName <> ")\n" | isJsonInstanceDerived typeObj typeName]
             )
           )
-    generateEnum _ _ = error "Invalid enum definition"
+    generateEnum _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [String] -> String
     addRestDerivations [] = ""
@@ -176,11 +177,11 @@ generateHaskellTypes typeObj = (both concat . unzip . map (both L.unlines . proc
       "HttpInstance" -> "ToParamSchema"
       val -> val
 
-    generateDataStructure :: String -> [(String, String)] -> ([String], [String])
-    generateDataStructure typeName fields =
-      ( ["data " <> typeName <> " = " <> typeName]
+    generateDataStructure :: RecordType -> String -> [(String, String)] -> ([String], [String])
+    generateDataStructure recType typeName fields =
+      ( [getRecordType recType <> " " <> typeName <> " = " <> typeName]
           ++ ["  { " <> L.intercalate ",\n    " (map formatField fields) <> "\n  }"]
-          ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"],
+          ++ ["  deriving (Generic, Show, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"],
         ["$(Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList ''" <> typeName <> ")\n" | isListInstanceDerived typeObj typeName]
           ++ ["$(Tools.Beam.UtilsTH.mkBeamInstancesForJson ''" <> typeName <> ")\n" | isJsonInstanceDerived typeObj typeName]
       )

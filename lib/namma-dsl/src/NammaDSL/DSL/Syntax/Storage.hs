@@ -2,6 +2,7 @@ module NammaDSL.DSL.Syntax.Storage where
 
 import Data.Map (Map)
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 
 data SqlUpdates = SqlUpdates
@@ -47,7 +48,7 @@ data BeamInstance
   | MakeTableInstancesWithTModifier String
   deriving (Show)
 
-newtype TypeObject = TypeObject (String, ([(String, String)], [String])) --  (TypeName, ([(Field, HaskellType)], [InstanceToDerive]))
+data TypeObject = TypeObject RecordType (String, ([(String, String)], [String])) --  (TypeName, ([(Field, HaskellType)], [InstanceToDerive]))
   deriving (Show)
 
 data QueryDef = QueryDef
