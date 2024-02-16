@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -24,6 +25,7 @@ import qualified Data.Yaml as Yaml
 import qualified Debug.Trace as DT
 import FlatParse.Basic
 import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils hiding (typeDelimiter)
 import System.Directory (doesFileExist)
@@ -458,7 +460,7 @@ parseImports fields typObj =
     figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
 
     figureOutInsideTypeImports :: TypeObject -> [String]
-    figureOutInsideTypeImports tobj@(TypeObject (_, (tps, _))) =
+    figureOutInsideTypeImports tobj@(TypeObject _ (_, (tps, _))) =
       let isEnum = isEnumType tobj
        in concatMap
             ( ( \potentialImport ->
@@ -564,7 +566,7 @@ parseTypes obj = case preview (ix "types" ._Object) obj of
 
 parseTypeObjects :: Object -> [TypeObject]
 parseTypeObjects obj =
-  map processType1 $ KM.toList obj
+  map processType $ KM.toList obj
   where
     extractFields :: KM.KeyMap Value -> [(String, String)]
     extractFields = map (first toString) . KM.toList . fmap extractString
@@ -574,7 +576,7 @@ parseTypeObjects obj =
     extractString _ = error "Non-string type found in field definition"
 
     splitTypeAndDerivation :: [(String, String)] -> ([(String, String)], [String])
-    splitTypeAndDerivation fields = (filter (\(k, _) -> k /= "derive") fields, extractDerive fields)
+    splitTypeAndDerivation fields = (filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
       where
         extractDerive :: [(String, String)] -> [String]
         extractDerive [] = []
@@ -582,16 +584,31 @@ parseTypeObjects obj =
           | k == "derive" = map T.unpack (T.split (== ',') (T.pack value))
           | otherwise = extractDerive xs
 
-    processType1 :: (Key, Value) -> TypeObject
-    processType1 (typeName, Object typeDef) =
-      TypeObject (toString typeName, splitTypeAndDerivation $ extractFields typeDef)
-    processType1 _ = error "Expected an object in fields"
+    extractRecordType :: Object -> RecordType
+    extractRecordType =
+      (fromMaybe Data)
+        . ( preview
+              ( ix "recordType" . _String
+                  . to
+                    ( \case
+                        "NewType" -> NewType
+                        "Data" -> Data
+                        "Type" -> Type
+                        _ -> error "Not a valid"
+                    )
+              )
+          )
+
+    processType :: (Key, Value) -> TypeObject
+    processType (typeName, Object typeDef) =
+      TypeObject (extractRecordType typeDef) (toString typeName, splitTypeAndDerivation $ extractFields typeDef)
+    processType _ = error "Expected an object in fields"
 
 parseExtraTypes :: String -> [String] -> Object -> Object -> Maybe ([TypeObject], [String], [String])
 parseExtraTypes moduleName dList importObj obj = do
   _types <- parseTypes obj
-  let allExcludeQualified = map (\(TypeObject (name, _)) -> name) _types
-  let allEnums = map (\(TypeObject (name, _)) -> name) $ filter isEnumType _types
+  let allExcludeQualified = map (\(TypeObject _ (name, _)) -> name) _types
+  let allEnums = map (\(TypeObject _ (name, _)) -> name) $ filter isEnumType _types
   return (map (mkQualifiedTypeObject allExcludeQualified) _types, allExcludeQualified, map (\nm -> defaultImportModule ++ moduleName ++ "." ++ nm) allEnums ++ allEnums)
   where
     defaultImportModule = "Domain.Types."
@@ -602,8 +619,9 @@ parseExtraTypes moduleName dList importObj obj = do
        in L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified (Just moduleName) (Just excluded) (Just dList) defaultImportModule importObj) . L.breakOn " ") individualEnums
 
     mkQualifiedTypeObject :: [String] -> TypeObject -> TypeObject
-    mkQualifiedTypeObject excluded (TypeObject (_nm, (arrOfFields, derive))) =
+    mkQualifiedTypeObject excluded (TypeObject recType (_nm, (arrOfFields, derive))) =
       TypeObject
+        recType
         ( _nm,
           ( map
               ( \(_n, _t) ->
@@ -623,19 +641,10 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
   let unfilteredFields = preview (ix "fields" . _Value . to mkList) obj
       excludedDefaultFields = preview (ix "excludedFields" . _Array . to V.toList . to (map valueToString)) obj
       fields = (++) <$> unfilteredFields <*> (getNotPresentDefaultFields excludedDefaultFields <$> unfilteredFields)
-      --constraintsObj = obj ^? (ix "constraints" . _Object)
-      --sqlTypeObj = obj ^? (ix "sqlType" . _Object)
-      --beamTypeObj = obj ^? (ix "beamType" ._Object)
-      --defaultsObj = obj ^? (ix "default" . _Object)
       getFieldDef field =
         let fieldName = fst field
             (haskellType, optionalRelation) = break (== '|') $ snd field
             fieldKey = fromString fieldName
-            --sqlType = fromMaybe (findMatchingSqlType enumList haskellType) (sqlTypeObj >>= preview (ix fieldKey . _String))
-            --beamType = fromMaybe (findBeamType haskellType) (beamTypeObj >>= preview (ix fieldKey . _String))
-            --constraints = L.nub $ getDefaultFieldConstraints fieldName haskellType ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
-            --defaultValue = maybe (sqlDefaultsWrtName fieldName) pure (defaultsObj >>= preview (ix fieldKey . _String))
-            --parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String)
             parseFromTType = obj ^? (ix "fromTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
             defaultImportModule = "Domain.Types."
             getbeamFields = makeBeamFields (fromMaybe (error "Module name not found") moduleName) excludedList dataList enumList fieldName haskellType definedTypes impObj obj
@@ -644,12 +653,7 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
          in FieldDef
               { fieldName = fieldName,
                 haskellType = typeQualifiedHaskellType,
-                --beamType = makeTypeQualified moduleName excludedList (Just dataList) defaultImportModule impObj beamType,
                 beamFields = getbeamFields,
-                --sqlType = sqlType,
-                --constraints = constraints,
-                --defaultVal = defaultValue,
-                --toTType = parseToTType,
                 fromTType = maybe (if length getbeamFields > 1 then error ("Complex type (" <> T.pack fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
                 isEncrypted = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType),
                 relation = fst <$> fieldRelationAndModule,
@@ -662,7 +666,7 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
 beamFieldsWithExtractors :: String -> Maybe Object -> String -> String -> [TypeObject] -> [String] -> [(String, String, [String])]
 beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTypes extractorFuncs =
   case findIfComplexType haskellType of
-    Just (TypeObject (_nm, (arrOfFields, _))) ->
+    Just (TypeObject _ (_nm, (arrOfFields, _))) ->
       foldl (\acc (nm, tpp) -> acc ++ beamFieldsWithExtractors moduleName beamFieldObj (fieldName ++ capitalise nm) tpp definedTypes (qualified nm : extractorFuncs)) [] arrOfFields
     Nothing ->
       [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
@@ -673,7 +677,7 @@ beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTy
     capitalise (c : cs) = toUpper c : cs
 
     findIfComplexType :: String -> Maybe TypeObject
-    findIfComplexType tpp = find (\(TypeObject (nm, (arrOfFields, _))) -> (nm == tpp || tpp == "Domain.Types." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
+    findIfComplexType tpp = find (\(TypeObject _ (nm, (arrOfFields, _))) -> (nm == tpp || tpp == "Domain.Types." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
 
 makeTF :: Object -> String -> TransformerFunction
 makeTF impObj func =
@@ -704,7 +708,7 @@ makeBeamFields moduleName excludedList dataList enumList fieldName haskellType d
       getBeamFieldDef (fName, tpp, extractorFuncs) =
         let fieldKey = fromString fName
             beamType = fromMaybe (findBeamType tpp) (beamTypeObj >>= preview (ix fieldKey . _String))
-            sqlType = fromMaybe (findMatchingSqlType enumList tpp) (sqlTypeObj >>= preview (ix fieldKey . _String))
+            sqlType = fromMaybe (findMatchingSqlType enumList beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
             defaultImportModule = "Domain.Types."
             defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
             parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
@@ -833,4 +837,4 @@ haskellTypeWrtSqlType :: [(String, String)]
 haskellTypeWrtSqlType = map (first (T.unpack . T.replace "(" "\\(" . T.replace ")" "\\)" . T.replace "[" "\\[" . T.replace "]" "\\]" . T.pack) . second (T.unpack . T.replace "\\[" "[" . T.replace "\\]" "]" . T.pack) . swap) sqlTypeWrtType
 
 isEnumType :: TypeObject -> Bool
-isEnumType (TypeObject (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields

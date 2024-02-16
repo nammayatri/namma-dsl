@@ -4,6 +4,7 @@ import Data.Map (Map, lookup)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (lookup, replicateM)
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.DSL.Syntax.Common
 
 apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe Text
 apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
@@ -24,6 +25,12 @@ apiAuthTypeMapperServant apiT = case _authType apiT of
     RIDER_TYPE -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
     PROVIDER_TYPE -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant, Kernel.Types.Id.Id Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity)"
   _ -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
+
+getRecordType :: RecordType -> String
+getRecordType = \case
+  NewType -> "newtype"
+  Data -> "data"
+  Type -> "type"
 
 checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => Map a a -> [a] -> [a]
 checkForPackageOverrides packageOverrides = map (\x -> maybe x (\a -> "\"" <> a <> "\" " <> x) (lookup (getImportSignature x) packageOverrides))

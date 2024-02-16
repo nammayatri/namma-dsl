@@ -5,7 +5,8 @@ import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
+import NammaDSL.DSL.Syntax.Common
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
 
 generateApiTypes :: Apis -> Code
@@ -60,20 +61,20 @@ generateHaskellTypes typeObj =
         T.unlines (concatMap processType typeObj)
   where
     processType :: TypeObject -> [Text]
-    processType (TypeObject (typeName, (fields, _)))
-      | isEnum fields = generateEnum typeName fields
-      | otherwise = generateDataStructure typeName fields
+    processType (TypeObject rectype (typeName, (fields, _)))
+      | isEnum fields = generateEnum rectype typeName fields
+      | otherwise = generateDataStructure rectype typeName fields
 
     isEnum :: [(Text, Text)] -> Bool
     isEnum [("enum", _)] = True
     isEnum _ = False
 
-    generateEnum :: Text -> [(Text, Text)] -> [Text]
-    generateEnum typeName [("enum", values)] =
+    generateEnum :: RecordType -> Text -> [(Text, Text)] -> [Text]
+    generateEnum recType typeName [("enum", values)] =
       let enumValues = T.splitOn "," values
-       in ("data " <> typeName <> " = " <> T.intercalate " | " enumValues) :
-          ["  deriving (Eq, Show, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"]
-    generateEnum _ _ = error "Invalid enum definition"
+       in ((T.pack $ getRecordType recType) <> " " <> typeName <> " = " <> T.intercalate " | " enumValues) :
+          ["  deriving (Eq, Show, Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"]
+    generateEnum _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [Text] -> Text
     addRestDerivations [] = ""
@@ -81,11 +82,11 @@ generateHaskellTypes typeObj =
       where
         derives = T.intercalate ", " (filter (\x -> not $ T.isPrefixOf "'" x) derivations)
 
-    generateDataStructure :: Text -> [(Text, Text)] -> [Text]
-    generateDataStructure typeName fields =
-      ["data " <> typeName <> " = " <> typeName]
+    generateDataStructure :: RecordType -> Text -> [(Text, Text)] -> [Text]
+    generateDataStructure recType typeName fields =
+      [(T.pack $ getRecordType recType) <> " " <> typeName <> " = " <> typeName]
         ++ ["  { " <> T.intercalate ",\n    " (map formatField fields) <> "\n  }"]
-        ++ ["  deriving (Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"]
+        ++ ["  deriving (Generic, ToJSON, FromJSON, ToSchema" <> addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj) <> ")\n"]
 
     formatField :: (Text, Text) -> Text
     formatField (fieldName, fieldType) = fieldName <> " :: " <> fieldType

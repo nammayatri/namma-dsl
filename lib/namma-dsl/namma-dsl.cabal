@@ -30,6 +30,7 @@ library
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
       NammaDSL.DSL.Syntax.API
+      NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
       NammaDSL.Generator.Haskell
       NammaDSL.Generator.Haskell.ApiTypes
@@ -132,6 +133,7 @@ test-suite namma-dsl-tests
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
       NammaDSL.DSL.Syntax.API
+      NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
       NammaDSL.Generator.Haskell
       NammaDSL.Generator.Haskell.ApiTypes

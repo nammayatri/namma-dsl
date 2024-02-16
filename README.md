@@ -463,6 +463,7 @@ import "dashboard-api" Domain.Types.DataType1
 - `fromTType` must be mentioned for complex types excluding enums.
 - These are generally enums and small types which are used in the main Data type.
 - To make Enum use `enum` keyword and to derive use `derive` keyword. Most of the required deriving are already included but if any extra required user can add using it.
+- To make newtype or type instead of data use `recordType: NewType | Data (Default) | Type`
   Examples:
   ```yaml
   LmsModule:

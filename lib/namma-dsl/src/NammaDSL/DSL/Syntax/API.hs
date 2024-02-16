@@ -5,6 +5,7 @@ module NammaDSL.DSL.Syntax.API where
 import Control.Lens hiding (noneOf)
 import Data.Map (Map)
 import Kernel.Prelude
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 
 data UrlParts
@@ -42,7 +43,7 @@ data ApiTT = ApiTT
 
 $(makeLenses ''ApiTT)
 
-newtype TypeObject = TypeObject (Text, ([(Text, Text)], [Text])) deriving (Show)
+data TypeObject = TypeObject RecordType (Text, ([(Text, Text)], [Text])) deriving (Show)
 
 data TypesInfo = TypesInfo
   { _typeImports :: [Text],
