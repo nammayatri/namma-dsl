@@ -155,6 +155,12 @@ _String = _Value . prism (String . T.pack) (\v -> case v of String s -> Right $ 
 _Bool :: Prism' Value Bool
 _Bool = _Value . prism Bool (\v -> case v of Bool s -> Right s; _ -> Left v)
 
+checkArray :: Text -> (Text, Bool)
+checkArray txt =
+  if T.head txt == '[' && T.last txt == ']'
+    then (T.init (T.tail txt), True)
+    else (txt, False)
+
 valueToString :: Value -> String
 valueToString = \case
   String a -> T.unpack a
