@@ -649,7 +649,10 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
             defaultImportModule = "Domain.Types."
             getbeamFields = makeBeamFields (fromMaybe (error "Module name not found") moduleName) excludedList dataList enumList fieldName haskellType definedTypes impObj obj
             typeQualifiedHaskellType = makeTypeQualified moduleName excludedList (Just dataList) defaultImportModule impObj haskellType
-            fieldRelationAndModule = getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
+            fieldRelationAndModule =
+              if has (ix "beamFields" . _Object . ix fieldKey . _Object) obj
+                then Nothing
+                else getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
          in FieldDef
               { fieldName = fieldName,
                 haskellType = typeQualifiedHaskellType,
@@ -665,11 +668,15 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
 
 beamFieldsWithExtractors :: String -> Maybe Object -> String -> String -> [TypeObject] -> [String] -> [(String, String, [String])]
 beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTypes extractorFuncs =
-  case findIfComplexType haskellType of
-    Just (TypeObject _ (_nm, (arrOfFields, _))) ->
-      foldl (\acc (nm, tpp) -> acc ++ beamFieldsWithExtractors moduleName beamFieldObj (fieldName ++ capitalise nm) tpp definedTypes (qualified nm : extractorFuncs)) [] arrOfFields
+  case beamFieldObj >>= preview (ix (fromString fieldName) . _Object . to Object . to mkList) of
+    Just arrOfFields ->
+      foldl (\acc (nm, tpp) -> acc ++ [(nm, tpp, [])]) [] arrOfFields
     Nothing ->
-      [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
+      case findIfComplexType haskellType of
+        Just (TypeObject _ (_nm, (arrOfFields, _))) ->
+          foldl (\acc (nm, tpp) -> acc ++ beamFieldsWithExtractors moduleName beamFieldObj (fieldName ++ capitalise nm) tpp definedTypes (qualified nm : extractorFuncs)) [] arrOfFields
+        Nothing ->
+          [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
   where
     qualified tp = "Domain.Types." ++ moduleName ++ "." ++ tp
     capitalise :: String -> String
