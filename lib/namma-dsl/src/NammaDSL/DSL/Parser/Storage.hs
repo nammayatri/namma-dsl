@@ -14,6 +14,7 @@ import Data.Aeson.Lens (key, _Array, _Object, _Value)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.Char (toUpper)
+import Data.List (isPrefixOf)
 import qualified Data.List as L
 import qualified Data.List.Extra as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
@@ -664,8 +665,9 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
         Nothing -> error "Error Parsing Fields"
 
 beamFieldsWithExtractors :: String -> Maybe Object -> String -> String -> [TypeObject] -> [String] -> [(String, String, [String])]
-beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTypes extractorFuncs =
-  case findIfComplexType haskellType of
+beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTypes extractorFuncs = do
+  let haskellType' = extractType haskellType
+  case findIfComplexType haskellType' of
     Just (TypeObject _ (_nm, (arrOfFields, _))) ->
       foldl (\acc (nm, tpp) -> acc ++ beamFieldsWithExtractors moduleName beamFieldObj (fieldName ++ capitalise nm) tpp definedTypes (qualified nm : extractorFuncs)) [] arrOfFields
     Nothing ->
@@ -678,6 +680,12 @@ beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTy
 
     findIfComplexType :: String -> Maybe TypeObject
     findIfComplexType tpp = find (\(TypeObject _ (nm, (arrOfFields, _))) -> (nm == tpp || tpp == "Domain.Types." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
+
+    extractType :: String -> String
+    extractType str =
+      if "Maybe" `isPrefixOf` str
+        then drop 6 str
+        else str
 
 makeTF :: Object -> String -> TransformerFunction
 makeTF impObj func =
