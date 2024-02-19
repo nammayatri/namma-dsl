@@ -18,7 +18,7 @@ import System.FilePath
 import System.Process (readProcess)
 
 version :: String
-version = "1.0.9"
+version = "1.1.0"
 
 data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
 
