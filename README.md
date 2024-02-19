@@ -164,7 +164,7 @@ This tutorial provides a comprehensive guide to understanding and working with t
       derives: "Show,Eq,Ord"
      ```
   - `beamType`: User-defined beam type for a specified data type. [See More](#beam-type)
-  - `beamFields`: User-defined beam field name change.
+  - `beamFields`: User-defined beam field name change or use it if youi want to have something different on beamside. [See More](#beam-fields)
   - `sqlType`: User-defined sql type for a field. [See More](#sql-type)
   - `default`: Default sql value for fields, if any
       ```yaml
@@ -275,6 +275,68 @@ import "dashboard-api" Domain.Types.DataType1
   beamType:
     field1: Text
   ```
+---
+
+#### Beam Fields
+- For just changing name of a beam field:
+    ```yaml
+      fields:
+        a: Int
+        b: Text
+      beamFields:
+        a: "aa"
+        b: "bb"
+    ```
+- For having completely different number of fields and types on beam side for a specific domain field:
+    ```yaml
+      # SomeType = SomeType {
+      #   integerValueInText :: Text,
+      #   version :: Int
+      # }
+      import:
+        SomeType: Domain.Types.SomeType
+      Some:
+        fields:
+          id: Id Some
+          val: SomeType # See this is an imported type
+        beamFields:
+          val:
+            intValue: Int
+            intValueInText: Text
+        # We have to right the toTType and fromTType functions
+        toTType:
+            intValue: (Kernel.Prelude.read . Domain.Types.SomeType.integerValueInText)
+            intValueInText: Domain.Types.SomeType.integerValueInText
+        fromTType:
+            val: mkVal
+    ```
+    Generated Code:
+    1. Domain Type:
+       ```haskell
+       data Some = Some
+        { id :: Kernel.Types.Id.Id Domain.Types.Some.Some,
+          val :: Domain.Types.SomeType.SomeType,
+          merchantId :: Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Merchant.Merchant),
+          merchantOperatingCityId :: Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.MerchantOperatingCity.MerchantOperatingCity),
+          createdAt :: Kernel.Prelude.UTCTime,
+          updatedAt :: Kernel.Prelude.UTCTime
+        }
+        deriving (Generic, Show, ToJSON, FromJSON, ToSchema)
+
+       ```
+    2. Beam Type:
+        ```haskell
+        data SomeT f = SomeT
+          { id :: B.C f Kernel.Prelude.Text,
+            intValue :: B.C f Kernel.Prelude.Int,
+            intValueInText :: B.C f Kernel.Prelude.Text,
+            merchantId :: B.C f (Kernel.Prelude.Maybe (Kernel.Prelude.Text)),
+            merchantOperatingCityId :: B.C f (Kernel.Prelude.Maybe (Kernel.Prelude.Text)),
+            createdAt :: B.C f Kernel.Prelude.UTCTime,
+            updatedAt :: B.C f Kernel.Prelude.UTCTime
+          }
+          deriving (Generic, B.Beamable)
+        ```
 ---
 #### SQL TYPE
 - Generally sql type is auto detected according to beam types, but if not detected it takes **text** by default.
