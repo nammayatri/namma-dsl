@@ -715,7 +715,7 @@ makeBeamFields moduleName excludedList dataList enumList fieldName haskellType d
       getBeamFieldDef (fName, tpp, extractorFuncs) =
         let fieldKey = fromString fName
             beamType = fromMaybe (findBeamType tpp) (beamTypeObj >>= preview (ix fieldKey . _String))
-            sqlType = fromMaybe (findMatchingSqlType enumList beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
+            sqlType = fromMaybe (findMatchingSqlType enumList tpp) (sqlTypeObj >>= preview (ix fieldKey . _String))
             defaultImportModule = "Domain.Types."
             defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
             parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
