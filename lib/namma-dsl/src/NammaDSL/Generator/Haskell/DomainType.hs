@@ -1,14 +1,16 @@
 module NammaDSL.Generator.Haskell.DomainType where
 
+import Control.Monad.Reader (ask)
 import qualified Data.List as L
 import qualified Data.List.Split as L
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Tuple.Extra (both)
-import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils (isMaybeType)
+import Prelude
 
 generateDomainType :: TableDef -> Code
 generateDomainType tableDef =

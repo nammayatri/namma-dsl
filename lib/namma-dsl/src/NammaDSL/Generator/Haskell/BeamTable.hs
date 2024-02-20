@@ -2,13 +2,15 @@
 
 module NammaDSL.Generator.Haskell.BeamTable (generateBeamTable) where
 
-import Data.List (intercalate, isInfixOf)
-import qualified Data.Text as T
-import Kernel.Prelude hiding (replicateM)
+import Control.Monad (replicateM_)
+import Control.Monad.Reader (ask)
+import Data.List (foldl', intercalate, isInfixOf)
+import Data.Maybe (fromMaybe)
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
+import Prelude
 
 generateBeamTable :: TableDef -> Code
 generateBeamTable tableDef =
@@ -58,9 +60,9 @@ primaryKeyToBeam = do
     onNewLine $ withSpace $ withinSpaces $ tellM "primaryKey ="
     tableName
     "Id "
-      `followedBy` tellM (fromMaybe (error $ T.pack ("Primary Key not found for " ++ tableNameHaskell def)) (getPrimaryKeys (primaryKey def)))
+      `followedBy` tellM (fromMaybe (error ("Primary Key not found for " ++ tableNameHaskell def)) (getPrimaryKeys (primaryKey def)))
   where
-    fetchPrimaryKey tableDef = tellM $ fromMaybe (error $ T.pack ("Primary Key not found for " ++ tableNameHaskell tableDef)) (generateKeyTypes (filter (\f -> fieldName f `elem` primaryKey tableDef) $ fields tableDef))
+    fetchPrimaryKey tableDef = tellM $ fromMaybe (error ("Primary Key not found for " ++ tableNameHaskell tableDef)) (generateKeyTypes (filter (\f -> fieldName f `elem` primaryKey tableDef) $ fields tableDef))
     getPrimaryKeys [] = Nothing
     getPrimaryKeys [xs] = Just $ ". " <> xs
     getPrimaryKeys xs = Just $ foldl' handleAccPrimary "<$> " xs

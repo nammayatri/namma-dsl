@@ -11,17 +11,20 @@ import Data.Aeson
 import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (_Array, _Object, _String, _Value)
+import Data.Bifunctor
 import Data.Bool
 import qualified Data.ByteString as BS
 import Data.List.Split (splitWhen)
 import qualified Data.Map.Strict as M
+import Data.Maybe (fromMaybe)
+import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
-import Kernel.Prelude hiding (toText)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import qualified NammaDSL.Utils as U
+import Prelude
 
 apiParser :: FilePath -> IO Apis
 apiParser filepath = do

@@ -3,9 +3,9 @@
 
 module Main where
 
-import Kernel.Prelude
 import NammaDSL.App
 import System.Directory (createDirectoryIfMissing)
+import Prelude
 
 storageYamlFilePath :: FilePath
 storageYamlFilePath = "./tests/storage.yaml"

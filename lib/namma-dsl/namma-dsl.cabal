@@ -27,6 +27,7 @@ flag Local
 library
   exposed-modules:
       NammaDSL.App
+      NammaDSL.Config
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
       NammaDSL.DSL.Syntax.API
@@ -91,25 +92,22 @@ library
     , bytestring
     , casing
     , containers
+    , dhall
     , directory
-    , esqueleto
     , extra
     , filepath
     , flatparse
     , lens
     , lens-aeson
-    , mobility-core
     , mtl
     , parsec
-    , persistent
-    , persistent-postgresql
     , process
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
     , regex-tdfa
+    , safe
     , scientific
-    , servant-server
     , split
     , stringbuilder
     , template-haskell
@@ -130,6 +128,7 @@ test-suite namma-dsl-tests
   main-is: Main.hs
   other-modules:
       NammaDSL.App
+      NammaDSL.Config
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
       NammaDSL.DSL.Syntax.API
@@ -194,26 +193,23 @@ test-suite namma-dsl-tests
     , bytestring
     , casing
     , containers
+    , dhall
     , directory
-    , esqueleto
     , extra
     , filepath
     , flatparse
     , lens
     , lens-aeson
-    , mobility-core
     , mtl
     , namma-dsl
     , parsec
-    , persistent
-    , persistent-postgresql
     , process
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
     , regex-tdfa
+    , safe
     , scientific
-    , servant-server
     , split
     , stringbuilder
     , template-haskell

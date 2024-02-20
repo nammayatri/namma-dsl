@@ -4,9 +4,10 @@ module NammaDSL.DSL.Syntax.API where
 
 import Control.Lens hiding (noneOf)
 import Data.Map (Map)
-import Kernel.Prelude
+import Data.Text (Text)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
+import Prelude
 
 data UrlParts
   = UnitPath Text

@@ -4,13 +4,14 @@ module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 
 -- import NammaDSL.Utils
 import Control.Lens ((^.))
+import Control.Monad.Reader (ask)
 import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
-import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperDomainHandler, checkForPackageOverrides)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
+import Prelude
 
 generateDomainHandler :: Apis -> Code
 generateDomainHandler input =
