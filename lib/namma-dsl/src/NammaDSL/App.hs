@@ -20,7 +20,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.9"
+version = "1.0.10"
 
 data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
 
@@ -69,14 +69,12 @@ mkBeamQueries defaultFilePath extraFilePath' yaml = do
         case beamQ of
           DefaultQueryFile (DefaultQueryCode {..}) -> do
             writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show readOnlyCode)
-            when (isJust transformerCode) $ writeToFile (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust transformerCode)
+            when (isJust transformerCode) $ writeToFileIfNotExists (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust transformerCode)
           WithExtraQueryFile (ExtraQueryCode {..}) -> do
             writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show (readOnlyCode defaultCode))
             writeToFile (defaultFilePath </> "OrphanInstances") (tableNameHaskell t ++ ".hs") (show instanceCode)
-            when (isJust $ transformerCode defaultCode) $ writeToFile (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust (transformerCode defaultCode))
-            let extraFileName = tableNameHaskell t ++ "Extra.hs"
-            extraFileExists <- doesFileExist (extraFilePath </> extraFileName)
-            unless extraFileExists $ writeToFile extraFilePath (tableNameHaskell t ++ "Extra.hs") (show extraQueryFile)
+            when (isJust $ transformerCode defaultCode) $ writeToFileIfNotExists (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust (transformerCode defaultCode))
+            writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show extraQueryFile)
     )
     tableDef
 
