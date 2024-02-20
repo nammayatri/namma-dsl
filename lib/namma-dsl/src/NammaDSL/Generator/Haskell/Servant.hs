@@ -1,14 +1,17 @@
 module NammaDSL.Generator.Haskell.Servant (generateServantAPI, handlerSignature, handlerFunctionText) where
 
 import Control.Lens ((^.))
+import Control.Monad.Reader (ask)
 import Data.List (nub)
 import Data.List.Extra (snoc)
+import Data.Maybe (fromMaybe)
+import Data.Text (Text)
 import qualified Data.Text as T
-import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperServant, checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
+import Prelude
 
 generateServantAPI :: Apis -> Code
 generateServantAPI input =

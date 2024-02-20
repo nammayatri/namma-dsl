@@ -1,6 +1,6 @@
 module NammaDSL.DSL.Syntax.Common where
 
-import Kernel.Prelude
+import Prelude
 
 data RecordType
   = NewType

@@ -1,9 +1,9 @@
 module NammaDSL.DSL.Syntax.Storage where
 
 import Data.Map (Map)
-import Kernel.Prelude
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
+import Prelude
 
 data SqlUpdates = SqlUpdates
   { fieldUpdates :: Maybe (String, SqlFieldUpdates),
@@ -121,6 +121,8 @@ data BeamField = BeamField
     bIsEncrypted :: Bool
   }
   deriving (Show)
+
+--type ParserM = RWST Object [TableDef] TableDef (ExceptT ParseError IO)
 
 type StorageM = BuilderM TableDef
 

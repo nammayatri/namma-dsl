@@ -1,5 +1,8 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module NammaDSL.Utils where
 
+import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Lens.Combinators
 import Data.Aeson
@@ -11,8 +14,9 @@ import Data.List (intercalate, nub)
 import qualified Data.List as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.List.Split as L
+import Data.Maybe (fromJust, fromMaybe, isJust)
+import Data.Text (Text)
 import qualified Data.Text as T
-import Kernel.Prelude hiding (Show, fromString, hPutStr, toString, traceShowId, try)
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
 import qualified NammaDSL.DSL.Syntax.API as APISyntax
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
@@ -20,6 +24,7 @@ import System.Directory (createDirectoryIfMissing)
 import System.IO
 --import Debug.Trace(traceShowId)
 import Text.Regex.TDFA ((=~))
+import Prelude
 
 apiTypeToText :: ApiType -> Text
 apiTypeToText apitype = case apitype of
@@ -69,7 +74,7 @@ removeOccurrence remove str = T.unpack $ T.replace (T.pack remove) (T.pack "") (
 regexExec :: String -> String -> Maybe String
 regexExec str pattern' = do
   let match = str =~ pattern' :: (String, String, String, [String])
-  find (/= "") (snd4 match)
+  L.find (/= "") (snd4 match)
   where
     snd4 (_, _, _, x) = x
 
@@ -123,7 +128,7 @@ makeTypeQualified moduleName excludedList dList defaultImportModule obj str' = c
       | '.' `elem` word || ',' `elem` word = word
       | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = defaultImportModule ++ fromJust moduleName ++ "." ++ word
       | isJust dList && L.elem word (fromJust dList) = defaultImportModule ++ word ++ "." ++ word
-      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e"] then word else error $ T.pack ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
+      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
 
 figureOutImports :: [String] -> [String]
 figureOutImports fieldTypes =
@@ -203,3 +208,10 @@ infixr 5 ++$
 
 isApiExtraTypesPresent :: Apis -> Bool
 isApiExtraTypesPresent apiDef = not $ L.null (apiDef ^. APISyntax.apiTypes . APISyntax.types)
+
+haskellModuleNameFromFilePath :: FilePath -> String
+haskellModuleNameFromFilePath folderPath =
+  intercalate "." $
+    drop (maybe 0 succ ((L.elemIndex "src" pathArray) <|> (L.elemIndex "src-read-only" pathArray))) pathArray
+  where
+    pathArray = splitOn "/" folderPath

@@ -1,13 +1,15 @@
 module NammaDSL.Generator.Haskell.ApiTypes where
 
 import Control.Lens ((^.))
+import Control.Monad.Reader (ask)
 import Data.List (isInfixOf, nub)
+import Data.Text (Text)
 import qualified Data.Text as T
-import Kernel.Prelude hiding (replicateM)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
+import Prelude
 
 generateApiTypes :: Apis -> Code
 generateApiTypes input = generateCode generatorInput

@@ -1,10 +1,12 @@
 module NammaDSL.Generator.Haskell.Common where
 
 import Data.Map (Map, lookup)
+import Data.String (IsString)
+import Data.Text (Text)
 import qualified Data.Text as T
-import Kernel.Prelude hiding (lookup, replicateM)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
+import Prelude hiding (lookup)
 
 apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe Text
 apiAuthTypeMapperDomainHandler apiT = case _authType apiT of

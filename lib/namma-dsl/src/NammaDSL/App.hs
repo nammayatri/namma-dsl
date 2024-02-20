@@ -2,8 +2,9 @@
 
 module NammaDSL.App where
 
+import Control.Monad (unless, when)
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
-import Kernel.Prelude
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
 import NammaDSL.DSL.Syntax.API
@@ -16,6 +17,7 @@ import NammaDSL.Utils
 import System.Directory
 import System.FilePath
 import System.Process (readProcess)
+import Prelude
 
 version :: String
 version = "1.0.9"

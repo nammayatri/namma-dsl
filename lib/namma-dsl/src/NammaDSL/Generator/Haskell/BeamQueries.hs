@@ -1,13 +1,19 @@
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries, BeamQueryCode (..), DefaultQueryCode (..), ExtraQueryCode (..)) where
 
 import Control.Lens ((%~), (.~))
-import Data.List (intercalate, isInfixOf, isPrefixOf, nub)
+import Control.Monad (when)
+import Control.Monad.Reader (ask)
+import Data.Bifunctor (first)
+import Data.Bool
+import Data.Function ((&))
+import Data.List (find, intercalate, isInfixOf, isPrefixOf, nub)
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as Text
-import Kernel.Prelude hiding (traceShowId)
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
+import Prelude
 
 data BeamQueryCode = DefaultQueryFile DefaultQueryCode | WithExtraQueryFile ExtraQueryCode
 

@@ -7,30 +7,35 @@ module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, r
 
 import Control.Lens.Combinators
 import Control.Lens.Operators
+import Control.Monad (when)
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (key, _Array, _Object, _Value)
+import Data.Bifunctor
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.Char (toUpper)
+import Data.List (find, foldl')
 import qualified Data.List as L
 import qualified Data.List.Extra as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.Map as M
+import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
 import qualified Data.Text as T
 import Data.Tuple (swap)
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import qualified Debug.Trace as DT
 import FlatParse.Basic
-import Kernel.Prelude hiding (fromString, toString, toText, traceShowId, try)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils hiding (typeDelimiter)
+import Safe (lastMay)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
+import Prelude
 
 debugParser :: String -> Parser e ()
 debugParser tag = do
@@ -448,7 +453,7 @@ mkBeamInstance rw =
     "MakeTableInstances" -> MakeTableInstances
     "MakeTableInstancesGenericSchema" -> MakeTableInstancesGenericSchema
     "MakeTableInstancesWithTModifier" -> MakeTableInstancesWithTModifier extraParams
-    _ -> error $ T.pack $ "Unknow Beam Instance " <> instanceName
+    _ -> error $ "Unknow Beam Instance " <> instanceName
   where
     (instanceName, extraParams) = L.break (== ' ') rw
 
@@ -476,7 +481,7 @@ parseImports fields typObj =
 
 searchForKey :: [FieldDef] -> String -> ((String, String), Bool)
 searchForKey fields inputKey = do
-  let errorMsg = error $ T.pack $ "Param " ++ inputKey ++ " not found in fields"
+  let errorMsg = error $ "Param " ++ inputKey ++ " not found in fields"
   let filedDef = fromMaybe errorMsg $ find ((== inputKey) . fieldName) fields
   ((inputKey, haskellType filedDef), isEncrypted filedDef)
 
@@ -511,7 +516,7 @@ parseOrderBy fields (String st) = do
 parseOrderBy fields (Object obj) = do
   let obj' = KM.toList obj
   extractFieldOrder fields obj'
-parseOrderBy _ val = error $ T.pack $ "Invalid orderBy: Must be a string or an object: " <> show val
+parseOrderBy _ val = error $ "Invalid orderBy: Must be a string or an object: " <> show val
 
 extractFieldOrder :: [FieldDef] -> [(Key, Value)] -> (String, Order)
 extractFieldOrder fields input = do
@@ -546,7 +551,7 @@ parseWhereClause mkQTypeFunc _ fields (Object clauseObj) = do
           Query (parseOperator (toString operatorStr), clauses)
         _ -> error "Invalid where clause, operator must be followed by an array of clauses"
     _ -> error "Invalid where clause, element of where clause array must be an single key object"
-parseWhereClause _ _ _ val = error $ T.pack $ "Invalid where clause, must be a string or an object: " <> show val
+parseWhereClause _ _ _ val = error $ "Invalid where clause, must be a string or an object: " <> show val
 
 parseOperator :: String -> Operator
 parseOperator "and" = And
@@ -657,7 +662,7 @@ parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
               { fieldName = fieldName,
                 haskellType = typeQualifiedHaskellType,
                 beamFields = getbeamFields,
-                fromTType = maybe (if length getbeamFields > 1 then error ("Complex type (" <> T.pack fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
+                fromTType = maybe (if length getbeamFields > 1 then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
                 isEncrypted = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType),
                 relation = fst <$> fieldRelationAndModule,
                 relationalTableNameHaskell = snd <$> fieldRelationAndModule
@@ -701,7 +706,7 @@ makeTF impObj func =
         then
           if '.' `L.elem` name
             then name
-            else maybe (error $ T.pack $ "Function " <> func <> " not imported") (\nm -> nm <> "." <> name) $ impObj ^? ix "imports" . key (fromString name) . _String
+            else maybe (error $ "Function " <> func <> " not imported") (\nm -> nm <> "." <> name) $ impObj ^? ix "imports" . key (fromString name) . _String
         else name
 
 makeBeamFields :: String -> Maybe [String] -> [String] -> [String] -> String -> String -> [TypeObject] -> Object -> Object -> [BeamField]
@@ -715,7 +720,7 @@ makeBeamFields moduleName excludedList dataList enumList fieldName haskellType d
       getBeamFieldDef (fName, tpp, extractorFuncs) =
         let fieldKey = fromString fName
             beamType = fromMaybe (findBeamType tpp) (beamTypeObj >>= preview (ix fieldKey . _String))
-            sqlType = fromMaybe (findMatchingSqlType enumList tpp) (sqlTypeObj >>= preview (ix fieldKey . _String))
+            sqlType = fromMaybe (findMatchingSqlType enumList tpp beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
             defaultImportModule = "Domain.Types."
             defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
             parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
@@ -789,13 +794,14 @@ getNotPresentDefaultFields :: Maybe [String] -> [(String, String)] -> [(String, 
 getNotPresentDefaultFields excludedDefaultFields fields = filter (\(k, _) -> (k `notElem` map fst fields && k `notElem` (fromMaybe [] excludedDefaultFields))) defaultFields
 
 -- SQL Types --
-findMatchingSqlType :: [String] -> String -> String
-findMatchingSqlType allEnums haskellType =
-  if any (haskellType =~) allEnums
-    then "text"
-    else case filter ((haskellType =~) . fst) sqlTypeWrtType of
+findMatchingSqlType :: [String] -> String -> String -> String
+findMatchingSqlType allEnums haskellType beamType
+  | haskellType `elem` allEnums = "text"
+  | otherwise = case filter ((haskellType =~) . fst) sqlTypeWrtType of
+    [] -> case filter ((beamType =~) . fst) sqlTypeWrtType of
       [] -> "text"
       ((_, sqlType) : _) -> sqlType
+    ((_, sqlType) : _) -> sqlType
 
 sqlDefaultsWrtName :: String -> Maybe String
 sqlDefaultsWrtName = \case
@@ -837,7 +843,7 @@ extractKeysFromBeamFields fieldDefs = (primaryKeyFields, secondaryKeyFields)
 findMatchingHaskellType :: String -> String
 findMatchingHaskellType sqlType =
   case filter ((sqlType =~) . fst) haskellTypeWrtSqlType of
-    [] -> error $ "Type not found " <> T.pack sqlType
+    [] -> error $ "Type not found " <> sqlType
     ((_, haskellType) : _) -> haskellType
 
 haskellTypeWrtSqlType :: [(String, String)]
