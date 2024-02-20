@@ -9,6 +9,7 @@ import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (key, _Value)
+import Data.Bool (bool)
 import Data.Char (isLower, toLower, toUpper)
 import Data.List (intercalate, nub)
 import qualified Data.List as L
@@ -20,7 +21,7 @@ import qualified Data.Text as T
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
 import qualified NammaDSL.DSL.Syntax.API as APISyntax
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.IO
 --import Debug.Trace(traceShowId)
 import Text.Regex.TDFA ((=~))
@@ -42,6 +43,13 @@ writeToFile directoryPath fileName content = do
   createDirectoryIfMissing True directoryPath
   withFile (directoryPath ++ "/" ++ fileName) WriteMode $ \handle_ -> do
     hPutStr handle_ content
+
+writeToFileIfNotExists :: FilePath -> FilePath -> String -> IO ()
+writeToFileIfNotExists directoryPath fileName content = do
+  exists <- doesFileExist filePath
+  bool (writeToFile directoryPath fileName content) (pure ()) exists
+  where
+    filePath = directoryPath ++ "/" ++ fileName
 
 typeDelimiter :: String
 typeDelimiter = "() []"
@@ -215,3 +223,8 @@ haskellModuleNameFromFilePath folderPath =
     drop (maybe 0 succ ((L.elemIndex "src" pathArray) <|> (L.elemIndex "src-read-only" pathArray))) pathArray
   where
     pathArray = splitOn "/" folderPath
+
+-- fetchDhallConfig :: FilePath -> IO Config
+-- fetchDhallConfig filePath = do
+--   config <- input auto filePath
+--   return config
