@@ -8,6 +8,7 @@ import qualified Data.Map as M
 
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import qualified Data.Set as DS
+import Debug.Trace as DB
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils (removeBeamFieldsWRTRelation)
 import Text.Casing (quietSnake)
@@ -66,11 +67,13 @@ whichChanges oldField newField = do
 
 getUpdatesAndRest :: MigrationFile -> TableDef -> ([BeamField], [BeamField], [BeamField], Bool)
 getUpdatesAndRest oldSqlFile tableDef = do
-  let newSqlFields = M.fromList . map (\beamField -> (beamField.bFieldName, beamField)) $ concatMap (\field -> field.beamFields) (fields tableDef)
-  let oldSqlFields = M.fromList . map (\beamField -> (beamField.bFieldName, beamField)) $ concatMap (\field -> field.beamFields) (fields_ oldSqlFile)
+  let newSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields tableDef)
+  let oldSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields_ oldSqlFile)
   let newKeyIds = DS.fromList $ tableDef.primaryKey <> tableDef.secondaryKey
   let oldKeyIds = DS.fromList $ oldSqlFile.primaryKeys <> oldSqlFile.secondaryKeys
   let isPkChanged = newKeyIds /= oldKeyIds
+      _ = DB.traceShow tableDef
+      _ = DB.traceShow oldSqlFile
   let updatedFields =
         fst $
           M.mapAccumWithKey
