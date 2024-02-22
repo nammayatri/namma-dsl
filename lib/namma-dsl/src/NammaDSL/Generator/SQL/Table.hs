@@ -8,7 +8,6 @@ import qualified Data.Map as M
 
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import qualified Data.Set as DS
-import Debug.Trace as DB
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils (removeBeamFieldsWRTRelation)
 import Text.Casing (quietSnake)
@@ -72,8 +71,6 @@ getUpdatesAndRest oldSqlFile tableDef = do
   let newKeyIds = DS.fromList $ tableDef.primaryKey <> tableDef.secondaryKey
   let oldKeyIds = DS.fromList $ oldSqlFile.primaryKeys <> oldSqlFile.secondaryKeys
   let isPkChanged = newKeyIds /= oldKeyIds
-      _ = DB.traceShow tableDef
-      _ = DB.traceShow oldSqlFile
   let updatedFields =
         fst $
           M.mapAccumWithKey
