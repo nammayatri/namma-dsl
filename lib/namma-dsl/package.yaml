@@ -87,6 +87,7 @@ dependencies:
   - containers
   - process
   - dhall
+  - pretty
 
 ghc-options:
   - -Wall
