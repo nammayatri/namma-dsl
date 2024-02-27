@@ -2,12 +2,6 @@
 
 module NammaDSL.Generator.Haskell.DomainType where
 
-import Control.Monad.Reader (ask)
-import qualified Data.List as L
-import qualified Data.List.Split as L
-import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Tuple.Extra (both)
-import NammaDSL.DSL.Syntax.Common
 import Control.Monad.Writer hiding (Writer)
 import qualified Data.List as L
 import qualified Data.List.Split as L
@@ -16,12 +10,14 @@ import qualified Kernel.Beam.Lib.UtilsTH
 import Kernel.External.Encryption
 import Kernel.Prelude
 import qualified Language.Haskell.TH as TH
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
-import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
+import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib
 import NammaDSL.Utils (isMaybeType)
-import Prelude
+
+-- import Prelude
 
 generateDomainType :: TableDef -> Code
 generateDomainType tableDef =
@@ -188,17 +184,20 @@ generateHaskellTypes typeObj = traverse_ processType typeObj -- (both concat . u
     generateEnum recType typeName [("enum", values)] = do
       let enumValues = L.splitOn "," values
       let _thTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName
-      let recordType = getRecordType recType -- TODO use in generation
+
       dec_ . pure $ do
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj)
         let derives = TH.DerivClause Nothing (TH.ConT <$> [''Eq, ''Ord, ''Show, ''Read, ''Generic, ''ToJSON, ''FromJSON, ''ToSchema] <> restDerivations)
-        TH.DataD [] (TH.mkName typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
+        case recType of
+          NewType -> error "Generate haskell domain types: expected Data but got NewType" -- can be newtype here?
+          Data -> TH.DataD [] (TH.mkName typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
+          Type -> error "Generate haskell domain types: expected Data but got Type"
       splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForEnumAndList $_thTypeName|]
       when (isHttpInstanceDerived typeObj) $
         splice_ [e|mkHttpInstancesForEnum $_thTypeName|]
       when (isJsonInstanceDerived typeObj typeName) $
         splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForJSON $_thTypeName|]
-    generateEnum _ _ = error "Invalid enum definition"
+    generateEnum _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [String] -> [TH.Name]
     addRestDerivations derivations = map (TH.mkName . toInstanceName) $ filter (\x -> not $ L.isPrefixOf "'" x) derivations
@@ -210,11 +209,18 @@ generateHaskellTypes typeObj = traverse_ processType typeObj -- (both concat . u
     generateDataStructure :: RecordType -> String -> [(String, String)] -> Writer CodeUnit
     generateDataStructure recType typeName fields = do
       dec_ . pure $ do
-        let recordType = getRecordType recType -- TODO use in generation
         let bang = TH.Bang TH.NoSourceUnpackedness TH.NoSourceStrictness
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj)
         let derives = TH.DerivClause Nothing (TH.ConT <$> [''Generic, ''Show, ''ToJSON, ''FromJSON, ''ToSchema] <> restDerivations)
-        TH.DataD [] (TH.mkName typeName) [] Nothing [TH.RecC (TH.mkName typeName) (fields <&> \(f, t) -> (TH.mkName f, bang, TH.ConT $ TH.mkName t))] [derives]
+        case recType of
+          NewType -> do
+            let (f, t) = case fields of
+                  [field] -> field
+                  _ -> error $ "Generate data structure: expected exactly one record for NewType but got: " <> show fields
+            TH.NewtypeD [] (TH.mkName typeName) [] Nothing (TH.RecC (TH.mkName typeName) [(TH.mkName f, bang, TH.ConT $ TH.mkName t)]) [derives]
+          Data -> TH.DataD [] (TH.mkName typeName) [] Nothing [TH.RecC (TH.mkName typeName) (fields <&> \(f, t) -> (TH.mkName f, bang, TH.ConT $ TH.mkName t))] [derives]
+          Type -> error "Generate data structure: expected Data but got Type"
+
       let _thTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName
       when (isListInstanceDerived typeObj typeName) $
         splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForEnumAndList $_thTypeName|]

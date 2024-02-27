@@ -104,10 +104,9 @@ library
     , flatparse
     , lens
     , lens-aeson
+    , mobility-core
     , mtl
     , parsec
-    , persistent
-    , persistent-postgresql
     , pretty
     , process
     , raw-strings-qq
@@ -213,11 +212,10 @@ test-suite namma-dsl-tests
     , flatparse
     , lens
     , lens-aeson
+    , mobility-core
     , mtl
     , namma-dsl
     , parsec
-    , persistent
-    , persistent-postgresql
     , pretty
     , process
     , raw-strings-qq
