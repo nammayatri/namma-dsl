@@ -104,7 +104,6 @@ library
     , flatparse
     , lens
     , lens-aeson
-    , mobility-core
     , mtl
     , parsec
     , pretty
@@ -212,7 +211,6 @@ test-suite namma-dsl-tests
     , flatparse
     , lens
     , lens-aeson
-    , mobility-core
     , mtl
     , namma-dsl
     , parsec

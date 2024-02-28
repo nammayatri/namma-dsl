@@ -3,13 +3,13 @@ module NammaDSL.Lib.Interpreter where
 import Control.Monad.Writer hiding (Writer)
 import qualified Data.List as L
 import GHC.IO (unsafePerformIO)
-import Kernel.Prelude
 import qualified Language.Haskell.TH as TH
 import qualified Language.Haskell.TH.Ppr as Ppr
 import qualified Language.Haskell.TH.PprLib as Ppr
 import qualified NammaDSL.Lib.MapName as MapName
 import NammaDSL.Lib.Types
 import qualified Text.PrettyPrint as Pretty
+import Prelude
 
 -- interpreter :: String -> Writer CodeUnit -> String
 -- interpreter moduleName unitW = do
@@ -63,12 +63,7 @@ pprint' :: Ppr.Ppr a => a -> String
 pprint' x = Pretty.renderStyle myStyle $ Ppr.to_HPJ_Doc $ Ppr.ppr x
 
 nameModifier :: [String] -> TH.Name -> TH.Name
-nameModifier imports = MapName.mkNameModifier $ mapImportModules imports . mapReexportModules
-
-mapReexportModules :: String -> String
-mapReexportModules = \case
-  "Kernel.Beam.Lib.UtilsTH" -> "Tools.Beam.UtilsTH"
-  m -> m
+nameModifier imports = MapName.mkNameModifier $ mapImportModules imports
 
 mapImportModules :: [String] -> String -> Maybe String
 mapImportModules imports modName | modName `notElem` imports = Nothing

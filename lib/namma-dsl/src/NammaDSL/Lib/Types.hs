@@ -1,7 +1,7 @@
 module NammaDSL.Lib.Types where
 
 import Control.Monad.Writer hiding (Writer)
-import Kernel.Prelude
+import Data.Semigroup
 import qualified Language.Haskell.TH as TH
 
 -- data CodeUnit = CodeDec [TH.Dec] | CodeImport Import | CodeExtension Extension | CodeSplice Splice

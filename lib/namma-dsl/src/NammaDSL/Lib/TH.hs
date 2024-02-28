@@ -1,11 +1,50 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module NammaDSL.Lib.TH where
 
 import Control.Monad.Writer hiding (Writer)
-import Kernel.Prelude
+import Data.Semigroup
+import Data.String
 import qualified Language.Haskell.TH as TH
 import NammaDSL.Lib.Types
+import Prelude
+
+instance IsString TH.Name where
+  fromString = TH.mkName
+
+-- should not be used with qualified names
+instance Semigroup TH.Name where
+  a <> b = TH.mkName $ TH.nameBase a <> TH.nameBase b
+
+-- based on Language.Haskell.TH.Lib, only Writer added instead of lists
+tySynDW :: TH.Name -> [TH.TyVarBndr ()] -> TH.Q TH.Type -> Writer CodeUnit
+tySynDW name vars tQ = do
+  t <- lift tQ
+  tell [CodeDec [TH.TySynD name vars t]]
+
+instanceDW :: TH.Q TH.Cxt -> TH.Q TH.Type -> Writer TH.Dec -> Writer CodeUnit
+instanceDW cxtQ tQ dW = do
+  ds <- lift $ execWriterT dW
+  cxt <- lift cxtQ
+  t <- lift tQ
+  tell [CodeDec [TH.InstanceD Nothing cxt t ds]]
+
+funDW :: TH.Name -> Writer TH.Clause -> Writer TH.Dec
+funDW n cW = do
+  cs <- lift $ execWriterT cW
+  tell [TH.FunD n cs]
+
+clauseW :: [TH.Q TH.Pat] -> TH.Q TH.Body -> Writer TH.Clause
+clauseW patsQ bodyQ = do
+  pats <- lift $ sequenceA patsQ
+  body <- lift bodyQ
+  tell [TH.Clause pats body []]
+
+doEW :: Writer TH.Stmt -> TH.Q TH.Exp
+doEW stmtW = do
+  stmts <- execWriterT stmtW
+  pure $ TH.DoE Nothing stmts
 
 (<--) :: TH.Q TH.Pat -> TH.Q TH.Exp -> Writer TH.Stmt
 (<--) pQ eQ = do
@@ -15,73 +54,37 @@ import NammaDSL.Lib.Types
 
 infix 5 <--
 
-varT :: String -> TH.Q TH.Type
-varT = pure . TH.VarT . TH.mkName
-
-conT :: String -> TH.Q TH.Type
-conT = pure . TH.ConT . TH.mkName
-
-varP :: String -> TH.Q TH.Pat
-varP = pure . TH.VarP . TH.mkName
-
-varE :: String -> TH.Q TH.Exp
-varE = pure . TH.VarE . TH.mkName
-
-conE :: String -> TH.Q TH.Exp
-conE = pure . TH.ConE . TH.mkName
-
-type_ :: String -> TH.Q TH.Type -> Writer CodeUnit
-type_ name tQ = do
-  t <- lift tQ
-  tell [CodeDec [TH.TySynD (TH.mkName name) [] t]]
-
-do_ :: Writer TH.Stmt -> TH.Q TH.Exp
-do_ stmtW = do
-  stmts <- execWriterT stmtW
-  pure $ TH.DoE Nothing stmts
-
-return_ :: TH.Q TH.Exp -> Writer TH.Stmt
-return_ eQ = do
-  e <- lift [e|return $eQ|]
-  tell [TH.NoBindS e]
-
-pure_ :: TH.Q TH.Exp -> Writer TH.Stmt
-pure_ eQ = do
+pureW :: TH.Q TH.Exp -> Writer TH.Stmt
+pureW eQ = do
   e <- lift [e|pure $eQ|]
   tell [TH.NoBindS e]
 
-let_ :: TH.Q [TH.Dec] -> Writer TH.Stmt
-let_ dQ = do
-  d <- lift dQ
-  tell [TH.LetS d]
+tySynInstDW :: TH.Q TH.TySynEqn -> Writer TH.Dec
+tySynInstDW tQ = do
+  t <- lift tQ
+  tell [TH.TySynInstD t]
 
-recUpd_ :: TH.Q TH.Exp -> Writer (TH.Name, TH.Exp) -> TH.Q TH.Exp
-recUpd_ eQ tupleW = do
+recConEW :: TH.Name -> Writer (TH.Name, TH.Exp) -> TH.Q TH.Exp
+recConEW name tupleW = do
   tuples <- execWriterT tupleW
-  e <- eQ
-  pure $ TH.RecUpdE e tuples
+  pure $ TH.RecConE name tuples
 
-fieldExp_ :: String -> TH.Q TH.Exp -> Writer (TH.Name, TH.Exp)
-fieldExp_ name eQ = do
+fieldExpW :: TH.Name -> TH.Q TH.Exp -> Writer (TH.Name, TH.Exp)
+fieldExpW name eQ = do
   e <- lift eQ
-  tell [(TH.mkName name, e)]
+  tell [(name, e)]
 
-recCon_ :: String -> Writer (TH.Name, TH.Exp) -> TH.Q TH.Exp
-recCon_ name tupleW = do
-  tuples <- execWriterT tupleW
-  pure $ TH.RecConE (TH.mkName name) tuples
-
-dec_ :: TH.Q TH.Dec -> Writer CodeUnit
-dec_ decsQ = do
+decW :: TH.Q TH.Dec -> Writer CodeUnit
+decW decsQ = do
   dec <- lift decsQ
   tell [CodeDec [dec]]
 
-decs_ :: TH.Q [TH.Dec] -> Writer CodeUnit
-decs_ decsQ = do
+decsW :: TH.Q [TH.Dec] -> Writer CodeUnit
+decsW decsQ = do
   decs <- lift decsQ
   tell [CodeDec decs]
 
-splice_ :: TH.Q TH.Exp -> Writer CodeUnit
-splice_ action = do
+spliceW :: TH.Q TH.Exp -> Writer CodeUnit
+spliceW action = do
   expr <- lift action
   tell . pure . CodeSplice . Splice $ expr

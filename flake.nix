@@ -1,7 +1,7 @@
 {
   inputs = {
     common.url = "github:nammayatri/common";
-    shared-kernel.url = "github:nammayatri/shared-kernel";
+    # shared-kernel.url = "github:nammayatri/shared-kernel";
   };
   outputs = inputs:
     inputs.common.lib.mkFlake { inherit inputs; } {
@@ -9,7 +9,7 @@
       perSystem = { self', pkgs, lib, config, ... }: {
         haskellProjects.default = {
           imports = [
-            inputs.shared-kernel.haskellFlakeProjectModules.output
+            # inputs.shared-kernel.haskellFlakeProjectModules.output
           ];
           autoWire = [ "packages" "checks" ];
         };

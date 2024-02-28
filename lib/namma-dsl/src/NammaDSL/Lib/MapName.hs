@@ -1,9 +1,10 @@
 module NammaDSL.Lib.MapName where
 
+import Data.List.NonEmpty
 import qualified GHC.Generics as G
-import Kernel.Prelude
 import qualified Language.Haskell.TH as TH
 import qualified Language.Haskell.TH.Syntax as TH
+import Prelude
 
 mkNameModifier :: (String -> Maybe String) -> TH.Name -> TH.Name
 mkNameModifier modifier (TH.Name occName (TH.NameQ (TH.ModName modName))) = case modifier modName of
@@ -20,15 +21,15 @@ removeQualifiedModules = mkNameModifier (const Nothing)
 -- modify TH.Name everywhere in TH data types tree
 class MapName a where
   mapName :: (TH.Name -> TH.Name) -> a -> a
-  default mapName :: (Generic a, MapName (G.Rep a ())) => (TH.Name -> TH.Name) -> a -> a
+  default mapName :: (G.Generic a, MapName (G.Rep a ())) => (TH.Name -> TH.Name) -> a -> a
   mapName = mapNameGeneric
 
-mapNameGeneric :: forall a. (Generic a, MapName (G.Rep a ())) => (TH.Name -> TH.Name) -> a -> a
+mapNameGeneric :: forall a. (G.Generic a, MapName (G.Rep a ())) => (TH.Name -> TH.Name) -> a -> a
 mapNameGeneric f = G.to . mapName @(G.Rep a ()) f . G.from
 
 -- modify TH.Name itself
 instance MapName TH.Name where
-  mapName = identity
+  mapName = id
 
 -- modify TH.Name inside of tree
 instance MapName a => MapName (G.K1 r a ()) where
@@ -46,16 +47,16 @@ instance (MapName (f ()), MapName (g ())) => MapName ((f G.:*: g) ()) where
 
 -- nothing to modify
 instance MapName (G.U1 ()) where
-  mapName = const identity
+  mapName = const id
 
 instance MapName Int where
-  mapName = const identity
+  mapName = const id
 
 instance MapName () where
-  mapName = const identity
+  mapName = const id
 
 instance MapName Char where
-  mapName = const identity
+  mapName = const id
 
 instance MapName a => MapName [a] where
   mapName func = (mapName func <$>)
@@ -92,7 +93,7 @@ instance MapName TH.Clause
 instance MapName TH.Pat
 
 instance MapName TH.Lit where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Body
 
@@ -105,25 +106,25 @@ instance MapName TH.Type
 instance MapName TH.Con
 
 instance MapName TH.Bang where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Foreign
 
 instance MapName TH.Fixity where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Pragma
 
 instance MapName TH.TySynEqn
 
 instance MapName TH.RuleMatch where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Phases where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Inline where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.DerivClause
 
@@ -136,25 +137,25 @@ instance MapName (TH.TyVarBndr ())
 instance MapName (TH.TyVarBndr TH.Specificity)
 
 instance MapName TH.Overlap where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.TypeFamilyHead
 
 instance MapName TH.Role where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.PatSynArgs
 
 instance MapName TH.PatSynDir
 
 instance MapName TH.TyLit where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Callconv where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Safety where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.RuleBndr
 
@@ -163,13 +164,13 @@ instance MapName TH.AnnTarget
 instance MapName TH.FamilyResultSig
 
 instance MapName TH.Specificity where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.InjectivityAnn
 
 instance MapName TH.Match
 
 instance MapName TH.ModName where
-  mapName = const identity
+  mapName = const id
 
 instance MapName TH.Range

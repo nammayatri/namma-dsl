@@ -2,22 +2,23 @@
 
 module NammaDSL.Generator.Haskell.DomainType where
 
+import Control.Monad.Reader (ask)
 import Control.Monad.Writer hiding (Writer)
+import Data.Foldable
+import Data.Functor
 import qualified Data.List as L
 import qualified Data.List.Split as L
+import Data.Maybe
 import qualified Data.Text as T
-import qualified Kernel.Beam.Lib.UtilsTH
-import Kernel.External.Encryption
-import Kernel.Prelude
 import qualified Language.Haskell.TH as TH
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib
+import qualified NammaDSL.Lib.TH as TH
 import NammaDSL.Utils (isMaybeType)
-
--- import Prelude
+import Prelude
 
 generateDomainType :: TableDef -> Code
 generateDomainType tableDef =
@@ -69,10 +70,10 @@ mkCodeBody allImports = do
   tellM . interpreter allImports $ do
     genTableType def
     when (def.containsEncryptedField) $ generateEncryptionInstance def
-    whenJust (types def) generateHaskellTypes
+    forM_ (types def) generateHaskellTypes
 
 genTableType :: TableDef -> Writer CodeUnit
-genTableType def = dec_ . pure $ do
+genTableType def = decW . pure $ do
   let bang = TH.Bang TH.NoSourceUnpackedness TH.NoSourceStrictness
 
   let derives' = case derives def of
@@ -89,72 +90,73 @@ genTableType def = dec_ . pure $ do
 derivingInstances :: Bool -> TH.DerivClause
 derivingInstances containsEncryptedField =
   if containsEncryptedField
-    then TH.DerivClause Nothing $ TH.ConT <$> [''Generic]
-    else TH.DerivClause Nothing $ TH.ConT <$> [''Generic, ''Show, ''ToJSON, ''FromJSON, ''ToSchema]
+    then TH.DerivClause Nothing $ TH.ConT <$> ["Generic"]
+    else TH.DerivClause Nothing $ TH.ConT <$> ["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"]
 
 -- didn't find how we can use record wild cards for TH, so using simple records
 generateEncryptionInstance :: TableDef -> Writer CodeUnit
 generateEncryptionInstance tableDef = do
-  type_ _Table [t|$_TableET 'AsEncrypted|]
-  type_ _DecryptedTable [t|$_TableET 'AsUnencrypted|]
+  TH.tySynDW _Table [] (TH.conT _TableE `TH.appT` TH.conT "'AsEncrypted") -- _Table :: Name
+  TH.tySynDW _DecryptedTable [] (TH.conT _TableE `TH.appT` TH.conT "'AsUnencrypted")
 
-  decs_
-    [d|
-      instance EncryptedItem $_TableT where
-        type Unencrypted $_TableT = ($_DecryptedTableT, HashSalt)
-        encryptItem ($entityP, $saltP) =
-          $( do_ $
-               do
-                 forM_ (fields tableDef) $ \(f :: FieldDef) -> do
-                   let (fieldE, fieldUpdP, _) = mkTHVars f
-                   when f.isEncrypted $
-                     if isMaybeType f.haskellType
-                       then fieldUpdP <-- [|encryptItem ((,$saltE) <$> $fieldE $entityE)|]
-                       else fieldUpdP <-- [|encryptItem ($fieldE $entityE, $saltE)|]
-                 pure_ updEntityExp
-           )
-        decryptItem $entityP =
-          $( do_ $
-               do
-                 forM_ (fields tableDef) $ \(f :: FieldDef) -> do
-                   let (fieldE, fieldUpdP, _) = mkTHVars f
-                   when f.isEncrypted $
-                     if isMaybeType f.haskellType
-                       then fieldUpdP <-- [|fmap fst <$> decryptItem ($fieldE $entityE)|]
-                       else fieldUpdP <-- [|fst <$> decryptItem ($fieldE $entityE)|]
-                 pure_ [|($updEntityExp, "")|]
-           )
+  TH.instanceDW (pure []) (TH.conT "EncryptedItem" `TH.appT` TH.conT _Table) $ do
+    TH.tySynInstDW $ TH.tySynEqn Nothing (TH.conT "Unencrypted" `TH.appT` TH.conT _Table) [t|($(TH.conT _DecryptedTable), $(TH.conT "HashSalt"))|]
+    TH.funDW "encryptItem" $ do
+      -- IsString Name
+      TH.clauseW [[p|($entityP, $saltP)|]] $
+        TH.normalB $
+          TH.doEW $ do
+            forM_ (fields tableDef) $ \(f :: FieldDef) -> do
+              let (fieldE, fieldUpdP, _) = mkTHVars f
+              when f.isEncrypted $
+                if isMaybeType f.haskellType
+                  then fieldUpdP <-- [|encryptItem ((,$saltE) <$> $fieldE $entityE)|]
+                  else fieldUpdP <-- [|encryptItem ($fieldE $entityE, $saltE)|]
+            TH.pureW updEntityExp
 
-      instance EncryptedItem' $_TableT where
-        type UnencryptedItem $_TableT = $_DecryptedTableT
-        toUnencrypted $(varP "a") $saltP = ($(varE "a"), $saltE)
-        fromUnencrypted = fst
-      |]
+    TH.funDW "decryptItem" $ do
+      TH.clauseW [entityP] $ do
+        TH.normalB $
+          TH.doEW $ do
+            forM_ (fields tableDef) $ \(f :: FieldDef) -> do
+              let (fieldE, fieldUpdP, _) = mkTHVars f
+              when f.isEncrypted $
+                if isMaybeType f.haskellType
+                  then fieldUpdP <-- [|fmap fst <$> decryptItem ($fieldE $entityE)|]
+                  else fieldUpdP <-- [|fst <$> decryptItem ($fieldE $entityE)|]
+            TH.pureW [|($updEntityExp, "")|]
+
+  TH.instanceDW (pure []) (TH.conT "EncryptedItem'" `TH.appT` TH.conT _Table) $ do
+    TH.tySynInstDW $ TH.tySynEqn Nothing (TH.conT "UnencryptedItem" `TH.appT` TH.conT _Table) (TH.conT _DecryptedTable)
+    TH.funDW "toUnencrypted" $ do
+      TH.clauseW [TH.varP "a", saltP] $
+        TH.normalB [|($(TH.varE "a"), $saltE)|]
+    TH.funDW "fromUnencrypted" $ do
+      TH.clauseW [] $
+        TH.normalB [|fst|]
   where
     updEntityExp :: TH.Q TH.Exp
     updEntityExp = do
-      recCon_ _Table $
+      TH.recConEW _Table $
         forM_ (fields tableDef) $ \(f :: FieldDef) -> do
           let (fieldE, _, fieldUpdE) = mkTHVars f
           if f.isEncrypted
-            then fieldExp_ f.fieldName fieldUpdE
-            else fieldExp_ f.fieldName [|$fieldE $entityE|]
+            then fieldExpW (TH.mkName f.fieldName) fieldUpdE
+            else fieldExpW (TH.mkName f.fieldName) [|$fieldE $entityE|]
 
-    _Table = tableNameHaskell tableDef
-    _TableT = conT _Table
-    _TableET = conT $ _Table <> "E"
+    _Table = TH.mkName $ tableNameHaskell tableDef
+    _TableE = _Table <> "E"
     _DecryptedTable = "Decrypted" <> _Table
-    _DecryptedTableT = conT _DecryptedTable
-    entityP = varP "entity"
-    entityE = varE "entity"
-    saltP = varP "salt"
-    saltE = varE "salt"
+    entityP = TH.varP "entity"
+    entityE = TH.varE "entity"
+    saltP = TH.varP "salt"
+    saltE = TH.varE "salt"
 
     mkTHVars f = do
-      let fieldE = varE f.fieldName
+      let fieldE :: TH.Q TH.Exp = TH.varE $ TH.mkName f.fieldName
           fieldUpd = f.fieldName <> "_"
-          fieldUpdE = varE fieldUpd
-          fieldUpdP = varP fieldUpd
+          fieldUpdE :: TH.Q TH.Exp = TH.varE $ TH.mkName fieldUpd
+          fieldUpdP :: TH.Q TH.Pat = TH.varP $ TH.mkName fieldUpd
       (fieldE, fieldUpdP, fieldUpdE)
 
 isHttpInstanceDerived :: [TypeObject] -> Bool
@@ -183,20 +185,20 @@ generateHaskellTypes typeObj = traverse_ processType typeObj -- (both concat . u
     generateEnum :: RecordType -> String -> [(String, String)] -> Writer CodeUnit
     generateEnum recType typeName [("enum", values)] = do
       let enumValues = L.splitOn "," values
-      let _thTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName
+      let _thTypeName = TH.varE . TH.mkName $ "''" <> typeName
 
-      dec_ . pure $ do
+      TH.decW . pure $ do
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj)
-        let derives = TH.DerivClause Nothing (TH.ConT <$> [''Eq, ''Ord, ''Show, ''Read, ''Generic, ''ToJSON, ''FromJSON, ''ToSchema] <> restDerivations)
+        let derives = TH.DerivClause Nothing (TH.ConT <$> ["Eq", "Ord", "Show", "Read", "Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
         case recType of
           NewType -> error "Generate haskell domain types: expected Data but got NewType" -- can be newtype here?
           Data -> TH.DataD [] (TH.mkName typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
           Type -> error "Generate haskell domain types: expected Data but got Type"
-      splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForEnumAndList $_thTypeName|]
+      TH.spliceW $ TH.varE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" `TH.appE` _thTypeName
       when (isHttpInstanceDerived typeObj) $
-        splice_ [e|mkHttpInstancesForEnum $_thTypeName|]
+        TH.spliceW $ TH.varE "mkHttpInstancesForEnum" `TH.appE` _thTypeName
       when (isJsonInstanceDerived typeObj typeName) $
-        splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForJSON $_thTypeName|]
+        TH.spliceW $ TH.varE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" `TH.appE` _thTypeName
     generateEnum _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [String] -> [TH.Name]
@@ -208,10 +210,10 @@ generateHaskellTypes typeObj = traverse_ processType typeObj -- (both concat . u
 
     generateDataStructure :: RecordType -> String -> [(String, String)] -> Writer CodeUnit
     generateDataStructure recType typeName fields = do
-      dec_ . pure $ do
+      TH.decW . pure $ do
         let bang = TH.Bang TH.NoSourceUnpackedness TH.NoSourceStrictness
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj)
-        let derives = TH.DerivClause Nothing (TH.ConT <$> [''Generic, ''Show, ''ToJSON, ''FromJSON, ''ToSchema] <> restDerivations)
+        let derives = TH.DerivClause Nothing (TH.ConT <$> ["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
         case recType of
           NewType -> do
             let (f, t) = case fields of
@@ -223,6 +225,6 @@ generateHaskellTypes typeObj = traverse_ processType typeObj -- (both concat . u
 
       let _thTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName
       when (isListInstanceDerived typeObj typeName) $
-        splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForEnumAndList $_thTypeName|]
+        TH.spliceW $ TH.varE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" `TH.appE` _thTypeName
       when (isJsonInstanceDerived typeObj typeName) $
-        splice_ [e|Kernel.Beam.Lib.UtilsTH.mkBeamInstancesForJSON $_thTypeName|]
+        TH.spliceW $ TH.varE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" `TH.appE` _thTypeName

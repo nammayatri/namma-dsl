@@ -59,7 +59,6 @@ default-extensions:
 dependencies:
   - aeson
   - base >= 4.7 && < 5
-  - mobility-core
   - bytestring
   - safe
   - record-dot-preprocessor
