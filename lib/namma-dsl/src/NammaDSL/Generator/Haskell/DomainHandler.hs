@@ -7,16 +7,18 @@ import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
 import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperDomainHandler, checkForPackageOverrides)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
 import Prelude
 
-generateDomainHandler :: Apis -> Code
-generateDomainHandler input =
+generateDomainHandler :: DefaultImports -> ApiRead -> Apis -> Code
+generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
   generateCode generatorInput
   where
+    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -25,12 +27,12 @@ generateDomainHandler input =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = "Domain.Action.UI." <> T.unpack (_moduleName input),
+          _moduleNm = domainHandlerModulePrefix <> T.unpack (_moduleName input),
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
-    qualifiedModuleName = T.unpack ("Domain.Action.UI." <> _moduleName input)
+    qualifiedModuleName = T.unpack ((T.pack domainHandlerModulePrefix) <> _moduleName input)
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -39,6 +41,7 @@ generateDomainHandler input =
         "Tools.Auth",
         "Data.OpenApi (ToSchema)"
       ]
+        <> simpleImp
 
     allQualifiedImports :: [String]
     allQualifiedImports =
@@ -47,6 +50,7 @@ generateDomainHandler input =
           (T.unpack <$> _imports input)
             <> defaultQualifiedImport
             <> ["Domain.Types.Merchant.MerchantOperatingCity" | ifProviderPlatform]
+            <> qualifiedImp
 
     ifProviderPlatform :: Bool
     ifProviderPlatform =
@@ -62,7 +66,7 @@ generateDomainHandler input =
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))
 
     defaultQualifiedImport :: [String]
-    defaultQualifiedImport = ["Kernel.Prelude", "Domain.Types.Person", "Domain.Types.Merchant", "Environment", "Kernel.Types.Id"]
+    defaultQualifiedImport = ["Kernel.Prelude", "Domain.Types.Person", "Domain.Types.Merchant", "Environment", "Kernel.Types.Id"] -- kept for backward compatibility for not, will remove after configuring the dhall configs
 
 mkCodeBody :: ApisM ()
 mkCodeBody = do

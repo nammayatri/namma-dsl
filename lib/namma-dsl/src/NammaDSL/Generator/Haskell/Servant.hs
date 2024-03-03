@@ -7,16 +7,19 @@ import Data.List.Extra (snoc)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperServant, checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 import Prelude
 
-generateServantAPI :: Apis -> Code
-generateServantAPI input =
+generateServantAPI :: DefaultImports -> ApiRead -> Apis -> Code
+generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
   generateCode generatorInput
   where
+    servantApiModulePrefix = apiServantImportPrefix apiRead ++ "."
+    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -25,27 +28,28 @@ generateServantAPI input =
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = "API.Action.UI." <> T.unpack (_moduleName input),
+          _moduleNm = servantApiModulePrefix <> T.unpack (_moduleName input),
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride allQualifiedImports,
-          _codeBody = generateCodeBody mkCodeBody input
+          _codeBody = generateCodeBody (mkCodeBody apiRead) input
         }
     defaultQualifiedImport :: [String]
     defaultQualifiedImport =
-      [ "Domain.Types.Person",
-        "Kernel.Prelude",
+      [ "Domain.Types.Person", -- Keeping this for backward compatibility
+        "Kernel.Prelude", -- Will remove after configuring the dhall configs
         "Control.Lens",
         "Domain.Types.Merchant",
         "Environment",
         "Kernel.Types.Id"
       ]
+        <> qualifiedImp
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ "Domain.Action.UI."
+      [ domainHandlerModulePrefix
           <> T.unpack (_moduleName input)
           <> " as "
-          <> "Domain.Action.UI."
+          <> domainHandlerModulePrefix
           <> T.unpack (_moduleName input)
       ]
         <> ( nub $
@@ -65,6 +69,7 @@ generateServantAPI input =
       ]
         <> ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
+        <> simpleImp
 
     ifNotDashboard :: Bool
     ifNotDashboard =
@@ -97,8 +102,8 @@ generateServantAPI input =
         )
         (map _authType $ _apis input)
 
-mkCodeBody :: ApisM ()
-mkCodeBody = do
+mkCodeBody :: ApiRead -> ApisM ()
+mkCodeBody apiRead = do
   input <- ask
   let allApis = _apis input
       moduleName' = _moduleName input
@@ -113,6 +118,7 @@ mkCodeBody = do
     withSpace $ intercalateA seperator (map handlerFunctionText' allApis)
   onNewLine $ intercalateA newLine (map (handlerFunctionDef moduleName') allApis)
   where
+    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     isAuthPresent :: ApiTT -> Bool
     isAuthPresent apiT = case _authType apiT of
       Just NoAuth -> False
@@ -148,7 +154,7 @@ mkCodeBody = do
                 <> functionName
                 <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
                 <> generateWithFlowHandlerAPI (isDashboardAuth apiT)
-                <> "Domain.Action.UI."
+                <> (T.pack domainHandlerModulePrefix)
                 <> moduleName'
                 <> "."
                 <> functionName

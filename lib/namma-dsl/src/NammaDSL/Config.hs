@@ -8,9 +8,10 @@ import Control.Lens
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
+--import Data.Text (Text)
 import Prelude
 
-data GenerationTypes
+data GenerationType
   = SERVANT_API
   | API_TYPES
   | DOMAIN_HANDLER
@@ -18,33 +19,54 @@ data GenerationTypes
   | BEAM_TABLE
   | DOMAIN_TYPE
   | SQL
+  | PURE_SCRIPT_FRONTEND
   deriving (Generic, Show, Eq, FromDhall)
 
 data InputPath = InputPath
-  { _api :: Maybe FilePath,
-    _storage :: Maybe FilePath
+  { _api :: FilePath,
+    _storage :: FilePath
   }
   deriving (Generic, Show, FromDhall)
 
 $(makeLenses ''InputPath)
 
 data OutputPath = OutputPath
-  { _apiTypes :: Maybe FilePath,
-    _beamQueries :: Maybe FilePath,
-    _beamTable :: Maybe FilePath,
-    _domainHandler :: Maybe FilePath,
-    _domainType :: Maybe FilePath,
-    _servantApi :: Maybe FilePath,
-    _sql :: Maybe FilePath
+  { _apiRelatedTypes :: FilePath,
+    _beamQueries :: FilePath,
+    _extraBeamQueries :: FilePath,
+    _beamTable :: FilePath,
+    _domainHandler :: FilePath,
+    _domainType :: FilePath,
+    _servantApi :: FilePath,
+    _sql :: FilePath,
+    _purescriptFrontend :: FilePath
   }
   deriving (Generic, Show, FromDhall)
 
 $(makeLenses ''OutputPath)
 
+data StorageConfig = StorageConfig
+  { _sqlTypeMapper :: [(String, String)],
+    _extraDefaultFields :: [(String, String)],
+    _dbName :: String
+  }
+  deriving (Generic, Show, FromDhall)
+
+$(makeLenses ''StorageConfig)
+
+data DefaultImports = DefaultImports
+  { _qualifiedImports :: [String],
+    _simpleImports :: [String],
+    _generationType :: GenerationType
+  }
+  deriving (Generic, Show, FromDhall)
+
 data AppConfigs = AppConfigs
-  { _input :: InputPath,
-    _output :: OutputPath,
-    _generate :: Maybe [GenerationTypes]
+  { _output :: OutputPath,
+    _defaultTypeImportMapper :: [(String, String)],
+    _defaultImports :: [DefaultImports],
+    _storageConfig :: StorageConfig,
+    _generate :: [GenerationType]
   }
   deriving (Generic, Show, FromDhall)
 

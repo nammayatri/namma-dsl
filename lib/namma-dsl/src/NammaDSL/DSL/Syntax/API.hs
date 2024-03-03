@@ -1,8 +1,11 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module NammaDSL.DSL.Syntax.API where
 
 import Control.Lens hiding (noneOf)
+import Data.Aeson (Object)
+import Data.Default
 import Data.Map (Map)
 import Data.Text (Text)
 import NammaDSL.DSL.Syntax.Common
@@ -66,3 +69,41 @@ data Apis = Apis
 $(makeLenses ''Apis)
 
 type ApisM = BuilderM Apis
+
+data ApiRead = ApiRead
+  { apiTypesImportPrefix :: String,
+    apiServantImportPrefix :: String,
+    apiDomainHandlerImportPrefix :: String,
+    apiDefaultTypeImportMapper :: [(String, String)]
+  }
+
+data ExtraParseInfo = ExtraParseInfo
+  { _yamlObj :: Object,
+    _parsedTypesDataNames :: [String]
+  }
+
+$(makeLenses ''ExtraParseInfo)
+
+data ApiState = ApiState
+  { _apisRes :: Apis,
+    _extraParseInfo :: ExtraParseInfo
+  }
+
+$(makeLenses ''ApiState)
+
+instance Default ExtraParseInfo where
+  def = ExtraParseInfo mempty []
+
+instance Default ApiState where
+  def = ApiState def def
+
+instance Default TypesInfo where
+  def = TypesInfo [] []
+
+instance Default ApiRead where
+  def = ApiRead "" "" "" []
+
+instance Default Apis where
+  def = Apis "" [] [] mempty def
+
+type ApiParserM = ParserM ApiRead ApiState

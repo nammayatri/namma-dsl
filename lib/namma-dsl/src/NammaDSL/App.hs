@@ -2,9 +2,11 @@
 
 module NammaDSL.App where
 
+import Control.Lens ((^.))
 import Control.Monad (unless, when)
-import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.Text as T
+import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
 import NammaDSL.DSL.Syntax.API
@@ -21,6 +23,50 @@ import Prelude
 
 version :: String
 version = "1.0.10"
+
+runStorageGenerator :: FilePath -> FilePath -> IO ()
+runStorageGenerator configPath yamlPath = do
+  config <- fetchDhallConfig configPath
+  let modulePrefix tp = haskellModuleNameFromFilePath (config ^. output . tp)
+      storageRead =
+        StorageRead
+          { domainTypeModulePrefix = modulePrefix domainType,
+            beamTypeModulePrefix = modulePrefix beamTable,
+            queryModulePrefix = modulePrefix beamQueries,
+            sqlMapper = config ^. storageConfig . sqlTypeMapper,
+            extraDefaultFields = _extraDefaultFields (config ^. storageConfig),
+            storageDefaultTypeImportMapper = config ^. defaultTypeImportMapper
+          }
+  tableDefs <- storageParser storageRead yamlPath
+  let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
+  mapM_
+    when'
+    [ (DOMAIN_TYPE, mkDomainType),
+      (BEAM_TABLE, mkBeamTable),
+      (BEAM_QUERIES, mkBeamQueries),
+      (SQL, mkSQLFile)
+    ]
+
+runApiGenerator :: FilePath -> FilePath -> IO ()
+runApiGenerator configPath yamlPath = do
+  config <- fetchDhallConfig configPath
+  let modulePrefix tp = haskellModuleNameFromFilePath (config ^. output . tp)
+  let apiRead =
+        ApiRead
+          { apiTypesImportPrefix = modulePrefix apiRelatedTypes,
+            apiServantImportPrefix = modulePrefix servantApi,
+            apiDomainHandlerImportPrefix = modulePrefix domainHandler,
+            apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper
+          }
+  apiDef <- apiParser' apiRead yamlPath
+  let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead apiDef
+  mapM_
+    when'
+    [ (SERVANT_API, mkServantAPI),
+      (API_TYPES, mkApiTypes),
+      (DOMAIN_HANDLER, mkDomainHandler),
+      (PURE_SCRIPT_FRONTEND, mkFrontendAPIIntegration)
+    ]
 
 data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
 
@@ -54,18 +100,21 @@ getFileState filePath = do
               else UNCHANGED
     else return NOT_EXIST
 
-mkBeamTable :: FilePath -> FilePath -> IO ()
-mkBeamTable filePath yaml = do
-  tableDef <- storageParser yaml
-  mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateBeamTable t)) tableDef
+mkBeamTable :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
+mkBeamTable appConfigs storageRead tableDefs = do
+  let filePath = appConfigs ^. output . beamTable
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs BEAM_TABLE
+      generateBeamTable' = generateBeamTable defaultImportsFromConfig storageRead
+  mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateBeamTable' t)) tableDefs
 
-mkBeamQueries :: FilePath -> Maybe FilePath -> FilePath -> IO ()
-mkBeamQueries defaultFilePath extraFilePath' yaml = do
-  let extraFilePath = fromMaybe defaultFilePath extraFilePath'
-  tableDef <- storageParser yaml
+mkBeamQueries :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
+mkBeamQueries appConfigs storageRead tableDefs = do
+  let defaultFilePath = appConfigs ^. output . beamQueries
+      extraFilePath = appConfigs ^. output . extraBeamQueries
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs BEAM_TABLE
   mapM_
     ( \t -> do
-        let beamQ = generateBeamQueries t
+        let beamQ = generateBeamQueries defaultImportsFromConfig storageRead t
         case beamQ of
           DefaultQueryFile (DefaultQueryCode {..}) -> do
             writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show readOnlyCode)
@@ -76,43 +125,52 @@ mkBeamQueries defaultFilePath extraFilePath' yaml = do
             when (isJust $ transformerCode defaultCode) $ writeToFileIfNotExists (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust (transformerCode defaultCode))
             writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show extraQueryFile)
     )
-    tableDef
+    tableDefs
 
-mkDomainType :: FilePath -> FilePath -> IO ()
-mkDomainType filePath yaml = do
-  tableDef <- storageParser yaml
-  mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateDomainType t)) tableDef
+mkDomainType :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
+mkDomainType appConfigs storageRead tableDefs = do
+  let filePath = appConfigs ^. output . domainType
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs DOMAIN_TYPE
+      generateDomainType' = generateDomainType defaultImportsFromConfig storageRead
+  mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateDomainType' t)) tableDefs
 
-mkSQLFile :: Maybe String -> FilePath -> FilePath -> IO ()
-mkSQLFile db filePath yaml = do
-  let database = fromMaybe "atlas_app" db
-  tableDef <- storageParser yaml
+mkSQLFile :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
+mkSQLFile appConfigs _storageRead tableDefs = do
+  let filePath = appConfigs ^. output . sql
+      database = appConfigs ^. storageConfig . dbName
+      sqlMapper = appConfigs ^. storageConfig . sqlTypeMapper
   mapM_
     ( \t -> do
         let filename = (tableNameSql t ++ ".sql")
-        mbOldMigrationFile <- getOldSqlFile database $ filePath </> filename
+        mbOldMigrationFile <- getOldSqlFile sqlMapper database $ filePath </> filename
         writeToFile filePath filename (generateSQL database mbOldMigrationFile t)
     )
-    tableDef
+    tableDefs
 
-mkServantAPI :: FilePath -> FilePath -> IO ()
-mkServantAPI filePath yaml = do
-  apiDef <- apiParser yaml
-  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPI apiDef)
+mkServantAPI :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkServantAPI appConfigs apiRead apiDef = do
+  let filePath = appConfigs ^. output . servantApi
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API
+      generateServantAPI' = generateServantAPI defaultImportsFromConfig apiRead
+  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPI' apiDef)
 
-mkApiTypes :: FilePath -> FilePath -> IO ()
-mkApiTypes filePath yaml = do
-  apiDef <- apiParser yaml
-  when (isApiExtraTypesPresent apiDef) $ writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateApiTypes apiDef)
+mkApiTypes :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkApiTypes appConfigs apiRead apiDef = do
+  let filePath = appConfigs ^. output . apiRelatedTypes
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TYPES
+      generateApiTypes' = generateApiTypes defaultImportsFromConfig apiRead
+  when (isApiExtraTypesPresent apiDef) $ writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateApiTypes' apiDef)
 
-mkDomainHandler :: FilePath -> FilePath -> IO ()
-mkDomainHandler filePath yaml = do
-  apiDef <- apiParser yaml
+mkDomainHandler :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkDomainHandler appConfigs apiRead apiDef = do
   let fileName = T.unpack (_moduleName apiDef) ++ ".hs"
+      filePath = appConfigs ^. output . domainHandler
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs DOMAIN_HANDLER
+      generateDomainHandler' = generateDomainHandler defaultImportsFromConfig apiRead
   fileExists <- doesFileExist (filePath </> fileName)
-  unless fileExists $ writeToFile filePath fileName (show $ generateDomainHandler apiDef)
+  unless fileExists $ writeToFile filePath fileName (show $ generateDomainHandler' apiDef)
 
-mkFrontendAPIIntegration :: FilePath -> FilePath -> IO ()
-mkFrontendAPIIntegration filePath yaml = do
-  apiDef <- apiParser yaml
+mkFrontendAPIIntegration :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkFrontendAPIIntegration appConfigs _apiRead apiDef = do
+  let filePath = appConfigs ^. output . purescriptFrontend
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".purs") (generateAPIIntegrationCode apiDef)

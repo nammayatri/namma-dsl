@@ -26,6 +26,7 @@ flag Local
 
 library
   exposed-modules:
+      NammaDSL.AccessorTH
       NammaDSL.App
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
@@ -92,6 +93,7 @@ library
     , bytestring
     , casing
     , containers
+    , data-default
     , dhall
     , directory
     , extra
@@ -113,6 +115,7 @@ library
     , template-haskell
     , text
     , time
+    , transformers
     , unordered-containers
     , utf8-string
     , vector
@@ -127,6 +130,7 @@ test-suite namma-dsl-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
+      NammaDSL.AccessorTH
       NammaDSL.App
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
@@ -193,6 +197,7 @@ test-suite namma-dsl-tests
     , bytestring
     , casing
     , containers
+    , data-default
     , dhall
     , directory
     , extra
@@ -215,6 +220,7 @@ test-suite namma-dsl-tests
     , template-haskell
     , text
     , time
+    , transformers
     , unordered-containers
     , utf8-string
     , vector

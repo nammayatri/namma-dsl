@@ -1,6 +1,9 @@
 module NammaDSL.DSL.Syntax.Storage where
 
+import Data.Aeson (Object)
+import Data.Default
 import Data.Map (Map)
+import GHC.Generics (Generic)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 import Prelude
@@ -40,7 +43,10 @@ data TableDef = TableDef
     beamTableInstance :: BeamInstance,
     extraOperations :: [ExtraOperations]
   }
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Default TableDef where
+  def = TableDef "" "" [] [] mempty [] [] [] Nothing False [] Nothing MakeTableInstances []
 
 data BeamInstance
   = MakeTableInstances
@@ -122,7 +128,39 @@ data BeamField = BeamField
   }
   deriving (Show)
 
---type ParserM = RWST Object [TableDef] TableDef (ExceptT ParseError IO)
+data ExtraParseInfo = ExtraParseInfo
+  { dList :: [String],
+    enumList :: [String],
+    excludedImportList :: [String],
+    yamlObject :: Object,
+    dataObject :: Object,
+    domainName :: String
+  }
+  deriving (Show)
+
+instance Default ExtraParseInfo where
+  def = ExtraParseInfo [] [] [] mempty mempty ""
+
+data StorageState = StorageState
+  { tableDef :: TableDef,
+    extraParseInfo :: ExtraParseInfo
+  }
+  deriving (Show)
+
+data StorageRead = StorageRead
+  { domainTypeModulePrefix :: String,
+    beamTypeModulePrefix :: String,
+    queryModulePrefix :: String,
+    sqlMapper :: [(String, String)],
+    extraDefaultFields :: [(String, String)],
+    storageDefaultTypeImportMapper :: [(String, String)]
+  }
+  deriving (Show)
+
+instance Default StorageRead where
+  def = StorageRead "" "" "" [] [] []
+
+type StorageParserM = ParserM StorageRead StorageState
 
 type StorageM = BuilderM TableDef
 

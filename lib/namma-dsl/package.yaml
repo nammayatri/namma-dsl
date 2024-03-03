@@ -87,6 +87,8 @@ dependencies:
   - containers
   - process
   - dhall
+  - transformers
+  - data-default
 
 ghc-options:
   - -Wall

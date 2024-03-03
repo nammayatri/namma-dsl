@@ -1,29 +1,34 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module NammaDSL.Utils where
 
 import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Lens.Combinators
+import Control.Monad.Extra (concatMapM)
 import Data.Aeson
-import Data.Aeson.Key (fromString, toString)
+import Data.Aeson.Key (fromString, fromText, toString)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (key, _Value)
 import Data.Bool (bool)
 import Data.Char (isLower, toLower, toUpper)
-import Data.List (intercalate, nub)
+import Data.List (find, intercalate, nub)
 import qualified Data.List as L
+import Data.List.Extra (trim)
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.List.Split as L
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Dhall (auto, inputFile)
+import Language.Haskell.TH hiding (match)
+import NammaDSL.Config
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
 import qualified NammaDSL.DSL.Syntax.API as APISyntax
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.IO
---import Debug.Trace(traceShowId)
 import Text.Regex.TDFA ((=~))
 import Prelude
 
@@ -56,25 +61,6 @@ typeDelimiter = "() []"
 
 isMaybeType :: String -> Bool
 isMaybeType tp = L.isPrefixOf "Maybe " tp || L.isPrefixOf "Data.Maybe.Maybe " tp || L.isPrefixOf "Kernel.Prelude.Maybe " tp
-
-defaultTypeImports :: String -> Maybe String
-defaultTypeImports tp = case tp of
-  "Text" -> Just "Kernel.Prelude"
-  "Maybe" -> Just "Kernel.Prelude"
-  "Double" -> Just "Kernel.Prelude"
-  "TimeOfDay" -> Just "Kernel.Prelude"
-  "Day" -> Just "Data.Time.Calendar"
-  "Int" -> Just "Kernel.Prelude"
-  "Bool" -> Just "Kernel.Prelude"
-  "Id" -> Just "Kernel.Types.Id"
-  "ShortId" -> Just "Kernel.Types.Id"
-  "UTCTime" -> Just "Kernel.Prelude"
-  "Meters" -> Just "Kernel.Types.Common"
-  "HighPrecMeters" -> Just "Kernel.Types.Common"
-  "Kilometers" -> Just "Kernel.Types.Common"
-  "HighPrecMoney" -> Just "Kernel.Types.Common"
-  "Seconds" -> Just "Kernel.Types.Common"
-  _ -> Nothing
 
 removeOccurrence :: String -> String -> String
 removeOccurrence remove str = T.unpack $ T.replace (T.pack remove) (T.pack "") (T.pack str)
@@ -122,20 +108,20 @@ getFieldRelationAndHaskellType str' = do
         _ -> False
 
 -- makeTypeQualified (Maybe Module name)
-makeTypeQualified :: Maybe String -> Maybe [String] -> Maybe [String] -> String -> Object -> String -> String
-makeTypeQualified moduleName excludedList dList defaultImportModule obj str' = concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str) <> opt
+makeTypeQualified :: [(String, String)] -> Maybe String -> Maybe [String] -> Maybe [String] -> String -> Object -> String -> String
+makeTypeQualified defaultTypeImport moduleName excludedList dList defaultImportModule obj str' = concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str) <> opt
   where
     (str, opt) = break (== '|') str'
     getQualifiedImport :: String -> Maybe String
     getQualifiedImport tk = case preview (ix "imports" . key (fromString tk) . _String) obj of
       Just t -> Just t
-      Nothing -> defaultTypeImports tk
+      Nothing -> find ((== tk) . fst) defaultTypeImport >>= pure . snd
 
     replaceOrKeep :: String -> String
     replaceOrKeep word
       | '.' `elem` word || ',' `elem` word = word
-      | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = defaultImportModule ++ fromJust moduleName ++ "." ++ word
-      | isJust dList && L.elem word (fromJust dList) = defaultImportModule ++ word ++ "." ++ word
+      | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = defaultImportModule ++ "." ++ fromJust moduleName ++ "." ++ word
+      | isJust dList && L.elem word (fromJust dList) = defaultImportModule ++ "." ++ word ++ "." ++ word
       | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
 
 figureOutImports :: [String] -> [String]
@@ -224,7 +210,21 @@ haskellModuleNameFromFilePath folderPath =
   where
     pathArray = splitOn "/" folderPath
 
--- fetchDhallConfig :: FilePath -> IO Config
--- fetchDhallConfig filePath = do
---   config <- input auto filePath
---   return config
+fetchDhallConfig :: FilePath -> IO AppConfigs
+fetchDhallConfig filePath = do
+  config <- inputFile auto filePath
+  return config
+
+makeAccKeysTH :: String -> Q [Dec]
+makeAccKeysTH inputs = do
+  let mkKey inp = do
+        let keyName = mkName $ "acc_" ++ inp
+            keyType = conT ''Key
+            keyValue = appE (varE 'fromText) (litE $ stringL inp)
+        keyDeclaration <- sigD keyName keyType
+        keyDefinition <- valD (varP keyName) (normalB keyValue) []
+        return [keyDeclaration, keyDefinition]
+  concatMapM mkKey (nub . filter (not . null) . map trim . lines $ inputs)
+
+getGeneratorDefaultImports :: AppConfigs -> GenerationType -> DefaultImports
+getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] generatorTp) $ find ((== generatorTp) . _generationType) (config ^. defaultImports)

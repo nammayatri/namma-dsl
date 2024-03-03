@@ -1,13 +1,16 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, runAnyParser) where
 
 import Control.Lens.Combinators
 import Control.Lens.Operators
 import Control.Monad (when)
+import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
 import qualified Data.Aeson.KeyMap as KM
@@ -16,6 +19,8 @@ import Data.Bifunctor
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.Char (toUpper)
+import Data.Default
+import Data.Foldable (foldlM)
 import Data.List (find, foldl')
 import qualified Data.List as L
 import qualified Data.List.Extra as L
@@ -28,6 +33,7 @@ import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import qualified Debug.Trace as DT
 import FlatParse.Basic
+import NammaDSL.AccessorTH
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils hiding (typeDelimiter)
@@ -36,6 +42,264 @@ import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import Text.Regex.TDFA ((=~))
 import Prelude
+
+parseTableDef :: StorageParserM ()
+parseTableDef = do
+  parseExtraTypes
+  parseFields
+  parseImports
+  parseQueries
+  parseDerives
+  parseBeamTypeInstance
+  parsePrimaryAndSecondaryKeys
+  parseRelationalTableNamesHaskell
+  parseExtraOperations
+
+parseExtraTypes :: StorageParserM ()
+parseExtraTypes = do
+  dList <- gets (.extraParseInfo.dList)
+  importObj <- gets (.extraParseInfo.yamlObject)
+  moduleName <- gets (.extraParseInfo.domainName)
+  defaultImportModule <- asks (.domainTypeModulePrefix)
+  defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
+  parseTypes
+  _types <- gets (types . tableDef)
+  let mkEnumTypeQualified = \enumTp ->
+        L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj) . L.breakOn " ") (L.trim <$> L.splitOn "," enumTp)
+      mkQualifiedTypeObject = \(TypeObject recType (_nm, (arrOfFields, derive))) ->
+        TypeObject
+          recType
+          ( _nm,
+            ( map
+                ( \(_n, _t) ->
+                    ( _n,
+                      if _n == "enum"
+                        then mkEnumTypeQualified _t
+                        else makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj _t
+                    )
+                )
+                arrOfFields,
+              derive
+            )
+          )
+      types' = fromMaybe [] _types
+      allExcludeQualified = map (\(TypeObject _ (name, _)) -> name) types'
+      allEnums = map (\(TypeObject _ (name, _)) -> name) $ filter isEnumType types'
+      qualifiedTypeObject = (map mkQualifiedTypeObject) <$> _types
+      qualifiedAllEnums = map (\nm -> defaultImportModule ++ "." ++ moduleName ++ "." ++ nm) allEnums ++ allEnums
+  modify $ \s -> s {tableDef = (tableDef s) {types = qualifiedTypeObject}, extraParseInfo = (extraParseInfo s) {enumList = qualifiedAllEnums, excludedImportList = allExcludeQualified}}
+
+parseFields :: StorageParserM ()
+parseFields = do
+  moduleName <- gets (domainName . extraParseInfo)
+  excludedList <- Just <$> gets (excludedImportList . extraParseInfo) -- remove just later ...
+  dataList <- gets (dList . extraParseInfo)
+  impObj <- gets (yamlObject . extraParseInfo)
+  obj <- gets (dataObject . extraParseInfo)
+  defaultImportModule <- asks (.domainTypeModulePrefix)
+  extraDefaultFields <- asks (.extraDefaultFields)
+  defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
+  let unfilteredFields = obj ^? ix acc_fields . _Value . to mkList
+      excludedDefaultFields = obj ^? ix acc_excludedFields . _Array . to V.toList . to (map valueToString)
+      getNotPresentDefaultFields = \flds -> filter (\(k, _) -> (k `notElem` map fst flds && k `notElem` (fromMaybe [] excludedDefaultFields))) extraDefaultFields
+      fields = (++) <$> unfilteredFields <*> (getNotPresentDefaultFields <$> unfilteredFields)
+      getFieldDef field = do
+        let fieldName = fst field
+            (haskellType, optionalRelation) = break (== '|') $ snd field
+            fieldKey = fromString fieldName
+            parseFromTType = obj ^? ix acc_fromTType . _Object . ix fieldKey . _String . to (makeTF impObj)
+        getbeamFields <- makeBeamFields fieldName haskellType
+        let typeQualifiedHaskellType = makeTypeQualified defaultTypeImportMap (Just moduleName) excludedList (Just dataList) defaultImportModule impObj haskellType
+            fieldRelationAndModule =
+              if has (ix acc_beamFields . _Object . ix fieldKey . _Object) obj
+                then Nothing
+                else getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
+        pure $
+          FieldDef
+            { fieldName = fieldName,
+              haskellType = typeQualifiedHaskellType,
+              beamFields = getbeamFields,
+              fromTType = maybe (if length getbeamFields > 1 then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
+              isEncrypted = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType),
+              relation = fst <$> fieldRelationAndModule,
+              relationalTableNameHaskell = snd <$> fieldRelationAndModule
+            }
+  case mapM getFieldDef <$> fields of
+    Just fM -> do
+      f <- fM
+      let containsEncryptedField = any isEncrypted f
+      modify $ \s -> s {tableDef = (tableDef s) {fields = f, containsEncryptedField = containsEncryptedField}}
+    Nothing -> throwError $ InternalError "Error Parsing Fields"
+  modifyWithIdRelationalFields
+
+modifyWithIdRelationalFields :: StorageParserM ()
+modifyWithIdRelationalFields = do
+  fields <- gets (fields . tableDef)
+  let modifiedFields =
+        map
+          ( \fieldDef ->
+              case relation fieldDef of
+                Just (WithId _ _) ->
+                  fieldDef
+                    { beamFields =
+                        [ BeamField
+                            { bFieldName = (fieldName fieldDef) ++ "Id",
+                              hFieldType = haskellType fieldDef,
+                              bFieldType = "Kernel.Prelude.Maybe Kernel.Prelude.Text",
+                              bConstraints = [],
+                              bSqlType = "character varying(36)",
+                              bDefaultVal = Nothing,
+                              bFieldUpdates = [],
+                              bfieldExtractor = ["Kernel.Types.Id.getId", "(.id) <$>"],
+                              bToTType = Nothing,
+                              bIsEncrypted = False
+                            }
+                        ]
+                    }
+                Just (WithIdStrict _ _) ->
+                  fieldDef
+                    { beamFields =
+                        [ BeamField
+                            { bFieldName = (fieldName fieldDef) ++ "Id",
+                              hFieldType = haskellType fieldDef,
+                              bFieldType = "Kernel.Prelude.Text",
+                              bConstraints = [NotNull],
+                              bSqlType = "character varying(36)",
+                              bDefaultVal = Nothing,
+                              bFieldUpdates = [],
+                              bfieldExtractor = ["Kernel.Types.Id.getId", "(.id)"],
+                              bToTType = Nothing,
+                              bIsEncrypted = False
+                            }
+                        ]
+                    }
+                _ -> fieldDef
+          )
+          fields
+  modify $ \s -> s {tableDef = (tableDef s) {fields = modifiedFields}}
+
+parseImports :: StorageParserM ()
+parseImports = do
+  fields <- gets (fields . tableDef)
+  typObj <- fromMaybe [] <$> gets (types . tableDef)
+  let _imports = figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields)
+  modify $ \s -> s {tableDef = (tableDef s) {imports = _imports}}
+  parseImportPackageOverrides
+  where
+    figureOutBeamFieldsImports :: [BeamField] -> [String]
+    figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
+
+    figureOutInsideTypeImports :: TypeObject -> [String]
+    figureOutInsideTypeImports tobj@(TypeObject _ (_, (tps, _))) =
+      let isEnum = isEnumType tobj
+       in concatMap
+            ( ( \potentialImport ->
+                  if isEnum
+                    then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
+                    else [potentialImport]
+              )
+                . snd
+            )
+            tps
+
+parseQueries :: StorageParserM ()
+parseQueries = do
+  moduleName <- gets (.extraParseInfo.domainName)
+  excludedList <- gets (.extraParseInfo.excludedImportList)
+  dList <- gets (.extraParseInfo.dList)
+  fields <- gets (.tableDef.fields)
+  impObj <- gets (.extraParseInfo.yamlObject)
+  obj <- gets (.extraParseInfo.dataObject)
+  defaultImportModule <- asks (.domainTypeModulePrefix)
+  defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
+  let makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
+      mbQueries = obj ^? ix acc_queries . _Value . to mkListObject
+      parseQuery query =
+        let queryName = fst query
+            queryDataObj = snd query
+            params = addDefaultUpdatedAtToQueryParams queryName $ map (first (second makeTypeQualified')) $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (searchForKey fields . valueToString)))
+            kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
+            whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause makeTypeQualified' "eq" fields))
+            orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields))
+         in QueryDef queryName kvFunction params whereClause orderBy False
+  case mbQueries of
+    Just queries -> modify $ \s -> s {tableDef = (tableDef s) {queries = map parseQuery queries}}
+    Nothing -> pure ()
+  where
+    addDefaultUpdatedAtToQueryParams :: String -> [((String, String), Bool)] -> [((String, String), Bool)]
+    addDefaultUpdatedAtToQueryParams queryName params =
+      if "update" `L.isPrefixOf` queryName
+        then if any (\((k, _), _) -> k == "updatedAt") params then params else params <> [(("updatedAt", "Kernel.Prelude.UTCTime"), False)]
+        else params
+
+    parseOrderBy :: [FieldDef] -> Value -> (String, Order)
+    parseOrderBy fields (String st) = do
+      let ((key_, _), _) = searchForKey fields (T.unpack st)
+      (key_, Desc)
+    parseOrderBy fields (Object obj) = do
+      let obj' = KM.toList obj
+      extractFieldOrder fields obj'
+    parseOrderBy _ val = error $ "Invalid orderBy: Must be a string or an object: " <> show val
+
+parseImportPackageOverrides :: StorageParserM ()
+parseImportPackageOverrides = do
+  obj <- gets (dataObject . extraParseInfo)
+  let parsedImportPackageOverrides = fromMaybe M.empty $ obj ^? ix acc_importPackageOverrides . _Value . to mkList . to M.fromList
+  modify $ \s -> s {tableDef = (tableDef s) {importPackageOverrides = parsedImportPackageOverrides}}
+
+parseExtraOperations :: StorageParserM ()
+parseExtraOperations = do
+  obj <- gets (dataObject . extraParseInfo)
+  let parsedExtraOperations = fromMaybe [] $ obj ^? ix acc_extraOperations . _Array . to V.toList . to (map (extraOperation . valueToString))
+  modify $ \s -> s {tableDef = (tableDef s) {extraOperations = parsedExtraOperations}}
+
+parseDerives :: StorageParserM ()
+parseDerives = do
+  obj <- gets (dataObject . extraParseInfo)
+  let parsedDerives = obj ^? ix acc_derives ._String
+  modify $ \s -> s {tableDef = (tableDef s) {derives = parsedDerives}}
+
+parseBeamTypeInstance :: StorageParserM ()
+parseBeamTypeInstance = do
+  obj <- gets (dataObject . extraParseInfo)
+  let parsedBeamTypeInstance = fromMaybe MakeTableInstances $ obj ^? ix acc_beamInstance . _String . to mkBeamInstance
+  modify $ \s -> s {tableDef = (tableDef s) {beamTableInstance = parsedBeamTypeInstance}}
+
+parsePrimaryAndSecondaryKeys :: StorageParserM ()
+parsePrimaryAndSecondaryKeys = do
+  fields <- gets (fields . tableDef)
+  let (primaryKey, secondaryKey) = extractKeys fields
+  modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey}}
+  where
+    extractKeys :: [FieldDef] -> ([String], [String])
+    extractKeys fieldDefs = extractKeysFromBeamFields (concatMap beamFields fieldDefs)
+
+    extractKeysFromBeamFields :: [BeamField] -> ([String], [String])
+    extractKeysFromBeamFields fieldDefs = (primaryKeyFields, secondaryKeyFields)
+      where
+        primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
+        secondaryKeyFields = [bFieldName fd | fd <- fieldDefs, SecondaryKey `elem` bConstraints fd]
+
+parseRelationalTableNamesHaskell :: StorageParserM ()
+parseRelationalTableNamesHaskell = do
+  fields <- gets (fields . tableDef)
+  let relationalTableNamesHaskell = catMaybes $ map (.relationalTableNameHaskell) fields
+  modify $ \s -> s {tableDef = (tableDef s) {relationalTableNamesHaskell = relationalTableNamesHaskell}}
+
+storageParser :: StorageRead -> FilePath -> IO [TableDef]
+storageParser storageRead filepath = do
+  contents <- BS.readFile filepath
+  case Yaml.decodeEither' contents of
+    Left _ -> error "Not a Valid Yaml"
+    Right yml -> do
+      let modelList = toModelList yml
+          dList = fst <$> modelList
+          extraParseInfo = def {dList = dList, yamlObject = yml}
+          storageState = StorageState {tableDef = def, extraParseInfo = extraParseInfo}
+      tableDef <- mapM (\table -> tableDef <$> evalParser parseTableDef storageRead (storageState {tableDef = def {tableNameSql = quietSnake (fst table), tableNameHaskell = fst table}, extraParseInfo = extraParseInfo {domainName = fst table, dataObject = snd table}})) $ filter ((/= "imports") . fst) modelList
+      pure $ map (modifyRelationalTableDef tableDef) tableDef
+
+-------------------------------------------------------------------------------------------------------------
 
 debugParser :: String -> Parser e ()
 debugParser tag = do
@@ -89,8 +353,8 @@ parseConstraint = do
      )
   return constarint
 
-sqlAlterTableAddColumn :: String -> Bool -> Parser e FieldDef
-sqlAlterTableAddColumn dbName _fromUpdatesSection = do
+sqlAlterTableAddColumn :: String -> [(String, String)] -> Bool -> Parser e FieldDef
+sqlAlterTableAddColumn dbName sqlTypeWrtType _fromUpdatesSection = do
   parseAlterTablePrefix dbName
   _tableName <- many $ notFollowedBy anyChar ($(string "ADD COLUMN") <|> $(string "ADD PRIMARY KEY"))
   $(string " ADD COLUMN ")
@@ -113,7 +377,7 @@ sqlAlterTableAddColumn dbName _fromUpdatesSection = do
       bf =
         BeamField
           { bFieldName = snakeCaseToCamelCase fieldName,
-            hFieldType = findMatchingHaskellType sqlType, -- not required, but anyways did.
+            hFieldType = findMatchingHaskellType sqlTypeWrtType sqlType, -- not required, but anyways did.
             bFieldType = sqlType, -- not required for this case
             bConstraints = [PrimaryKey | fieldName == "id"] <> maybeToList constraint, -- as hardcoded in the generator part
             bSqlType = sqlType, -- not required for this case
@@ -126,7 +390,7 @@ sqlAlterTableAddColumn dbName _fromUpdatesSection = do
   pure $
     FieldDef
       (snakeCaseToCamelCase fieldName)
-      (findMatchingHaskellType sqlType)
+      (findMatchingHaskellType sqlTypeWrtType sqlType)
       beamFields
       fromTType
       isEncrypted
@@ -201,23 +465,23 @@ sqlUpdatesParser dbName = do
           (pk <> sk)
     _ -> pure $ SqlUpdates Nothing []
 
-updateParser :: String -> Parser e [(Maybe SqlUpdates, Maybe FieldDef)]
-updateParser dbName = do
+updateParser :: [(String, String)] -> String -> Parser e [(Maybe SqlUpdates, Maybe FieldDef)]
+updateParser sqlTypeWrtType dbName = do
   sqlUpdateStampParser
-  res <- many ((asFst (sqlUpdatesParser dbName)) <|> (asSnd (sqlAlterTableAddColumn dbName True)))
+  res <- many ((asFst (sqlUpdatesParser dbName)) <|> (asSnd (sqlAlterTableAddColumn dbName sqlTypeWrtType True)))
   pure res
   where
     asSnd f = (Nothing,) . Just <$> f
     asFst f = (,Nothing) . Just <$> f
 
-migrationFileParser :: String -> String -> Parser e MigrationFile
-migrationFileParser dbName lastSqlFile = do
+migrationFileParser :: [(String, String)] -> String -> String -> Parser e MigrationFile
+migrationFileParser sqlTypeWrtType dbName lastSqlFile = do
   !tableName <- sqlCreateParser dbName
-  fields' <- many (sqlAlterTableAddColumn dbName False)
+  fields' <- many (sqlAlterTableAddColumn dbName sqlTypeWrtType False)
   keys <- (sqlAlterAddPrimaryKeyParser dbName) <|> return ([], [])
   fieldUpdates' <-
     concat
-      <$> many (updateParser dbName)
+      <$> many (updateParser sqlTypeWrtType dbName)
   let !(columnUpdates, newFields) = second catMaybes . first catMaybes $ unzip fieldUpdates'
   let !deletedFields = L.nub . map fst . filter ((== DropColumn) . snd) $ mapMaybe fieldUpdates columnUpdates
   let !finalFieldsDeleted =
@@ -292,14 +556,14 @@ runAnyParser parser str = do
     go (OK r _) = Just r
     go _ = Nothing
 
-getOldSqlFile :: String -> FilePath -> IO (Maybe MigrationFile)
-getOldSqlFile dbName filepath = do
+getOldSqlFile :: [(String, String)] -> String -> FilePath -> IO (Maybe MigrationFile)
+getOldSqlFile sqlTypeWrtType dbName filepath = do
   fileExist <- doesFileExist filepath
   if fileExist
     then do
       lastSqlFile <- BS.readFile filepath
       print ("loading old sql file" <> filepath :: String)
-      pure $ go (runParser (migrationFileParser dbName (BSU.toString lastSqlFile)) $ cleanedFile lastSqlFile)
+      pure $ go (runParser (migrationFileParser sqlTypeWrtType dbName (BSU.toString lastSqlFile)) $ cleanedFile lastSqlFile)
     else pure Nothing
   where
     cleanedFile = joinCleanWithNewLine . removeInlineComments . removeFullLineComments . clearExtraLines
@@ -317,56 +581,6 @@ getOldSqlFile dbName filepath = do
     clearExtraLines = filter (not . BS.null) . BS.split 10 -- 10 = "\n"
     go (OK r _) = Just r
     go _ = Nothing
-
-storageParser :: FilePath -> IO [TableDef]
-storageParser filepath = do
-  contents <- BS.readFile filepath
-  case Yaml.decodeEither' contents of
-    Left _ -> error "Not a Valid Yaml"
-    Right yml -> do
-      let modelList = toModelList yml
-          dList = fst <$> modelList
-          tableDef = map (parseTableDef dList yml) $ filter ((/= "imports") . fst) modelList
-      pure $ map (modifyRelationalTableDef tableDef) tableDef
-
-modifyWithIdRelationalField :: FieldDef -> FieldDef
-modifyWithIdRelationalField fieldDef =
-  case relation fieldDef of
-    Just (WithId _ _) ->
-      fieldDef
-        { beamFields =
-            [ BeamField
-                { bFieldName = (fieldName fieldDef) ++ "Id",
-                  hFieldType = haskellType fieldDef,
-                  bFieldType = "Kernel.Prelude.Maybe Kernel.Prelude.Text",
-                  bConstraints = [],
-                  bSqlType = "character varying(36)",
-                  bDefaultVal = Nothing,
-                  bFieldUpdates = [],
-                  bfieldExtractor = ["Kernel.Types.Id.getId", "(.id) <$>"],
-                  bToTType = Nothing,
-                  bIsEncrypted = False
-                }
-            ]
-        }
-    Just (WithIdStrict _ _) ->
-      fieldDef
-        { beamFields =
-            [ BeamField
-                { bFieldName = (fieldName fieldDef) ++ "Id",
-                  hFieldType = haskellType fieldDef,
-                  bFieldType = "Kernel.Prelude.Text",
-                  bConstraints = [NotNull],
-                  bSqlType = "character varying(36)",
-                  bDefaultVal = Nothing,
-                  bFieldUpdates = [],
-                  bfieldExtractor = ["Kernel.Types.Id.getId", "(.id)"],
-                  bToTType = Nothing,
-                  bIsEncrypted = False
-                }
-            ]
-        }
-    _ -> fieldDef
 
 modifyRelationalTableDef :: [TableDef] -> TableDef -> TableDef
 modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
@@ -429,24 +643,6 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
       TableDef {fields = fields <> [foreignField], queries = queries <> query, ..}
     Nothing -> TableDef {..}
 
-parseTableDef :: [String] -> Object -> (String, Object) -> TableDef
-parseTableDef dList importObj (parseDomainName, obj) =
-  let parsedTypesAndExcluded = parseExtraTypes parseDomainName dList importObj obj
-      parsedTypes = view _1 <$> parsedTypesAndExcluded
-      excludedList = view _2 <$> parsedTypesAndExcluded
-      enumList = maybe [] (view _3) parsedTypesAndExcluded
-      parsedFields = map modifyWithIdRelationalField $ parseFields (Just parseDomainName) excludedList dList enumList (fromMaybe [] parsedTypes) importObj obj
-      containsEncryptedField = any isEncrypted parsedFields
-      parsedImports = parseImports parsedFields (fromMaybe [] parsedTypes)
-      parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to mkList . to M.fromList) obj
-      parsedQueries = parseQueries (Just parseDomainName) excludedList dList parsedFields importObj obj
-      parsedExtraOperations = fromMaybe [] $ preview (ix "extraOperations" . _Array . to V.toList . to (map (extraOperation . valueToString))) obj
-      parsedDerives = preview (ix "derives" ._String) obj
-      parsedBeamTypeInstance = fromMaybe MakeTableInstances $ preview (ix "beamInstance" . _String . to mkBeamInstance) obj
-      (primaryKey, secondaryKey) = extractKeys parsedFields
-      relationalTableNamesHaskell = catMaybes $ map (.relationalTableNameHaskell) parsedFields
-   in TableDef parseDomainName (quietSnake parseDomainName) parsedFields parsedImports parsedImportPackageOverrides parsedQueries primaryKey secondaryKey parsedTypes containsEncryptedField relationalTableNamesHaskell parsedDerives parsedBeamTypeInstance parsedExtraOperations
-
 mkBeamInstance :: String -> BeamInstance
 mkBeamInstance rw =
   case instanceName of
@@ -457,66 +653,11 @@ mkBeamInstance rw =
   where
     (instanceName, extraParams) = L.break (== ' ') rw
 
-parseImports :: [FieldDef] -> [TypeObject] -> [String]
-parseImports fields typObj =
-  figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields)
-  where
-    figureOutBeamFieldsImports :: [BeamField] -> [String]
-    figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
-
-    figureOutInsideTypeImports :: TypeObject -> [String]
-    figureOutInsideTypeImports tobj@(TypeObject _ (_, (tps, _))) =
-      let isEnum = isEnumType tobj
-       in concatMap
-            ( ( \potentialImport ->
-                  if isEnum
-                    then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
-                    else [potentialImport]
-              )
-                . snd
-            )
-            tps
-
---extraImports = concatMap (\f -> maybe [] pure (toTType f) <> maybe [] pure (fromTType f)) fields
-
 searchForKey :: [FieldDef] -> String -> ((String, String), Bool)
 searchForKey fields inputKey = do
   let errorMsg = error $ "Param " ++ inputKey ++ " not found in fields"
   let filedDef = fromMaybe errorMsg $ find ((== inputKey) . fieldName) fields
   ((inputKey, haskellType filedDef), isEncrypted filedDef)
-
-parseQueries :: Maybe String -> Maybe [String] -> [String] -> [FieldDef] -> Object -> Object -> [QueryDef]
-parseQueries moduleName excludedList dList fields impObj obj = do
-  let mbQueries = preview (ix "queries" . _Value . to mkListObject) obj
-      defaultImportModule = "Domain.Types."
-      makeTypeQualified' = makeTypeQualified moduleName excludedList (Just dList) defaultImportModule impObj
-      parseQuery query =
-        let queryName = fst query
-            queryDataObj = snd query
-            params = addDefaultUpdatedAtToQueryParams queryName $ map (first (second makeTypeQualified')) $ fromMaybe [] (queryDataObj ^? ix "params" . _Array . to V.toList . to (map (searchForKey fields . valueToString)))
-            kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix "kvFunction" . _String)
-            whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix "where" . to (parseWhereClause makeTypeQualified' "eq" fields))
-            orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix "orderBy" . to (parseOrderBy fields))
-         in QueryDef queryName kvFunction params whereClause orderBy False
-
-  case mbQueries of
-    Just queries -> map parseQuery queries
-    Nothing -> []
-  where
-    addDefaultUpdatedAtToQueryParams :: String -> [((String, String), Bool)] -> [((String, String), Bool)]
-    addDefaultUpdatedAtToQueryParams queryName params =
-      if "update" `L.isPrefixOf` queryName
-        then if any (\((k, _), _) -> k == "updatedAt") params then params else params <> [(("updatedAt", "Kernel.Prelude.UTCTime"), False)]
-        else params
-
-parseOrderBy :: [FieldDef] -> Value -> (String, Order)
-parseOrderBy fields (String st) = do
-  let ((key_, _), _) = searchForKey fields (T.unpack st)
-  (key_, Desc)
-parseOrderBy fields (Object obj) = do
-  let obj' = KM.toList obj
-  extractFieldOrder fields obj'
-parseOrderBy _ val = error $ "Invalid orderBy: Must be a string or an object: " <> show val
 
 extractFieldOrder :: [FieldDef] -> [(Key, Value)] -> (String, Order)
 extractFieldOrder fields input = do
@@ -554,24 +695,22 @@ parseWhereClause mkQTypeFunc _ fields (Object clauseObj) = do
 parseWhereClause _ _ _ val = error $ "Invalid where clause, must be a string or an object: " <> show val
 
 parseOperator :: String -> Operator
-parseOperator "and" = And
-parseOperator "or" = Or
-parseOperator "in" = In
-parseOperator "eq" = Eq
-parseOperator "gt" = GreaterThan
-parseOperator "lt" = LessThan
-parseOperator "gte" = GreaterThanOrEq
-parseOperator "lte" = LessThanOrEq
-parseOperator val = error $ "Invalid operator " <> show val
+parseOperator val = case val of
+  "and" -> And
+  "or" -> Or
+  "in" -> In
+  "eq" -> Eq
+  "gt" -> GreaterThan
+  "lt" -> LessThan
+  "gte" -> GreaterThanOrEq
+  "lte" -> LessThanOrEq
+  _ -> error $ "Invalid operator " <> show val
 
-parseTypes :: Object -> Maybe [TypeObject]
-parseTypes obj = case preview (ix "types" ._Object) obj of
-  Just typesObj -> Just $ parseTypeObjects typesObj
-  _ -> Nothing
-
-parseTypeObjects :: Object -> [TypeObject]
-parseTypeObjects obj =
-  map processType $ KM.toList obj
+parseTypes :: StorageParserM ()
+parseTypes = do
+  obj <- gets (dataObject . extraParseInfo)
+  let tps = ((map processType) . KM.toList) <$> obj ^? ix acc_types . _Object
+  modify $ \s -> s {tableDef = (tableDef s) {types = tps}}
   where
     extractFields :: KM.KeyMap Value -> [(String, String)]
     extractFields = map (first toString) . KM.toList . fmap extractString
@@ -593,7 +732,7 @@ parseTypeObjects obj =
     extractRecordType =
       (fromMaybe Data)
         . ( preview
-              ( ix "recordType" . _String
+              ( ix acc_recordType . _String
                   . to
                     ( \case
                         "NewType" -> NewType
@@ -609,87 +748,34 @@ parseTypeObjects obj =
       TypeObject (extractRecordType typeDef) (toString typeName, splitTypeAndDerivation $ extractFields typeDef)
     processType _ = error "Expected an object in fields"
 
-parseExtraTypes :: String -> [String] -> Object -> Object -> Maybe ([TypeObject], [String], [String])
-parseExtraTypes moduleName dList importObj obj = do
-  _types <- parseTypes obj
-  let allExcludeQualified = map (\(TypeObject _ (name, _)) -> name) _types
-  let allEnums = map (\(TypeObject _ (name, _)) -> name) $ filter isEnumType _types
-  return (map (mkQualifiedTypeObject allExcludeQualified) _types, allExcludeQualified, map (\nm -> defaultImportModule ++ moduleName ++ "." ++ nm) allEnums ++ allEnums)
-  where
-    defaultImportModule = "Domain.Types."
-
-    mkEnumTypeQualified :: [String] -> String -> String
-    mkEnumTypeQualified excluded enumTp =
-      let individualEnums = L.trim <$> L.splitOn "," enumTp
-       in L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified (Just moduleName) (Just excluded) (Just dList) defaultImportModule importObj) . L.breakOn " ") individualEnums
-
-    mkQualifiedTypeObject :: [String] -> TypeObject -> TypeObject
-    mkQualifiedTypeObject excluded (TypeObject recType (_nm, (arrOfFields, derive))) =
-      TypeObject
-        recType
-        ( _nm,
-          ( map
-              ( \(_n, _t) ->
-                  ( _n,
-                    if _n == "enum"
-                      then mkEnumTypeQualified excluded _t
-                      else makeTypeQualified (Just moduleName) (Just excluded) (Just dList) defaultImportModule importObj _t
-                  )
-              )
-              arrOfFields,
-            derive
-          )
-        )
-
-parseFields :: Maybe String -> Maybe [String] -> [String] -> [String] -> [TypeObject] -> Object -> Object -> [FieldDef]
-parseFields moduleName excludedList dataList enumList definedTypes impObj obj =
-  let unfilteredFields = preview (ix "fields" . _Value . to mkList) obj
-      excludedDefaultFields = preview (ix "excludedFields" . _Array . to V.toList . to (map valueToString)) obj
-      fields = (++) <$> unfilteredFields <*> (getNotPresentDefaultFields excludedDefaultFields <$> unfilteredFields)
-      getFieldDef field =
-        let fieldName = fst field
-            (haskellType, optionalRelation) = break (== '|') $ snd field
-            fieldKey = fromString fieldName
-            parseFromTType = obj ^? (ix "fromTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
-            defaultImportModule = "Domain.Types."
-            getbeamFields = makeBeamFields (fromMaybe (error "Module name not found") moduleName) excludedList dataList enumList fieldName haskellType definedTypes impObj obj
-            typeQualifiedHaskellType = makeTypeQualified moduleName excludedList (Just dataList) defaultImportModule impObj haskellType
-            fieldRelationAndModule =
-              if has (ix "beamFields" . _Object . ix fieldKey . _Object) obj
-                then Nothing
-                else getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
-         in FieldDef
-              { fieldName = fieldName,
-                haskellType = typeQualifiedHaskellType,
-                beamFields = getbeamFields,
-                fromTType = maybe (if length getbeamFields > 1 then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
-                isEncrypted = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType),
-                relation = fst <$> fieldRelationAndModule,
-                relationalTableNameHaskell = snd <$> fieldRelationAndModule
-              }
-   in case map getFieldDef <$> fields of
-        Just f -> f
-        Nothing -> error "Error Parsing Fields"
-
-beamFieldsWithExtractors :: String -> Maybe Object -> String -> String -> [TypeObject] -> [String] -> [(String, String, [String])]
-beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTypes extractorFuncs =
+beamFieldsWithExtractors :: String -> String -> [String] -> StorageParserM [(String, String, [String])]
+beamFieldsWithExtractors fieldName haskellType extractorFuncs = do
+  moduleName <- gets (.extraParseInfo.domainName)
+  domainTypeModulePrefix <- asks (.domainTypeModulePrefix)
+  definedTypes <- (fromMaybe []) <$> gets (.tableDef.types)
+  obj <- gets (.extraParseInfo.dataObject)
+  let beamFieldObj = obj ^? (ix acc_beamFields . _Object)
+      qualified tp = domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ tp
+      findIfComplexType tpp = find (\(TypeObject _ (nm, (arrOfFields, _))) -> (nm == tpp || tpp == domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
   case beamFieldObj >>= preview (ix (fromString fieldName) . _Object . to Object . to mkList) of
     Just arrOfFields ->
-      foldl (\acc (nm, tpp) -> acc ++ [(nm, tpp, [])]) [] arrOfFields
+      pure $ foldl (\acc (nm, tpp) -> acc ++ [(nm, tpp, [])]) [] arrOfFields
     Nothing ->
       case findIfComplexType haskellType of
-        Just (TypeObject _ (_nm, (arrOfFields, _))) ->
-          foldl (\acc (nm, tpp) -> acc ++ beamFieldsWithExtractors moduleName beamFieldObj (fieldName ++ capitalise nm) tpp definedTypes (qualified nm : extractorFuncs)) [] arrOfFields
+        Just (TypeObject _ (_nm, (arrOfFields, _))) -> do
+          foldlM
+            ( \acc (nm, tpp) -> do
+                bFieldWithExt <- beamFieldsWithExtractors (fieldName ++ capitalise nm) tpp (qualified nm : extractorFuncs)
+                pure $ acc ++ bFieldWithExt
+            )
+            []
+            arrOfFields
         Nothing ->
-          [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
+          pure $ [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
   where
-    qualified tp = "Domain.Types." ++ moduleName ++ "." ++ tp
     capitalise :: String -> String
     capitalise [] = []
     capitalise (c : cs) = toUpper c : cs
-
-    findIfComplexType :: String -> Maybe TypeObject
-    findIfComplexType tpp = find (\(TypeObject _ (nm, (arrOfFields, _))) -> (nm == tpp || tpp == "Domain.Types." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
 
 makeTF :: Object -> String -> TransformerFunction
 makeTF impObj func =
@@ -706,30 +792,37 @@ makeTF impObj func =
         then
           if '.' `L.elem` name
             then name
-            else maybe (error $ "Function " <> func <> " not imported") (\nm -> nm <> "." <> name) $ impObj ^? ix "imports" . key (fromString name) . _String
+            else maybe (error $ "Function " <> func <> " not imported") (\nm -> nm <> "." <> name) $ impObj ^? ix acc_imports . key (fromString name) . _String
         else name
 
-makeBeamFields :: String -> Maybe [String] -> [String] -> [String] -> String -> String -> [TypeObject] -> Object -> Object -> [BeamField]
-makeBeamFields moduleName excludedList dataList enumList fieldName haskellType definedTypes impObj obj =
-  let constraintsObj = obj ^? (ix "constraints" . _Object)
-      sqlTypeObj = obj ^? (ix "sqlType" . _Object)
-      beamTypeObj = obj ^? (ix "beamType" ._Object)
-      beamFieldObj = obj ^? (ix "beamFields" . _Object)
-      defaultsObj = obj ^? (ix "default" . _Object)
-      extractedBeamInfos = beamFieldsWithExtractors moduleName beamFieldObj fieldName haskellType definedTypes []
-      getBeamFieldDef (fName, tpp, extractorFuncs) =
+makeBeamFields :: String -> String -> StorageParserM [BeamField]
+makeBeamFields fieldName haskellType = do
+  sqlTypeMapper <- asks (.sqlMapper)
+  defaultImportModule <- asks (.domainTypeModulePrefix)
+  moduleName <- gets (.extraParseInfo.domainName)
+  defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
+  excludedList <- gets (.extraParseInfo.excludedImportList)
+  dataList <- gets (.extraParseInfo.dList)
+  enumList <- gets (.extraParseInfo.enumList)
+  impObj <- gets (.extraParseInfo.yamlObject)
+  obj <- gets (.extraParseInfo.dataObject)
+  let constraintsObj = obj ^? (ix acc_constraints . _Object)
+      sqlTypeObj = obj ^? (ix acc_sqlType . _Object)
+      beamTypeObj = obj ^? (ix acc_beamType ._Object)
+      defaultsObj = obj ^? (ix acc_default . _Object)
+  extractedBeamInfos <- beamFieldsWithExtractors fieldName haskellType []
+  let getBeamFieldDef (fName, tpp, extractorFuncs) =
         let fieldKey = fromString fName
             beamType = fromMaybe (findBeamType tpp) (beamTypeObj >>= preview (ix fieldKey . _String))
-            sqlType = fromMaybe (findMatchingSqlType enumList tpp beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
-            defaultImportModule = "Domain.Types."
+            sqlType = fromMaybe (findMatchingSqlType sqlTypeMapper enumList tpp beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
             defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
-            parseToTType = obj ^? (ix "toTType" . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
+            parseToTType = obj ^? (ix acc_toTType . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
             constraints = L.nub $ getDefaultFieldConstraints fName tpp ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
             isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
          in BeamField
               { bFieldName = fName,
-                hFieldType = makeTypeQualified (Just moduleName) excludedList (Just dataList) defaultImportModule impObj tpp,
-                bFieldType = makeTypeQualified (Just moduleName) excludedList (Just dataList) defaultImportModule impObj beamType,
+                hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj tpp,
+                bFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj beamType,
                 bConstraints = constraints,
                 bFieldUpdates = [], -- not required while creating
                 bSqlType = sqlType,
@@ -738,7 +831,7 @@ makeBeamFields moduleName excludedList dataList enumList fieldName haskellType d
                 bfieldExtractor = extractorFuncs,
                 bIsEncrypted = isEncrypted
               }
-   in map getBeamFieldDef extractedBeamInfos
+  pure $ map getBeamFieldDef extractedBeamInfos
 
 findBeamType :: String -> String
 findBeamType str = concatMap (typeMapper . L.trimStart) (split (whenElt (`elem` typeDelimiter)) str)
@@ -781,24 +874,12 @@ mkListObject (Object obj) =
     _ -> []
 mkListObject _ = []
 
--- Default Fields --
-defaultFields :: [(String, String)]
-defaultFields =
-  [ ("merchantId", "Maybe (Id Merchant)"),
-    ("merchantOperatingCityId", "Maybe (Id MerchantOperatingCity)"),
-    ("createdAt", "UTCTime"),
-    ("updatedAt", "UTCTime")
-  ]
-
-getNotPresentDefaultFields :: Maybe [String] -> [(String, String)] -> [(String, String)]
-getNotPresentDefaultFields excludedDefaultFields fields = filter (\(k, _) -> (k `notElem` map fst fields && k `notElem` (fromMaybe [] excludedDefaultFields))) defaultFields
-
 -- SQL Types --
-findMatchingSqlType :: [String] -> String -> String -> String
-findMatchingSqlType allEnums haskellType beamType
+findMatchingSqlType :: [(String, String)] -> [String] -> String -> String -> String
+findMatchingSqlType sqlMapper allEnums haskellType beamType
   | haskellType `elem` allEnums = "text"
-  | otherwise = case filter ((haskellType =~) . fst) sqlTypeWrtType of
-    [] -> case filter ((beamType =~) . fst) sqlTypeWrtType of
+  | otherwise = case filter ((haskellType =~) . fst) sqlMapper of
+    [] -> case filter ((beamType =~) . fst) sqlMapper of
       [] -> "text"
       ((_, sqlType) : _) -> sqlType
     ((_, sqlType) : _) -> sqlType
@@ -809,45 +890,15 @@ sqlDefaultsWrtName = \case
   "updatedAt" -> Just "CURRENT_TIMESTAMP"
   _ -> Nothing
 
-sqlTypeWrtType :: [(String, String)]
-sqlTypeWrtType =
-  [ ("\\[Text\\]", "text[]"),
-    ("Text", "text"),
-    ("\\[Id ", "text[]"),
-    ("Id ", "character varying(36)"),
-    ("\\[ShortId ", "text[]"),
-    ("ShortId ", "character varying(36)"),
-    ("Int", "integer"),
-    ("Double", "double precision"),
-    ("HighPrecMoney", "double precision"),
-    ("Money", "integer"),
-    ("Bool", "boolean"),
-    ("UTCTime", "timestamp with time zone"),
-    ("TimeOfDay", "time without time zone"),
-    ("Day", "date"),
-    ("Seconds", "integer"),
-    ("Kilometers", "integer"),
-    ("Meters", "integer")
-  ]
-
-extractKeys :: [FieldDef] -> ([String], [String])
-extractKeys fieldDefs = extractKeysFromBeamFields (concatMap beamFields fieldDefs)
-
-extractKeysFromBeamFields :: [BeamField] -> ([String], [String])
-extractKeysFromBeamFields fieldDefs = (primaryKeyFields, secondaryKeyFields)
-  where
-    primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
-    secondaryKeyFields = [bFieldName fd | fd <- fieldDefs, SecondaryKey `elem` bConstraints fd]
+isEnumType :: TypeObject -> Bool
+isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
 
 -- SQL reverse parse
-findMatchingHaskellType :: String -> String
-findMatchingHaskellType sqlType =
-  case filter ((sqlType =~) . fst) haskellTypeWrtSqlType of
+findMatchingHaskellType :: [(String, String)] -> String -> String
+findMatchingHaskellType sqlTypeWrtType sqlType =
+  case filter ((sqlType =~) . fst) (haskellTypeWrtSqlType sqlTypeWrtType) of
     [] -> error $ "Type not found " <> sqlType
     ((_, haskellType) : _) -> haskellType
 
-haskellTypeWrtSqlType :: [(String, String)]
-haskellTypeWrtSqlType = map (first (T.unpack . T.replace "(" "\\(" . T.replace ")" "\\)" . T.replace "[" "\\[" . T.replace "]" "\\]" . T.pack) . second (T.unpack . T.replace "\\[" "[" . T.replace "\\]" "]" . T.pack) . swap) sqlTypeWrtType
-
-isEnumType :: TypeObject -> Bool
-isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+haskellTypeWrtSqlType :: [(String, String)] -> [(String, String)]
+haskellTypeWrtSqlType sqlTypeWrtType = map (first (T.unpack . T.replace "(" "\\(" . T.replace ")" "\\)" . T.replace "[" "\\[" . T.replace "]" "\\]" . T.pack) . second (T.unpack . T.replace "\\[" "[" . T.replace "\\]" "]" . T.pack) . swap) sqlTypeWrtType

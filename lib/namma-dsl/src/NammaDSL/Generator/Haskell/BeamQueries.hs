@@ -9,6 +9,7 @@ import Data.Function ((&))
 import Data.List (find, intercalate, isInfixOf, isPrefixOf, nub)
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as Text
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
@@ -30,8 +31,8 @@ data ExtraQueryCode = ExtraQueryCode
   }
   deriving (Show)
 
-generateBeamQueries :: TableDef -> BeamQueryCode
-generateBeamQueries tableDef =
+generateBeamQueries :: DefaultImports -> StorageRead -> TableDef -> BeamQueryCode
+generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   if EXTRA_QUERY_FILE `elem` extraOperations tableDef
     then
       WithExtraQueryFile $
@@ -42,8 +43,8 @@ generateBeamQueries tableDef =
                     generateCode $
                       commonGeneratorInput
                         & moduleNm .~ readOnlyCodeModuleName ++ " (module " ++ readOnlyCodeModuleName ++ ", module ReExport)"
-                        & codeBody .~ generateCodeBody mkCodeBody tableDef
-                        & simpleImports %~ (++ ([readOnlyCodeModuleName ++ "Extra as ReExport"] ++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)])))
+                        & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
+                        & simpleImports %~ (++ ([readOnlyCodeModuleName ++ "Extra as ReExport"] ++ (if transformerCode' == mempty then [] else [extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)])))
                         & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
                   transformerCode =
                     if transformerCode' == mempty
@@ -52,21 +53,21 @@ generateBeamQueries tableDef =
                         Just $
                           generateCode $
                             commonGeneratorInput
-                              & moduleNm .~ "Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)
+                              & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
                               & codeBody .~ transformerCode'
                 },
             instanceCode =
               generateCode $
                 commonGeneratorInput
-                  & moduleNm .~ "Storage.Queries.OrphanInstances." ++ (capitalize $ tableNameHaskell tableDef)
-                  & codeBody .~ generateCodeBody mkTTypeInstance tableDef
-                  & simpleImports %~ (++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)])),
+                  & moduleNm .~ orphanInstancesModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
+                  & codeBody .~ generateCodeBody (mkTTypeInstance storageRead) tableDef
+                  & simpleImports %~ (++ (if transformerCode' == mempty then [] else [extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)])),
             extraQueryFile =
               generateCode $
                 commonGeneratorInput
                   & moduleNm .~ readOnlyCodeModuleName ++ "Extra"
                   & codeBody .~ generateCodeBody extraFileCodeBody tableDef
-                  & simpleImports %~ (++ ["Storage.Queries.OrphanInstances." ++ (capitalize $ tableNameHaskell tableDef)])
+                  & simpleImports %~ (++ [orphanInstancesModulePrefix ++ (capitalize $ tableNameHaskell tableDef)])
           }
     else
       DefaultQueryFile $
@@ -75,7 +76,7 @@ generateBeamQueries tableDef =
               generateCode $
                 commonGeneratorInput
                   & moduleNm .~ readOnlyCodeModuleName
-                  & codeBody .~ generateCodeBody mkCodeBody tableDef
+                  & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
                   & simpleImports %~ (++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)]))
                   & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
             transformerCode =
@@ -85,14 +86,20 @@ generateBeamQueries tableDef =
                   Just $
                     generateCode $
                       commonGeneratorInput
-                        & moduleNm .~ "Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)
+                        & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
                         & codeBody .~ transformerCode'
           }
   where
+    beamTypeModulePrefix = storageRead.beamTypeModulePrefix ++ "."
+    domainTypeModulePrefix = storageRead.domainTypeModulePrefix ++ "."
+    queryModulePrefix = storageRead.queryModulePrefix ++ "."
+    orphanInstancesModulePrefix = queryModulePrefix ++ "OrphanInstances."
+    extraTransformerModulePrefix = queryModulePrefix ++ "Transformers."
+
     transformerCode' :: Code
     transformerCode' = generateCodeBody mkTransformerCodeBody tableDef
 
-    readOnlyCodeModuleName = "Storage.Queries." ++ (capitalize $ tableNameHaskell tableDef)
+    readOnlyCodeModuleName = queryModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
 
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
@@ -115,15 +122,17 @@ generateBeamQueries tableDef =
         "Kernel.Utils.Common (MonadFlow, CacheFlow, EsqDBFlow, getCurrentTime, fromMaybeM)",
         "Kernel.Types.Error"
       ]
+        <> simpleImp
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ "Domain.Types." ++ tableNameHaskell tableDef,
-        "Storage.Beam." ++ capitalize (tableNameHaskell tableDef) ++ " as Beam",
+      [ domainTypeModulePrefix ++ tableNameHaskell tableDef,
+        beamTypeModulePrefix ++ capitalize (tableNameHaskell tableDef) ++ " as Beam",
         "Sequelize as Se"
       ]
         <> imports tableDef
         <> getAllFunctionImports
         <> concatMap getStorageRelationImports tableDef.fields
+        <> qualifiedImp
 
     getAllFunctionImports :: [String]
     getAllFunctionImports = fromTTypeFuncImports ++ toTTypeFuncImports
@@ -147,10 +156,10 @@ generateBeamQueries tableDef =
       case rel of
         Just (WithId _ isCached, query) -> [getModule isCached ++ query]
         Just (WithIdStrict _ isCached, query) -> [getModule isCached ++ query]
-        Just (_, query) -> ["Storage.Queries." ++ query]
+        Just (_, query) -> [queryModulePrefix ++ query]
         Nothing -> []
       where
-        getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
+        getModule isFromCached = bool queryModulePrefix "Storage.CachedQueries." isFromCached -- What about cached query ?? -- TODO
         rel =
           if isJust (relation fieldDef) && isWithIdRelation (fromJust (relation fieldDef))
             then (\(_, b) -> (fromJust (relation fieldDef), b)) <$> getFieldRelationAndHaskellType (fieldDef.haskellType <> "|WithId")
@@ -160,36 +169,38 @@ extraFileCodeBody :: StorageM ()
 extraFileCodeBody = do
   onNewLine $ tellM "-- Extra code goes here -- "
 
-mkCodeBody :: StorageM ()
-mkCodeBody = do
+mkCodeBody :: StorageRead -> StorageM ()
+mkCodeBody storageRead = do
   tableDef <- ask
   let isDefault = EXTRA_QUERY_FILE `notElem` extraOperations tableDef
-  generateDefaultCreateQuery
-  generateDefaultCreateManyQuery
-  beamQueries
-  when isDefault mkTTypeInstance
+  generateDefaultCreateQuery storageRead
+  generateDefaultCreateManyQuery storageRead
+  beamQueries storageRead
+  when isDefault (mkTTypeInstance storageRead)
 
-mkTTypeInstance :: StorageM ()
-mkTTypeInstance = do
-  fromTTypeInstance
-  toTTypeInstance
+mkTTypeInstance :: StorageRead -> StorageM ()
+mkTTypeInstance storageRead = do
+  fromTTypeInstance storageRead
+  toTTypeInstance storageRead
 
 mkTransformerCodeBody :: StorageM ()
 mkTransformerCodeBody = do
   generateToTTypeFuncs
   generateFromTypeFuncs
 
-generateDefaultCreateQuery :: StorageM ()
-generateDefaultCreateQuery = do
+generateDefaultCreateQuery :: StorageRead -> StorageM ()
+generateDefaultCreateQuery storageRead = do
   tableDef <- ask
   let name = tableNameHaskell tableDef
   let withIdFields = getAllFieldsWithIdRelation (fields tableDef)
-  let qname = "Domain.Types." ++ name ++ "." ++ name
+  let qname = domainTypeModulePrefix ++ name ++ "." ++ name
   onNewLine $
     tellM $
       "create :: (EsqDBFlow m r, MonadFlow m, CacheFlow m r) => " ++ qname ++ "-> m ()\n"
         ++ if null withIdFields then "create = createWithKV\n\n" else makeCreateWithIdFunction withIdFields
   where
+    domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
+    queriesModulePrefix = storageRead.queryModulePrefix <> "."
     makeCreateWithIdFunction :: [FieldDef] -> String
     makeCreateWithIdFunction withIdFields =
       "create tbl = do\n"
@@ -203,37 +214,38 @@ generateDefaultCreateQuery = do
         WithIdStrict True cache -> "  " ++ getModule cache ++ fromJust (snd <$> getFieldRelationAndHaskellType ((haskellType field) <> "|WithId")) ++ ".create tbl." ++ fieldName field
         _ -> ""
       where
-        getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
-
+        getModule isFromCached = bool queriesModulePrefix "Storage.CachedQueries." isFromCached -- Cached queries ?? -- TODO
     getAllFieldsWithIdRelation :: [FieldDef] -> [FieldDef]
     getAllFieldsWithIdRelation = filter (\f -> isJust (relation f) && isWithIdRelation (fromJust (relation f)))
 
-generateDefaultCreateManyQuery :: StorageM ()
-generateDefaultCreateManyQuery = do
+generateDefaultCreateManyQuery :: StorageRead -> StorageM ()
+generateDefaultCreateManyQuery storageRead = do
   name <- tableNameHaskell <$> ask
-  let qname = "Domain.Types." ++ name ++ "." ++ name
+  let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
+  let qname = domainTypeModulePrefix ++ name ++ "." ++ name
   onNewLine $
     tellM $
       "createMany :: (EsqDBFlow m r, MonadFlow m, CacheFlow m r) => " ++ "[" ++ qname ++ "]" ++ "-> m ()\n"
         ++ "createMany = traverse_ create\n\n"
 
-fromTTypeInstance :: StorageM ()
-fromTTypeInstance = do
+fromTTypeInstance :: StorageRead -> StorageM ()
+fromTTypeInstance storageRead = do
+  let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   tableDef <- ask
   onNewLine $
     tellM $
-      "instance FromTType' Beam." ++ tableNameHaskell tableDef ++ " Domain.Types." ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
+      "instance FromTType' Beam." ++ tableNameHaskell tableDef ++ " " ++ domainTypeModulePrefix ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
         ++ "  fromTType' Beam."
         ++ tableNameHaskell tableDef
         ++ "T {..} = do\n"
         ++ (show $ generateCodeBody monadicFromTTypeTransformerCode tableDef)
         ++ "\n    "
-        ++ intercalate "\n    " (filter (/= "") (map (\field -> fromTTypeMConversionFunction (tableNameHaskell tableDef) (haskellType field) (fieldName field) (relation field)) (fields tableDef)))
+        ++ intercalate "\n    " (filter (/= "") (map (\field -> fromTTypeMConversionFunction storageRead (tableNameHaskell tableDef) (haskellType field) (fieldName field) (relation field)) (fields tableDef)))
         ++ "\n"
         ++ "    pure $\n"
         ++ "      Just\n"
         ++ "        "
-        ++ "Domain.Types."
+        ++ domainTypeModulePrefix
         ++ tableNameHaskell tableDef
         ++ "."
         ++ tableNameHaskell tableDef
@@ -302,14 +314,15 @@ monadicToTTypeTransformerCode specificFields spaceCount = do
         )
         (beamFields hfield)
 
-toTTypeInstance :: StorageM ()
-toTTypeInstance = do
+toTTypeInstance :: StorageRead -> StorageM ()
+toTTypeInstance storageRead = do
+  let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   tableDef <- ask
   onNewLine $
     tellM $
-      "instance ToTType' Beam." ++ tableNameHaskell tableDef ++ " Domain.Types." ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
+      "instance ToTType' Beam." ++ tableNameHaskell tableDef ++ " " ++ domainTypeModulePrefix ++ tableNameHaskell tableDef ++ "." ++ tableNameHaskell tableDef ++ " where\n"
         ++ "  toTType' "
-        ++ "Domain.Types."
+        ++ domainTypeModulePrefix
         ++ tableNameHaskell tableDef
         ++ "."
         ++ tableNameHaskell tableDef
@@ -335,12 +348,12 @@ toTTypeInstance = do
         )
         (beamFields hfield)
 
-beamQueries :: StorageM ()
-beamQueries = do
+beamQueries :: StorageRead -> StorageM ()
+beamQueries storageRead = do
   tableDef <- ask
   onNewLine $
     intercalateA newLine $
-      map (generateBeamQuery tableDef.fields tableDef.tableNameHaskell) (queries tableDef ++ defaultQueryDefs tableDef)
+      map (generateBeamQuery storageRead tableDef.fields tableDef.tableNameHaskell) (queries tableDef ++ defaultQueryDefs tableDef)
 
 toTTypeConversionFunction :: Maybe TransformerFunction -> String -> String -> String -> String
 toTTypeConversionFunction transformer haskellType fieldName beamFieldName
@@ -361,27 +374,29 @@ fromTTypeConversionFunction fromTTypeFunc haskellType fieldName relation dFieldN
   | "Kernel.Types.Id.ShortId " `Text.isInfixOf` Text.pack haskellType = "Kernel.Types.Id.ShortId <$> " ++ fieldName
   | otherwise = fieldName
 
-fromTTypeMConversionFunction :: String -> String -> String -> Maybe FieldRelation -> String
-fromTTypeMConversionFunction tableNameHaskell haskellType fieldName = \case
+fromTTypeMConversionFunction :: StorageRead -> String -> String -> String -> Maybe FieldRelation -> String
+fromTTypeMConversionFunction storageRead tableNameHaskell haskellType fieldName = \case
   Just relation -> case relation of
-    OneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id) >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
-    MaybeOneToOne -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
-    OneToMany -> fieldName ++ "' <- Storage.Queries." ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findAllBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
+    OneToOne -> fieldName ++ "' <- " ++ queriesModulePrefix ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id) >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
+    MaybeOneToOne -> fieldName ++ "' <- " ++ queriesModulePrefix ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
+    OneToMany -> fieldName ++ "' <- " ++ queriesModulePrefix ++ fromJust (snd <$> getFieldRelationAndHaskellType haskellType) ++ ".findAllBy" ++ tableNameHaskell ++ "Id (Kernel.Types.Id.Id id)"
     WithIdStrict _ isCached -> fieldName ++ "' <- " ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById (Kernel.Types.Id.Id " ++ fieldName ++ "Id)" ++ " >>= fromMaybeM (InternalError \"Failed to get " ++ fieldName ++ ".\")"
     WithId _ isCached -> fieldName ++ "' <- maybe (pure Nothing) (" ++ getModule isCached ++ fromJust (snd <$> getFieldRelationAndHaskellType (haskellType <> "|WithId")) ++ ".findById . Kernel.Types.Id.Id) " ++ fieldName ++ "Id"
   Nothing -> ""
   where
-    getModule isFromCached = bool "Storage.Queries." "Storage.CachedQueries." isFromCached
+    queriesModulePrefix = storageRead.queryModulePrefix ++ "."
+    getModule isFromCached = bool queriesModulePrefix "Storage.CachedQueries." isFromCached -- Chached query ?? --TODO
 
 toTTypeExtractor :: Maybe String -> String -> String
 toTTypeExtractor extractor field = maybe field (\x -> x ++ " " ++ field) extractor
 
-generateBeamQuery :: [FieldDef] -> String -> QueryDef -> StorageM ()
-generateBeamQuery allHaskellFields tableNameHaskell query = do
+generateBeamQuery :: StorageRead -> [FieldDef] -> String -> QueryDef -> StorageM ()
+generateBeamQuery storageRead allHaskellFields tableNameHaskell query = do
   tableDef <- ask
   let paramFieldNames = nub $ map (fst . fst) (params query) <> (fst <$> getWhereClauseFieldNamesAndTypes (whereClause query))
   tellM $
     generateFunctionSignature
+      storageRead
       query
       tableNameHaskell
       ++ (show $ generateCodeBody (monadicToTTypeTransformerCode (Just paramFieldNames) 3) tableDef)
@@ -407,18 +422,19 @@ orderAndLimit query = do
 ignoreEncryptionFlag :: ((String, String), Bool) -> (String, String)
 ignoreEncryptionFlag ((field, tp), _) = (field, tp)
 
-generateFunctionSignature :: QueryDef -> String -> String
-generateFunctionSignature query tableNameHaskell =
+generateFunctionSignature :: StorageRead -> QueryDef -> String -> String
+generateFunctionSignature storageRead query tableNameHaskell =
   let qparams = filter ((/= "updatedAt") . fst) $ map getIdsOut $ nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
+      domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
    in query.queryName
         ++ " :: (MonadFlow m, CacheFlow m r, EsqDBFlow m r) => "
-        ++ bool (foldMap ((++ " -> ") . snd) qparams) ("Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " -> ") query.takeFullObjectAsInput
+        ++ bool (foldMap ((++ " -> ") . snd) qparams) (domainTypeModulePrefix ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " -> ") query.takeFullObjectAsInput
         ++ "m ("
-        ++ generateQueryReturnType query.kvFunction tableNameHaskell
+        ++ generateQueryReturnType storageRead query.kvFunction tableNameHaskell
         ++ ")\n"
         ++ query.queryName
         ++ " "
-        ++ bool (foldMap ((++ " ") . fst) qparams) ("Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " {..} ") query.takeFullObjectAsInput
+        ++ bool (foldMap ((++ " ") . fst) qparams) (domainTypeModulePrefix ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ " {..} ") query.takeFullObjectAsInput
         ++ "= do\n"
 
 addLimitParams :: QueryDef -> [(String, String)]
@@ -433,13 +449,14 @@ getIdsOut (k, t)
   | "Kernel.Types.Id.ShortId " `isPrefixOf` t = ("(Kernel.Types.Id.ShortId " ++ k ++ ")", t)
   | otherwise = (k, t)
 
-generateQueryReturnType :: String -> String -> String
-generateQueryReturnType kvFunction tableNameHaskell = do
+generateQueryReturnType :: StorageRead -> String -> String -> String
+generateQueryReturnType storageRead kvFunction tableNameHaskell = do
+  let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   if kvFunction `elem` ["findOneWithKV", "findOneWithKVScheduler", "findOneWithDb"]
-    then "Maybe (Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ ")"
+    then "Maybe (" ++ domainTypeModulePrefix ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ ")"
     else
       if kvFunction `elem` ["findAllWithKV", "findAllWithKVScheduler", "findAllWithOptionsKV", "findAllWithOptionsKV'", "findAllWithOptionsKVScheduler", "findAllWithDb", "findAllWithOptionsDb", "findAllWithKVAndConditionalDB"]
-        then "[" ++ "Domain.Types." ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ "]"
+        then "[" ++ domainTypeModulePrefix ++ tableNameHaskell ++ "." ++ tableNameHaskell ++ "]"
         else ""
 
 getWhereClauseFieldNamesAndTypes :: WhereClause -> [(String, String)]

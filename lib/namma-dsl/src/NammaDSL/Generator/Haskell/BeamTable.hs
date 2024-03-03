@@ -6,16 +6,18 @@ import Control.Monad (replicateM_)
 import Control.Monad.Reader (ask)
 import Data.List (foldl', intercalate, isInfixOf)
 import Data.Maybe (fromMaybe)
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
 import Prelude
 
-generateBeamTable :: TableDef -> Code
-generateBeamTable tableDef =
+generateBeamTable :: DefaultImports -> StorageRead -> TableDef -> Code
+generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   generateCode generatorInput
   where
+    beamTypeModulePrefix = storageRead.beamTypeModulePrefix <> "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
@@ -24,9 +26,9 @@ generateBeamTable tableDef =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
-          _moduleNm = "Storage.Beam." <> capitalize (tableNameHaskell tableDef),
-          _simpleImports = packageOverride ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"],
-          _qualifiedImports = packageOverride $ ["Database.Beam as B"] <> imports tableDef,
+          _moduleNm = beamTypeModulePrefix <> capitalize (tableNameHaskell tableDef),
+          _simpleImports = packageOverride ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"] <> simpleImp,
+          _qualifiedImports = packageOverride $ ["Database.Beam as B"] <> imports tableDef <> qualifiedImp,
           _codeBody = generateCodeBody mkCodeBody tableDef
         }
 
