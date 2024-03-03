@@ -7,6 +7,7 @@
 module NammaDSL.DSL.Parser.API where
 
 import Control.Lens hiding (noneOf)
+import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
@@ -14,6 +15,7 @@ import Data.Aeson.Lens (_Array, _Object, _String, _Value)
 import Data.Bifunctor
 import Data.Bool
 import qualified Data.ByteString as BS
+import Data.Default
 import Data.List.Split (splitWhen)
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe)
@@ -21,55 +23,157 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
+import NammaDSL.AccessorTH
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import qualified NammaDSL.Utils as U
 import Prelude
 
-apiParser :: FilePath -> IO Apis
-apiParser filepath = do
+parseApis' :: ApiParserM ()
+parseApis' = do
+  parseModule'
+  parseTypes'
+  parseAllApis'
+  makeApiTTPartsQualified'
+  parseImports'
+
+parseModule' :: ApiParserM ()
+parseModule' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let parsedModuleName = fromMaybe (error "Required module name") $ obj ^? ix acc_module . _String
+  modify $ \s -> s & apisRes . moduleName .~ parsedModuleName
+
+parseTypes' :: ApiParserM ()
+parseTypes' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  moduleName <- gets (^. apisRes . moduleName)
+  defaultImportModule <- asks apiTypesImportPrefix
+  defaultTypeImportMap <- asks apiDefaultTypeImportMapper
+  let parsedTypeObjects = typesToTypeObject (obj ^? ix acc_types . _Value)
+      parsedTypesDataNames' = map (\(TypeObject _ (nm, _)) -> T.unpack nm) parsedTypeObjects
+      parsedTypeData = makeQualifiedTypesInTypes defaultTypeImportMap moduleName (T.pack defaultImportModule) parsedTypeObjects obj
+  modify $ \s ->
+    s
+      & apisRes . apiTypes . types .~ parsedTypeData
+      & extraParseInfo . parsedTypesDataNames .~ parsedTypesDataNames'
+
+parseAllApis' :: ApiParserM ()
+parseAllApis' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM parseSingleApi
+  modify $ \s -> s & apisRes . apis .~ allApis
+  where
+    parseSingleApi :: Value -> Maybe ApiTT
+    parseSingleApi (Object ob) = do
+      let (key, val) = head $ KM.toList ob
+          apiTp = getApiType $ toText key
+      obj <- preview (_Object) val
+      let params = fromMaybe KM.empty $ preview (ix acc_params ._Object) obj
+          endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
+          auth = getAuthType <$> preview (ix acc_auth . _String) obj
+
+          requestObj = preview (ix acc_request . _Object) obj
+          requestTp = requestObj >>= preview (ix acc_type . _String)
+          requestFmt = Just $ fromMaybe "JSON" $ requestObj >>= preview (ix acc_format . _String)
+          req = ApiReq <$> requestTp <*> requestFmt
+
+          responseObj = fromMaybe (error "Response Object is required") $ preview (ix acc_response . _Object) obj
+          responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
+          responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
+          res = ApiRes responseTp responseFmt
+
+          query = fromMaybe [] $ preview (ix acc_query . _Value . to mkList . to (map (\(a, b) -> QueryParam a b False))) obj
+          mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkList . to (map (\(a, b) -> QueryParam a b True))) obj
+          allApiParts = endpoint <> query <> mQuery
+
+          headers = fromMaybe [] (preview (ix acc_headers ._Array . to (mkHeaderList . V.toList)) obj)
+      return $ ApiTT allApiParts apiTp auth headers req res
+    parseSingleApi _ = error "Api specs missing"
+
+parseImports' :: ApiParserM ()
+parseImports' = do
+  parseImportPackageOverrides'
+  extractImports'
+  extractComplexTypeImports'
+
+parseImportPackageOverrides' :: ApiParserM ()
+parseImportPackageOverrides' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let parsedImportPackageOverrides = fromMaybe M.empty $ obj ^? ix acc_importPackageOverrides . _Value . to U.mkList . to M.fromList
+  modify $ \s -> s & apisRes . importPackageOverrides .~ parsedImportPackageOverrides
+
+extractImports' :: ApiParserM ()
+extractImports' = do
+  apiTTParts <- gets (^. apisRes . apis)
+  let importUrlPart = apiTTParts ^.. traverse . urlParts . traverse . to importFromUrlPart . _Just
+      importHeader = apiTTParts ^.. traverse . header . traverse . to (\(Header _ t2) -> t2)
+      importApiRes = apiTTParts ^.. traverse . apiResType . to (\(ApiRes t1 _) -> t1)
+      importApiReq = apiTTParts ^.. traverse . apiReqType . _Just . to (\(ApiReq t1 _) -> t1)
+      imports' = figureOutImports (importUrlPart ++ importHeader ++ importApiRes ++ importApiReq)
+  modify $ \s -> s & apisRes . imports .~ imports'
+  where
+    importFromUrlPart :: UrlParts -> Maybe Text
+    importFromUrlPart = \case
+      (Capture _ t2) -> Just t2
+      (QueryParam _ t2 _) -> Just t2
+      _ -> Nothing
+
+extractComplexTypeImports' :: ApiParserM ()
+extractComplexTypeImports' = do
+  api <- gets (^. apisRes)
+  let complexTypeImports = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
+  modify $ \s -> s & apisRes . apiTypes . typeImports .~ complexTypeImports
+  where
+    isEnumType :: TypeObject -> Bool
+    isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+
+    figureOutImports' :: TypeObject -> [Text]
+    figureOutImports' tobj@(TypeObject _ (_, (tps, _))) =
+      let isEnum = isEnumType tobj
+       in concatMap
+            ( ( \potentialImport ->
+                  if isEnum
+                    then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) (T.unpack potentialImport)
+                    else [potentialImport]
+              )
+                . snd
+            )
+            tps
+
+apiParser' :: ApiRead -> FilePath -> IO Apis
+apiParser' apiRead filepath = do
   contents <- BS.readFile filepath
   case Yaml.decodeEither' contents of
     Left _ -> error "Not a Valid Yaml"
-    Right yml -> pure $ parseApis yml
+    Right yml -> do
+      let extraParseInfo = ExtraParseInfo yml []
+          apiState = ApiState def extraParseInfo
+      _apisRes <$> evalParser parseApis' apiRead apiState
 
-parseModule :: Object -> Maybe Text
-parseModule = preview (ix "module" . _String)
+makeApiTTPartsQualified' :: ApiParserM ()
+makeApiTTPartsQualified' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  defaultImportModule <- asks apiTypesImportPrefix
+  defaultTypeImportMap <- asks apiDefaultTypeImportMapper
+  moduleName <- gets (^. apisRes . moduleName)
+  parsedTypeDataNames <- gets (^. extraParseInfo . parsedTypesDataNames)
+  let mkQualified = T.pack . U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
+      mkQApiReq (ApiReq t1 t2) = ApiReq (mkQualified t1) t2
+      mkQApiRes (ApiRes t1 t2) = ApiRes (mkQualified t1) t2
+      mkQUrlParts (Capture t1 t2) = Capture t1 (mkQualified t2)
+      mkQUrlParts (QueryParam t1 t2 b) = QueryParam t1 (mkQualified t2) b
+      mkQUrlParts other = other
+      mkQHeaders (Header t1 t2) = Header t1 (mkQualified t2)
+      mkQUrlApiTT apiTT =
+        apiTT
+          & apiReqType . _Just %~ mkQApiReq
+          & apiResType %~ mkQApiRes
+          & urlParts . traverse %~ mkQUrlParts
+          & header . traverse %~ mkQHeaders
+  modify $ \s -> s & apisRes . apis . traverse %~ mkQUrlApiTT
 
-parseTypes :: Object -> Maybe Value
-parseTypes = preview (ix "types" . _Value)
-
-parseApis :: Object -> Apis
-parseApis obj =
-  res
-    & imports .~ extractImports res
-    & apiTypes . typeImports .~ extractComplexTypeImports res
-  where
-    defaultImportModule = "API.Types.UI."
-    parsedImportPackageOverrides = fromMaybe M.empty $ preview (ix "importPackageOverrides" . _Value . to U.mkList . to M.fromList) obj
-    res = mkQApis (Apis modelName allApis [] parsedImportPackageOverrides (TypesInfo [] parseTyp))
-    mkQualified = T.pack . U.makeTypeQualified (Just $ T.unpack modelName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
-    modelName = fromMaybe (error "Required module name") $ parseModule obj
-    parsedTypeObjects = typesToTypeObject (parseTypes obj)
-    parsedTypeDataNames = map (\(TypeObject _ (nm, _)) -> T.unpack nm) parsedTypeObjects
-    parseTyp = markQualifiedTypesInTypes modelName parsedTypeObjects obj
-    allApis = fromMaybe (error "Failed to parse apis") $ preview (ix "apis" . _Array . to V.toList) obj >>= mapM parseSingleApi
-    mkQApis aps = aps & apis . traverse %~ mkQUrlApiTT
-    mkQApiReq (ApiReq t1 t2) = ApiReq (mkQualified t1) t2
-    mkQApiRes (ApiRes t1 t2) = ApiRes (mkQualified t1) t2
-    mkQUrlParts (Capture t1 t2) = Capture t1 (mkQualified t2)
-    mkQUrlParts (QueryParam t1 t2 b) = QueryParam t1 (mkQualified t2) b
-    mkQUrlParts other = other
-    mkQHeaders (Header t1 t2) = Header t1 (mkQualified t2)
-    mkQUrlApiTT apiTT =
-      apiTT
-        & apiReqType . _Just %~ mkQApiReq
-        & apiResType %~ mkQApiRes
-        & urlParts . traverse %~ mkQUrlParts
-        & header . traverse %~ mkQHeaders
-
-markQualifiedTypesInTypes :: Text -> [TypeObject] -> Object -> [TypeObject]
-markQualifiedTypesInTypes moduleName input obj =
+makeQualifiedTypesInTypes :: [(String, String)] -> Text -> Text -> [TypeObject] -> Object -> [TypeObject]
+makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModule input obj =
   map
     ( \(TypeObject rt (x, (y, z))) ->
         TypeObject
@@ -79,8 +183,8 @@ markQualifiedTypesInTypes moduleName input obj =
                 ( \(a, b) ->
                     ( a,
                       if a == "enum"
-                        then mkEnumTypeQualified dataNames b
-                        else T.pack $ U.makeTypeQualified (Just $ T.unpack moduleName) (Just dataNames) Nothing defaultTypeImportModule obj (T.unpack b)
+                        then mkEnumTypeQualified dataNames defaultTypeImportModule b
+                        else T.pack $ U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just dataNames) Nothing (T.unpack defaultTypeImportModule) obj (T.unpack b)
                     )
                 )
                 y,
@@ -91,11 +195,10 @@ markQualifiedTypesInTypes moduleName input obj =
     input
   where
     dataNames = map (\(TypeObject _ (nm, _)) -> T.unpack nm) input
-    defaultTypeImportModule = "API.Types.UI."
-    mkEnumTypeQualified :: [String] -> Text -> Text
-    mkEnumTypeQualified excluded enumTp =
+    mkEnumTypeQualified :: [String] -> Text -> Text -> Text
+    mkEnumTypeQualified excluded defaultTypeImportModule enumTp =
       let individualEnums = T.strip <$> T.splitOn "," enumTp
-       in T.intercalate "," $ map (uncurry (<>) . second (T.pack . U.makeTypeQualified (Just $ T.unpack moduleName) (Just excluded) Nothing defaultTypeImportModule obj . T.unpack) . T.breakOn " ") individualEnums
+       in T.intercalate "," $ map (uncurry (<>) . second (T.pack . U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just excluded) Nothing (T.unpack defaultTypeImportModule) obj . T.unpack) . T.breakOn " ") individualEnums
 
 extractComplexTypeImports :: Apis -> [Text]
 extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
@@ -116,60 +219,6 @@ extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (a
             )
             tps
 
-extractImports :: Apis -> [Text]
-extractImports api =
-  figureOutImports (importUrlPart ++ importHeader ++ importApiRes ++ importApiReq)
-  where
-    apiTTParts = api ^. apis
-    importUrlPart = apiTTParts ^.. traverse . urlPartsTraversal . to importFromUrlPart . _Just
-    importHeader = apiTTParts ^.. traverse . headerTraversal . to (\(Header _ t2) -> t2)
-    importApiRes = apiTTParts ^.. traverse . apiResTraversal . to (\(ApiRes t1 _) -> t1)
-    importApiReq = apiTTParts ^.. traverse . apiReqTraversal . to (\(ApiReq t1 _) -> t1)
-
-    apiReqTraversal :: Traversal' ApiTT ApiReq
-    apiReqTraversal = apiReqType . _Just
-
-    urlPartsTraversal :: Traversal' ApiTT UrlParts
-    urlPartsTraversal = urlParts . traverse
-
-    headerTraversal :: Traversal' ApiTT HeaderType
-    headerTraversal = header . traverse
-
-    apiResTraversal :: Traversal' ApiTT ApiRes
-    apiResTraversal = apiResType
-
-    importFromUrlPart :: UrlParts -> Maybe Text
-    importFromUrlPart (Capture _ t2) = Just t2
-    importFromUrlPart (QueryParam _ t2 _) = Just t2
-    importFromUrlPart _ = Nothing
-
-parseSingleApi :: Value -> Maybe ApiTT
-parseSingleApi (Object ob) = do
-  let (key, val) = head $ KM.toList ob
-  let apiTp = getApiType $ toText key
-  obj <- preview (_Object) val
-  let params = fromMaybe KM.empty $ preview (ix "params" ._Object) obj
-  let endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix "endpoint" . _String) obj
-  let auth = getAuthType <$> preview (ix "auth" . _String) obj
-
-  let requestObj = preview (ix "request" . _Object) obj
-  let requestTp = requestObj >>= preview (ix "type" . _String)
-  let requestFmt = Just $ fromMaybe "JSON" $ requestObj >>= preview (ix "format" . _String)
-  let req = ApiReq <$> requestTp <*> requestFmt
-
-  let responseObj = fromMaybe (error "Response Object is required") $ preview (ix "response" . _Object) obj
-  let responseTp = fromMaybe (error "Response type is required") $ preview (ix "type" . _String) responseObj
-  let responseFmt = fromMaybe "JSON" $ preview (ix "format" . _String) responseObj
-  let res = ApiRes responseTp responseFmt
-
-  let query = fromMaybe [] $ preview (ix "query" . _Value . to mkList . to (map (\(a, b) -> QueryParam a b False))) obj
-  let mQuery = fromMaybe [] $ preview (ix "mandatoryQuery" . _Value . to mkList . to (map (\(a, b) -> QueryParam a b True))) obj
-  let allApiParts = endpoint <> query <> mQuery
-
-  let headers = fromMaybe [] (preview (ix "headers" ._Array . to (mkHeaderList . V.toList)) obj)
-  return $ ApiTT allApiParts apiTp auth headers req res
-parseSingleApi _ = error "Api specs missing"
-
 mkList :: Value -> [(Text, Text)]
 mkList (Object obj) =
   KM.toList obj >>= \(k, v) -> case v of
@@ -181,7 +230,7 @@ mkHeaderList :: [Value] -> [HeaderType]
 mkHeaderList val =
   map
     ( \case
-        Object obj -> fromMaybe (error "Header fields missing") $ Header <$> (obj ^? ix "name" . _String) <*> (obj ^? ix "type" . _String)
+        Object obj -> fromMaybe (error "Header fields missing") $ Header <$> (obj ^? ix acc_name . _String) <*> (obj ^? ix acc_type . _String)
         _ -> error "Header is not of correct format"
     )
     val
@@ -245,7 +294,7 @@ typesToTypeObject (Just (Object obj)) =
     extractRecordType =
       (fromMaybe Data)
         . ( preview
-              ( ix "recordType" . _String
+              ( ix acc_recordType . _String
                   . to
                     ( \case
                         "NewType" -> NewType

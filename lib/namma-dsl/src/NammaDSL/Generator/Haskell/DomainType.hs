@@ -5,6 +5,7 @@ import qualified Data.List as L
 import qualified Data.List.Split as L
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Tuple.Extra (both)
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
@@ -12,20 +13,21 @@ import NammaDSL.GeneratorCore
 import NammaDSL.Utils (isMaybeType)
 import Prelude
 
-generateDomainType :: TableDef -> Code
-generateDomainType tableDef =
+generateDomainType :: DefaultImports -> StorageRead -> TableDef -> Code
+generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   generateCode generatorInput
   where
+    domainTypeModulePrefix = storageRead.domainTypeModulePrefix
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
-    moduleName' = "Domain.Types." ++ tableNameHaskell tableDef
+    moduleName' = domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef
 
     allSimpleImports :: [String]
-    allSimpleImports = createDefaultImports tableDef
+    allSimpleImports = createDefaultImports tableDef <> simpleImp
 
     allQualifiedImports :: [String]
-    allQualifiedImports = removeDefaultImports allSimpleImports moduleName' $ (imports tableDef) <> ["Tools.Beam.UtilsTH"]
+    allQualifiedImports = removeDefaultImports allSimpleImports moduleName' $ (imports tableDef) <> ["Tools.Beam.UtilsTH"] <> qualifiedImp
 
     generatorInput :: GeneratorInput
     generatorInput =
@@ -125,14 +127,6 @@ createDefaultImports tableDef =
     <> ["Kernel.Utils.TH" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
     <> ["Data.Aeson" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
     <> ["Kernel.External.Encryption" | tableDef.containsEncryptedField]
-
--- shouldImportUtilsTH :: [TypeObject] -> Bool
--- shouldImportUtilsTH typeObj =
---   any
---     ( \case
---         TypeObject (_, (fields, _)) -> isEnum fields
---     )
---     typeObj
 
 isHttpInstanceDerived :: [TypeObject] -> Bool
 isHttpInstanceDerived = any (\case TypeObject _ (_, (_, derive)) -> "HttpInstance" `elem` derive)

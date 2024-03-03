@@ -5,15 +5,17 @@ import Control.Monad.Reader (ask)
 import Data.List (isInfixOf, nub)
 import Data.Text (Text)
 import qualified Data.Text as T
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
 import Prelude
 
-generateApiTypes :: Apis -> Code
-generateApiTypes input = generateCode generatorInput
+generateApiTypes :: DefaultImports -> ApiRead -> Apis -> Code
+generateApiTypes (DefaultImports qualifiedImp simpleImp _) apiRead input = generateCode generatorInput
   where
+    apiTypesModulePrefix = apiTypesImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -22,12 +24,12 @@ generateApiTypes input = generateCode generatorInput
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = "API.Types.UI." <> T.unpack (_moduleName input),
+          _moduleNm = apiTypesModulePrefix <> T.unpack (_moduleName input),
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
-    qualifiedModuleName = T.unpack ("API.Types.UI." <> _moduleName input)
+    qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -36,6 +38,7 @@ generateApiTypes input = generateCode generatorInput
         "Tools.Auth",
         "Data.OpenApi (ToSchema)"
       ]
+        <> simpleImp
 
     allQualifiedImports :: [String]
     allQualifiedImports =
@@ -48,7 +51,7 @@ generateApiTypes input = generateCode generatorInput
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))
 
     defaultQualifiedImport :: [String]
-    defaultQualifiedImport = ["Kernel.Prelude", "Domain.Types.Person", "Domain.Types.Merchant", "Environment", "Kernel.Types.Id"]
+    defaultQualifiedImport = ["Kernel.Prelude", "Domain.Types.Person", "Domain.Types.Merchant", "Environment", "Kernel.Types.Id"] <> qualifiedImp
 
 mkCodeBody :: ApisM ()
 mkCodeBody = do
