@@ -141,7 +141,7 @@ addColumnSQL database tableName beamFields =
 
 addKeySQL :: Database -> TableDef -> String
 addKeySQL database tableDef =
-  let keys = map quietSnake $ primaryKey tableDef <> secondaryKey tableDef
+  let keys = map quietSnake $ primaryKey tableDef
    in ("ALTER TABLE " <> database <> ".") ++ tableNameSql tableDef ++ " ADD PRIMARY KEY ( "
         ++ intercalate ", " keys
         ++ ");"

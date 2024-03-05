@@ -142,9 +142,9 @@ tableInstancesToBeam = do
       then tellM "[]"
       else
         tellM $
-          "[['"
-            <> intercalate ", '" (secondaryKey def)
-            <> "]]"
+          "["
+            <> (intercalate ", " . map (\x -> "['" <> x <> "]")) (secondaryKey def)
+            <> "]"
     tellM ")"
   onNewLine $ do
     newLine
