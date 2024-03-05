@@ -27,8 +27,8 @@ generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
           _moduleNm = beamTypeModulePrefix <> capitalize (tableNameHaskell tableDef),
-          _simpleImports = packageOverride ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"] <> simpleImp,
-          _qualifiedImports = packageOverride $ ["Database.Beam as B"] <> imports tableDef <> qualifiedImp,
+          _simpleImports = packageOverride simpleImp,
+          _qualifiedImports = packageOverride (imports tableDef <> qualifiedImp),
           _codeBody = generateCodeBody mkCodeBody tableDef
         }
 

@@ -22,7 +22,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.10"
+version = "1.0.11"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -111,7 +111,7 @@ mkBeamQueries :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
 mkBeamQueries appConfigs storageRead tableDefs = do
   let defaultFilePath = appConfigs ^. output . beamQueries
       extraFilePath = appConfigs ^. output . extraBeamQueries
-      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs BEAM_TABLE
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs BEAM_QUERIES
   mapM_
     ( \t -> do
         let beamQ = generateBeamQueries defaultImportsFromConfig storageRead t

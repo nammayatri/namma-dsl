@@ -28,27 +28,17 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = domainHandlerModulePrefix <> T.unpack (_moduleName input),
-          _simpleImports = packageOverride allSimpleImports,
+          _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
     qualifiedModuleName = T.unpack ((T.pack domainHandlerModulePrefix) <> _moduleName input)
 
-    allSimpleImports :: [String]
-    allSimpleImports =
-      [ "EulerHS.Prelude hiding (id)",
-        "Servant",
-        "Tools.Auth",
-        "Data.OpenApi (ToSchema)"
-      ]
-        <> simpleImp
-
     allQualifiedImports :: [String]
     allQualifiedImports =
       nub $
         preventSameModuleImports $
-          (T.unpack <$> _imports input)
-            <> defaultQualifiedImport
+          (T.unpack <$> (_imports input))
             <> ["Domain.Types.Merchant.MerchantOperatingCity" | ifProviderPlatform]
             <> qualifiedImp
 
@@ -64,9 +54,6 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
 
     preventSameModuleImports :: [String] -> [String]
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))
-
-    defaultQualifiedImport :: [String]
-    defaultQualifiedImport = ["Kernel.Prelude", "Domain.Types.Person", "Domain.Types.Merchant", "Environment", "Kernel.Types.Id"] -- kept for backward compatibility for not, will remove after configuring the dhall configs
 
 mkCodeBody :: ApisM ()
 mkCodeBody = do

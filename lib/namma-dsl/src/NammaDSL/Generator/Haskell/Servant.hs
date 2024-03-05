@@ -33,16 +33,6 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
           _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody (mkCodeBody apiRead) input
         }
-    defaultQualifiedImport :: [String]
-    defaultQualifiedImport =
-      [ "Domain.Types.Person", -- Keeping this for backward compatibility
-        "Kernel.Prelude", -- Will remove after configuring the dhall configs
-        "Control.Lens",
-        "Domain.Types.Merchant",
-        "Environment",
-        "Kernel.Types.Id"
-      ]
-        <> qualifiedImp
 
     allQualifiedImports :: [String]
     allQualifiedImports =
@@ -53,7 +43,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
           <> T.unpack (_moduleName input)
       ]
         <> ( nub $
-               defaultQualifiedImport
+               qualifiedImp
                  <> ( figureOutImports
                         (T.unpack <$> concatMap handlerSignature (_apis input))
                     )
@@ -62,12 +52,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
 
     allSimpleImports :: [String]
     allSimpleImports =
-      [ "EulerHS.Prelude",
-        "Servant",
-        "Tools.Auth",
-        "Kernel.Utils.Common"
-      ]
-        <> ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
+      ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
         <> simpleImp
 

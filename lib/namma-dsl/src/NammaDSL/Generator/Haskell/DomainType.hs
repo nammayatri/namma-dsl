@@ -27,7 +27,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     allSimpleImports = createDefaultImports tableDef <> simpleImp
 
     allQualifiedImports :: [String]
-    allQualifiedImports = removeDefaultImports allSimpleImports moduleName' $ (imports tableDef) <> ["Tools.Beam.UtilsTH"] <> qualifiedImp
+    allQualifiedImports = removeDefaultImports allSimpleImports moduleName' $ (imports tableDef) <> qualifiedImp
 
     generatorInput :: GeneratorInput
     generatorInput =
