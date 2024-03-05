@@ -25,33 +25,21 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _) apiRead input = gener
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = apiTypesModulePrefix <> T.unpack (_moduleName input),
-          _simpleImports = packageOverride allSimpleImports,
+          _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = generateCodeBody mkCodeBody input
         }
     qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
-
-    allSimpleImports :: [String]
-    allSimpleImports =
-      [ "EulerHS.Prelude hiding (id)",
-        "Servant",
-        "Tools.Auth",
-        "Data.OpenApi (ToSchema)"
-      ]
-        <> simpleImp
 
     allQualifiedImports :: [String]
     allQualifiedImports =
       nub $
         preventSameModuleImports $
           (T.unpack <$> input ^. apiTypes . typeImports)
-            <> defaultQualifiedImport
+            <> qualifiedImp
 
     preventSameModuleImports :: [String] -> [String]
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))
-
-    defaultQualifiedImport :: [String]
-    defaultQualifiedImport = ["Kernel.Prelude", "Domain.Types.Person", "Domain.Types.Merchant", "Environment", "Kernel.Types.Id"] <> qualifiedImp
 
 mkCodeBody :: ApisM ()
 mkCodeBody = do

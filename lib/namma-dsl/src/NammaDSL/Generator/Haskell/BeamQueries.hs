@@ -110,24 +110,15 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = mempty,
-          _simpleImports = packageOverride allSimpleImports,
+          _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride allQualifiedImports,
           _codeBody = mempty
         }
-    allSimpleImports :: [String]
-    allSimpleImports =
-      [ "Kernel.Beam.Functions",
-        "Kernel.Prelude",
-        "Kernel.External.Encryption",
-        "Kernel.Utils.Common (MonadFlow, CacheFlow, EsqDBFlow, getCurrentTime, fromMaybeM)",
-        "Kernel.Types.Error"
-      ]
-        <> simpleImp
+
     allQualifiedImports :: [String]
     allQualifiedImports =
       [ domainTypeModulePrefix ++ tableNameHaskell tableDef,
-        beamTypeModulePrefix ++ capitalize (tableNameHaskell tableDef) ++ " as Beam",
-        "Sequelize as Se"
+        beamTypeModulePrefix ++ capitalize (tableNameHaskell tableDef) ++ " as Beam"
       ]
         <> imports tableDef
         <> getAllFunctionImports
