@@ -316,11 +316,9 @@ snakeCaseToCamelCase = concat . makeMeCamel . map (T.unpack . T.strip) . T.split
     captialise [] = error "got two underscores together in field name, feeling sad...."
 
 parseAlterTablePrefix :: String -> Parser e ()
-parseAlterTablePrefix dbName =
-  case dbName of
-    "atlas_app" -> $(string $ "ALTER TABLE atlas_app.")
-    "atlas_driver_offer_bpp" -> $(string $ "ALTER TABLE atlas_driver_offer_bpp.")
-    _ -> error "I need it, please add this in sqlCreateParser function as well"
+parseAlterTablePrefix dbName = do
+  let alterTableStmt = "ALTER TABLE " <> dbName <> "."
+  return alterTableStmt *> pure ()
 
 sqlAlterAddPrimaryKeyParser :: String -> Parser e ([String], [String])
 sqlAlterAddPrimaryKeyParser dbName = do
@@ -399,13 +397,10 @@ sqlAlterTableAddColumn dbName sqlTypeWrtType _fromUpdatesSection = do
 
 sqlCreateParser :: String -> Parser e String
 sqlCreateParser dd = do
-  case dd of
-    "atlas_app" -> $(string $ "CREATE TABLE atlas_app.") -- need to fix the generator as well to take tablename as a argument.
-    "atlas_driver_offer_bpp" -> $(string $ "CREATE TABLE atlas_driver_offer_bpp.") -- need to fix the generator as well to take tablename as a argument.
-    _ -> error "I need it, do this in parseAlterTablePrefix function as well" -- need to fix the generator as well to take tablename as a argument.
+  let createStmt = "CREATE TABLE " <> dd <> "."
   tableName <- many $ notFollowedBy anyChar $(char '(')
   $(string " ();\n")
-  pure tableName
+  createStmt <$ pure tableName
 
 updateStamp :: String
 updateStamp = "------- SQL updates -------"
@@ -575,7 +570,7 @@ getOldSqlFile sqlTypeWrtType dbName filepath = do
             let splitWithColonRev = reverse $ BS.split 59 line -- 59 = ";"
             case splitWithColonRev of
               [] -> line
-              [res] -> if res == BSU.fromString updateStamp then res else error "Line neither a comment nor a correct query."
+              [res] -> if res == BSU.fromString updateStamp then res else error "Line neither a comment nor a correct query.\nPlease remove extra query lines you might have written in any read-only sql migration file.\nExtra sql migrations should be written in migration folder."
               (_revComment : revQuery) -> BS.concat [BS.intercalate (BSU.fromString ";") $ reverse revQuery, BSU.fromString ";"]
         )
     clearExtraLines = filter (not . BS.null) . BS.split 10 -- 10 = "\n"
