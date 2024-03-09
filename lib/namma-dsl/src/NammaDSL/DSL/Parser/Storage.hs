@@ -3,9 +3,10 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-unused-local-binds #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
-module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, runAnyParser) where
+module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, runAnyParser, sqlCleanedLineParser, SQL_MANIPULATION) where
 
 import Control.Lens.Combinators
 import Control.Lens.Operators
@@ -25,6 +26,7 @@ import Data.List (find, foldl')
 import qualified Data.List as L
 import qualified Data.List.Extra as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
+import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
 import qualified Data.Text as T
@@ -40,6 +42,8 @@ import NammaDSL.Utils hiding (typeDelimiter)
 import Safe (lastMay)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
+import qualified Text.Parsec as PS
+import qualified Text.Parsec.String as PS
 import Text.Regex.TDFA ((=~))
 import Prelude
 
@@ -469,6 +473,113 @@ updateParser sqlTypeWrtType dbName = do
     asSnd f = (Nothing,) . Just <$> f
     asFst f = (,Nothing) . Just <$> f
 
+sqlCleanedLineParser :: String -> SQL_MANIPULATION
+sqlCleanedLineParser line
+  | "CREATE TABLE" `L.isPrefixOf` line = SQL_CREATE
+  | "ALTER TABLE" `L.isPrefixOf` line = case PS.parse parseAlterTable "" line of
+    Right sqlManipulation -> sqlManipulation
+    Left errk -> error $ "Error Parsing SQL line : " <> line <> " Error : " <> show errk
+  | otherwise = error "Invalid SQL line. Is any of the sql query line not generated ?"
+  where
+    parseAlterTable :: PS.Parser SQL_MANIPULATION
+    parseAlterTable =
+      PS.string "ALTER" >> PS.spaces >> PS.string "TABLE" >> PS.spaces >> PS.manyTill PS.anyChar PS.space >> PS.spaces
+        >> ( PS.try parseAddColumn
+               <||> PS.try parseDropColumn
+               <||> PS.try parseAlterColumn
+               <||> PS.try parseDropConstraint
+               <||> PS.try parseAddPrimaryKey
+           )
+
+    parseAddColumn :: PS.Parser SQL_MANIPULATION
+    parseAddColumn = do
+      colName <- PS.string "ADD" >> PS.spaces >> PS.string "COLUMN" >> PS.spaces >> (PS.manyTill PS.anyChar (PS.try PS.space))
+      sqlType <- L.trim <$> (PS.manyTill PS.anyChar (PS.lookAhead $ (PS.try (PS.string "NOT NULL")) <||> (PS.try (PS.string "default")) <||> (PS.try (PS.string ";"))))
+      constraint <- fromMaybe [] <$> (PS.optionMaybe $ PS.manyTill parseConstraints (PS.try (PS.string ";")))
+      return $ SQL_ALTER $ ADD_COLUMN colName sqlType constraint
+
+    parseConstraints :: PS.Parser ALTER_COLUMN_ACTION
+    parseConstraints =
+      PS.spaces
+        >> PS.try (PS.string "NOT NULL" >> return SET_NOT_NULL)
+        <||> PS.try
+          ( do
+              PS.string "default" >> PS.spaces
+              defaultVal <- L.trim <$> PS.manyTill PS.anyChar (PS.lookAhead $ PS.try (PS.string ";") <||> PS.try (PS.string "NOT NULL"))
+              return $ SET_DEFAULT defaultVal
+          )
+
+    parseDropColumn :: PS.Parser SQL_MANIPULATION
+    parseDropColumn = do
+      colName <- PS.string "DROP" >> PS.spaces >> PS.string "COLUMN" >> PS.spaces >> PS.manyTill PS.anyChar (PS.string ";")
+      return $ SQL_ALTER $ DROP_COLUMN colName
+
+    parseAlterColumn :: PS.Parser SQL_MANIPULATION
+    parseAlterColumn = do
+      colName <- PS.string "ALTER" >> PS.spaces >> PS.string "COLUMN" >> PS.spaces >> PS.manyTill PS.anyChar PS.space
+      alterColumnAction <- PS.spaces >> (PS.try parseChangeType <||> PS.try parseDropDefault <||> PS.try parseSetDefault <||> PS.try parseDropNotNull <||> PS.try parseSetNotNull)
+      return $ SQL_ALTER $ ALTER_COLUMN colName alterColumnAction
+
+    parseChangeType :: PS.Parser ALTER_COLUMN_ACTION
+    parseChangeType = do
+      newType <- L.trim <$> PS.string "TYPE" >> PS.spaces >> PS.manyTill PS.anyChar (PS.string ";")
+      return $ CHANGE_TYPE newType
+
+    parseDropDefault :: PS.Parser ALTER_COLUMN_ACTION
+    parseDropDefault = PS.string "DROP" >> PS.spaces >> PS.string "DEFAULT" >> return DROP_DEFAULT
+
+    parseSetDefault :: PS.Parser ALTER_COLUMN_ACTION
+    parseSetDefault = do
+      newDefault <- L.trim <$> PS.string "SET" >> PS.spaces >> PS.string "DEFAULT" >> PS.spaces >> PS.manyTill PS.anyChar (PS.string ";")
+      return $ SET_DEFAULT newDefault
+
+    parseDropNotNull :: PS.Parser ALTER_COLUMN_ACTION
+    parseDropNotNull = PS.string "DROP" >> PS.spaces >> PS.string "NOT" >> PS.spaces >> PS.string "NULL" >> return DROP_NOT_NULL
+
+    parseSetNotNull :: PS.Parser ALTER_COLUMN_ACTION
+    parseSetNotNull = PS.string "SET" >> PS.spaces >> PS.string "NOT" >> PS.spaces >> PS.string "NULL" >> return SET_NOT_NULL
+
+    parseDropConstraint :: PS.Parser SQL_MANIPULATION
+    parseDropConstraint = PS.string "DROP" >> PS.spaces >> PS.string "CONSTRAINT" >> return (SQL_ALTER DROP_CONSTRAINT_PKS)
+
+    parseAddPrimaryKey :: PS.Parser SQL_MANIPULATION
+    parseAddPrimaryKey = do
+      rawPks <- PS.string "ADD" >> PS.spaces >> PS.string "PRIMARY" >> PS.spaces >> PS.string "KEY" >> PS.spaces >> PS.string "(" >> PS.manyTill PS.anyChar (PS.string ")")
+      let pks = map L.trim $ L.split (== ',') rawPks
+      return $ SQL_ALTER $ ADD_PRIMARY_KEYS pks
+
+migrationFileParserLineByLine :: [(String, String)] -> String -> String -> MigrationFile
+migrationFileParserLineByLine _sqlTypeWrtType _dbName lastSqlFile = MigrationFile "" [fieldDeff] allPks [] lastSqlFile
+  where
+    fieldDeff = def {beamFields = beamFieldsFromSQL}
+    allPks = foldl (\acc beamField -> if PrimaryKey `elem` beamField.bConstraints then beamField.bFieldName : acc else acc) [] beamFieldsFromSQL
+    beamFieldsFromSQL = M.elems $ foldl (\acc sqlManipulation -> sqlManipulationApply acc sqlManipulation) M.empty allSqlManipulations
+    allSqlManipulations = map sqlCleanedLineParser cleanSQLines
+    cleanSQLines = filter (\x -> not $ null x || "---" `L.isPrefixOf` x) $ lines lastSqlFile
+
+sqlManipulationApply :: Map String BeamField -> SQL_MANIPULATION -> Map String BeamField
+sqlManipulationApply mp = \case
+  SQL_CREATE -> mp
+  SQL_ALTER sqlAlter -> sqlAlterApply mp sqlAlter
+
+sqlAlterApply :: Map String BeamField -> SQL_ALTER -> Map String BeamField
+sqlAlterApply mp = \case
+  ADD_COLUMN colName sqlType constraints ->
+    let newMp = M.insert (snakeCaseToCamelCase colName) (def {bFieldName = snakeCaseToCamelCase colName, bSqlType = sqlType}) mp
+     in foldl (\acc constraint -> alterColumnApply acc colName constraint) newMp constraints
+  DROP_COLUMN colName -> M.delete (snakeCaseToCamelCase colName) mp
+  ALTER_COLUMN colName action -> alterColumnApply mp colName action
+  DROP_CONSTRAINT_PKS -> M.map (\bf -> bf {bConstraints = filter (/= PrimaryKey) bf.bConstraints}) mp
+  ADD_PRIMARY_KEYS pks -> foldl (\acc pkField -> M.adjust (\bf -> bf {bConstraints = PrimaryKey : bf.bConstraints}) (snakeCaseToCamelCase pkField) acc) mp pks
+
+alterColumnApply :: Map String BeamField -> String -> ALTER_COLUMN_ACTION -> Map String BeamField
+alterColumnApply mp colName = \case
+  SET_NOT_NULL -> M.adjust (\bf -> bf {bConstraints = NotNull : bf.bConstraints}) (snakeCaseToCamelCase colName) mp
+  DROP_NOT_NULL -> M.adjust (\bf -> bf {bConstraints = filter (/= NotNull) bf.bConstraints}) (snakeCaseToCamelCase colName) mp
+  SET_DEFAULT val -> M.adjust (\bf -> bf {bDefaultVal = Just val}) (snakeCaseToCamelCase colName) mp
+  DROP_DEFAULT -> M.adjust (\bf -> bf {bDefaultVal = Nothing}) (snakeCaseToCamelCase colName) mp
+  CHANGE_TYPE newType -> M.adjust (\bf -> bf {bSqlType = newType}) (snakeCaseToCamelCase colName) mp
+
 migrationFileParser :: [(String, String)] -> String -> String -> Parser e MigrationFile
 migrationFileParser sqlTypeWrtType dbName lastSqlFile = do
   !tableName <- sqlCreateParser dbName
@@ -558,8 +669,9 @@ getOldSqlFile sqlTypeWrtType dbName filepath = do
     then do
       lastSqlFile <- BS.readFile filepath
       print ("loading old sql file" <> filepath :: String)
-      pure $ go (runParser (migrationFileParser sqlTypeWrtType dbName (BSU.toString lastSqlFile)) $ cleanedFile lastSqlFile)
-    else pure Nothing
+      pure $ Just $ migrationFileParserLineByLine sqlTypeWrtType dbName (BSU.toString lastSqlFile)
+    else -- go (runParser (migrationFileParser sqlTypeWrtType dbName (BSU.toString lastSqlFile)) $ cleanedFile lastSqlFile)
+      pure Nothing
   where
     cleanedFile = joinCleanWithNewLine . removeInlineComments . removeFullLineComments . clearExtraLines
     joinCleanWithNewLine ls = BS.append (BS.intercalate (BSU.fromString "\n") ls) (BSU.fromString "\n")

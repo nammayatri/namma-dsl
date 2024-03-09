@@ -87,6 +87,9 @@ data FieldDef = FieldDef
   }
   deriving (Show)
 
+instance Default FieldDef where
+  def = FieldDef "" "" [] Nothing False Nothing Nothing
+
 data FieldRelation = OneToOne | MaybeOneToOne | OneToMany | WithId Create FromCached | WithIdStrict Create FromCached deriving (Show, Eq)
 
 type Create = Bool
@@ -138,6 +141,9 @@ data ExtraParseInfo = ExtraParseInfo
   }
   deriving (Show)
 
+instance Default BeamField where
+  def = BeamField "" "" "" [] [] "" Nothing [] Nothing False
+
 instance Default ExtraParseInfo where
   def = ExtraParseInfo [] [] [] mempty mempty ""
 
@@ -165,3 +171,9 @@ type StorageParserM = ParserM StorageRead StorageState
 type StorageM = BuilderM TableDef
 
 type Spaces = Int
+
+data SQL_MANIPULATION = SQL_CREATE | SQL_ALTER SQL_ALTER deriving (Show)
+
+data SQL_ALTER = ADD_COLUMN String String [ALTER_COLUMN_ACTION] | DROP_COLUMN String | ALTER_COLUMN String ALTER_COLUMN_ACTION | DROP_CONSTRAINT_PKS | ADD_PRIMARY_KEYS [String] deriving (Show)
+
+data ALTER_COLUMN_ACTION = CHANGE_TYPE String | DROP_DEFAULT | SET_DEFAULT String | DROP_NOT_NULL | SET_NOT_NULL deriving (Show)
