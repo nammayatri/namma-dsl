@@ -29,6 +29,7 @@ import qualified NammaDSL.DSL.Syntax.API as APISyntax
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.IO
+import qualified Text.Parsec as PS
 import Text.Regex.TDFA ((=~))
 import Prelude
 
@@ -228,3 +229,6 @@ makeAccKeysTH inputs = do
 
 getGeneratorDefaultImports :: AppConfigs -> GenerationType -> DefaultImports
 getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] generatorTp) $ find ((== generatorTp) . _generationType) (config ^. defaultImports)
+
+(<||>) :: PS.ParsecT s u m a -> PS.ParsecT s u m a -> PS.ParsecT s u m a
+(<||>) = (PS.<|>)

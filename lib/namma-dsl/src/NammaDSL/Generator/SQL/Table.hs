@@ -4,8 +4,6 @@ module NammaDSL.Generator.SQL.Table (generateSQL) where
 
 import Data.List (intercalate)
 import qualified Data.Map as M
--- import qualified Debug.Trace as DT
-
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import qualified Data.Set as DS
 import NammaDSL.DSL.Syntax.Storage
