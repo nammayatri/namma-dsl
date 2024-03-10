@@ -62,12 +62,16 @@ whichChanges oldField newField = do
           AddNotNull -> DS.member NotNull addedConstraints
   filter isChangeApplicable [DropNotNull, DropDefault, AddNotNull, AddDefault "Not_Required_Here", TypeChange]
 
+-- Add a hash and encrypted field for encrypted fields
+mkBeamFieldsForEncryptedTypes :: [BeamField] -> [BeamField]
+mkBeamFieldsForEncryptedTypes = concatMap (\field -> if bIsEncrypted field then [field {bFieldName = bFieldName field ++ "Hash", bSqlType = "bytea"}, field {bFieldName = bFieldName field ++ "Encrypted", bSqlType = "character varying(255)"}] else [field])
+
 getUpdatesAndRest :: MigrationFile -> TableDef -> ([BeamField], [BeamField], [BeamField], Bool)
 getUpdatesAndRest oldSqlFile tableDef = do
-  let newSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields tableDef)
+  let newSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ mkBeamFieldsForEncryptedTypes $ concatMap (\field -> field.beamFields) (fields tableDef)
   let oldSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields_ oldSqlFile)
-  let newKeyIds = DS.fromList $ tableDef.primaryKey <> tableDef.secondaryKey
-  let oldKeyIds = DS.fromList $ oldSqlFile.primaryKeys <> oldSqlFile.secondaryKeys
+  let newKeyIds = DS.fromList $ tableDef.primaryKey -- <> tableDef.secondaryKey -- As secondary key should not the included in the primary keys
+  let oldKeyIds = DS.fromList $ oldSqlFile.primaryKeys -- <> oldSqlFile.secondaryKeys
   let isPkChanged = newKeyIds /= oldKeyIds
   let updatedFields =
         fst $
@@ -121,12 +125,7 @@ addColumnSQL database tableName beamFields =
   intercalate "\n" $
     map
       ( \fieldDef ->
-          if bIsEncrypted fieldDef
-            then
-              generateAlterColumnSQL database (mkSnake fieldDef ++ "_hash") "bytea" fieldDef
-                ++ "\n"
-                ++ generateAlterColumnSQL database (mkSnake fieldDef ++ "_encrypted") "character varying(255)" fieldDef
-            else generateAlterColumnSQL database (mkSnake fieldDef) (bSqlType fieldDef) fieldDef
+          generateAlterColumnSQL database (mkSnake fieldDef) (bSqlType fieldDef) fieldDef
       )
       beamFields
   where
