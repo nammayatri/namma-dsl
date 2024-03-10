@@ -164,7 +164,9 @@ This tutorial provides a comprehensive guide to understanding and working with t
       derives: "Show,Eq,Ord"
      ```
   - `beamType`: User-defined beam type for a specified data type. [See More](#beam-type)
-  - `beamFields`: User-defined beam field name change or use it if youi want to have something different on beamside. [See More](#beam-fields)
+  - `beamFields`: User-defined beam field name change or use it if you want to have something different on beamside. [See More](#beam-fields)
+
+  - `beamInstance`: We can mention the beam instance we need using this field [See More](#beam-instance)
   - `sqlType`: User-defined sql type for a field. [See More](#sql-type)
   - `default`: Default sql value for fields, if any
       ```yaml
@@ -337,6 +339,30 @@ import "dashboard-api" Domain.Types.DataType1
           }
           deriving (Generic, B.Beamable)
         ```
+---
+#### Beam Instance
+ - Currently there are three Beam Instance available -
+    - MakeTableInstances (Taken by default if nothing specified)
+      ```yaml
+      beamInstance: MakeTableInstances
+      ```
+      ```haskell
+      $(mkTableInstances ''PersonT "person")
+      ```
+    - MakeTableInstancesGenericSchema
+      ```yaml
+      beamInstance: MakeTableInstancesGenericSchema
+      ```
+      ```haskell
+      $(mkTableInstancesGenericSchema ''PersonT "person")
+      ```
+    - MakeTableInstancesWithTModifier <extra params>
+      ```yaml
+      beamInstance: MakeTableInstancesWithTModifier [("deviceOS", "device_o_s")]
+      ```
+      ```haskell
+      $(mkTableInstancesWithTModifier ''MetaDataT "meta_data" [("deviceOS", "device_o_s")])
+      ```
 ---
 #### SQL TYPE
 - Generally sql type is auto detected according to beam types, but if not detected it takes **text** by default.
