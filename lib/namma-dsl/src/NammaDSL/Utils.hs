@@ -19,6 +19,7 @@ import Data.List.Extra (trim)
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.List.Split as L
 import Data.Maybe (fromJust, fromMaybe, isJust)
+import Data.String.Builder (build)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Dhall (auto, inputFile)
@@ -27,6 +28,7 @@ import NammaDSL.Config
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
 import qualified NammaDSL.DSL.Syntax.API as APISyntax
 import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
+import qualified NammaDSL.GeneratorCore as GC
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.IO
 import qualified Text.Parsec as PS
@@ -232,3 +234,20 @@ getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] 
 
 (<||>) :: PS.ParsecT s u m a -> PS.ParsecT s u m a -> PS.ParsecT s u m a
 (<||>) = (PS.<|>)
+
+removeUnusedQualifiedImports :: GC.Code -> [String] -> [String]
+removeUnusedQualifiedImports (GC.Code codeBody') qualifiedImports = (removeExplanationMark . snd) <$> filter (\(qIName, qI) -> "!" `L.isPrefixOf` qI || isQualifiedImportUsed qIName) cleanQualifiedImports
+  where
+    removeExplanationMark q = if "!" `L.isPrefixOf` q then drop 1 q else q
+    isQualifiedImportUsed :: String -> Bool
+    isQualifiedImportUsed qualifiedImportName = codeBody =~ ("[^a-zA-Z0-9.]" ++ qualifiedImportName ++ "[.]")
+    codeBody = build codeBody'
+    cleanQualifiedImports =
+      ( \qImport ->
+          ( case words qImport of
+              (_ : "as" : x : _) -> trim x
+              _ -> qImport,
+            qImport
+          )
+      )
+        <$> qualifiedImports

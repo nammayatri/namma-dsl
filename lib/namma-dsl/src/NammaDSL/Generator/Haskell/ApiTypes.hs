@@ -10,6 +10,7 @@ import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
+import NammaDSL.Utils (removeUnusedQualifiedImports)
 import Prelude
 
 generateApiTypes :: DefaultImports -> ApiRead -> Apis -> Code
@@ -26,9 +27,10 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _) apiRead input = gener
           _extensions = [],
           _moduleNm = apiTypesModulePrefix <> T.unpack (_moduleName input),
           _simpleImports = packageOverride simpleImp,
-          _qualifiedImports = packageOverride allQualifiedImports,
-          _codeBody = generateCodeBody mkCodeBody input
+          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _codeBody = codeBody'
         }
+    codeBody' = generateCodeBody mkCodeBody input
     qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
 
     allQualifiedImports :: [String]

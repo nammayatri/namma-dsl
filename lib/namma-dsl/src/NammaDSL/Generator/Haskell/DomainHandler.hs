@@ -12,12 +12,14 @@ import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperDomainHandler, checkForPackageOverrides)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
+import NammaDSL.Utils (removeUnusedQualifiedImports)
 import Prelude
 
 generateDomainHandler :: DefaultImports -> ApiRead -> Apis -> Code
 generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
   generateCode generatorInput
   where
+    codeBody' = generateCodeBody mkCodeBody input
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
@@ -29,8 +31,8 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
           _extensions = [],
           _moduleNm = domainHandlerModulePrefix <> T.unpack (_moduleName input),
           _simpleImports = packageOverride simpleImp,
-          _qualifiedImports = packageOverride allQualifiedImports,
-          _codeBody = generateCodeBody mkCodeBody input
+          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _codeBody = codeBody'
         }
     qualifiedModuleName = T.unpack ((T.pack domainHandlerModulePrefix) <> _moduleName input)
 

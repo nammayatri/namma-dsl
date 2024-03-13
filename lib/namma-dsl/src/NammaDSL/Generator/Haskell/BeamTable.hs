@@ -17,6 +17,7 @@ generateBeamTable :: DefaultImports -> StorageRead -> TableDef -> Code
 generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   generateCode generatorInput
   where
+    codeBody' = generateCodeBody mkCodeBody tableDef
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix <> "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
@@ -28,8 +29,8 @@ generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
           _moduleNm = beamTypeModulePrefix <> capitalize (tableNameHaskell tableDef),
           _simpleImports = packageOverride simpleImp,
-          _qualifiedImports = packageOverride (imports tableDef <> qualifiedImp),
-          _codeBody = generateCodeBody mkCodeBody tableDef
+          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' (imports tableDef <> qualifiedImp),
+          _codeBody = codeBody'
         }
 
 mkCodeBody :: StorageM ()
