@@ -10,7 +10,7 @@ import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides, getRecordType)
 import NammaDSL.GeneratorCore
-import NammaDSL.Utils (isMaybeType)
+import NammaDSL.Utils (isMaybeType, removeUnusedQualifiedImports)
 import Prelude
 
 generateDomainType :: DefaultImports -> StorageRead -> TableDef -> Code
@@ -29,6 +29,8 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     allQualifiedImports :: [String]
     allQualifiedImports = removeDefaultImports allSimpleImports moduleName' $ (imports tableDef) <> qualifiedImp
 
+    codeBody' = generateCodeBody mkCodeBody tableDef
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
@@ -36,8 +38,8 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
           _simpleImports = packageOverride allSimpleImports,
-          _qualifiedImports = packageOverride allQualifiedImports,
-          _codeBody = generateCodeBody mkCodeBody tableDef
+          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _codeBody = codeBody'
         }
 
 mkCodeBody :: StorageM ()

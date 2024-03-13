@@ -1,6 +1,6 @@
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries, BeamQueryCode (..), DefaultQueryCode (..), ExtraQueryCode (..)) where
 
-import Control.Lens ((%~), (.~))
+import Control.Lens ((%~), (.~), (^.))
 import Control.Monad (when)
 import Control.Monad.Reader (ask)
 import Data.Bifunctor (first)
@@ -45,7 +45,8 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
                         & moduleNm .~ readOnlyCodeModuleName ++ " (module " ++ readOnlyCodeModuleName ++ ", module ReExport)"
                         & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
                         & simpleImports %~ (++ ([readOnlyCodeModuleName ++ "Extra as ReExport"] ++ (if transformerCode' == mempty then [] else [extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)])))
-                        & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
+                        & ghcOptions %~ (++ ["-Wno-dodgy-exports"])
+                        & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody),
                   transformerCode =
                     if transformerCode' == mempty
                       then Nothing
@@ -55,19 +56,22 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
                             commonGeneratorInput
                               & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
                               & codeBody .~ transformerCode'
+                              & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
                 },
             instanceCode =
               generateCode $
                 commonGeneratorInput
                   & moduleNm .~ orphanInstancesModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
                   & codeBody .~ generateCodeBody (mkTTypeInstance storageRead) tableDef
-                  & simpleImports %~ (++ (if transformerCode' == mempty then [] else [extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)])),
+                  & simpleImports %~ (++ (if transformerCode' == mempty then [] else [extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)]))
+                  & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody),
             extraQueryFile =
               generateCode $
                 commonGeneratorInput
                   & moduleNm .~ readOnlyCodeModuleName ++ "Extra"
                   & codeBody .~ generateCodeBody extraFileCodeBody tableDef
                   & simpleImports %~ (++ [orphanInstancesModulePrefix ++ (capitalize $ tableNameHaskell tableDef)])
+                  & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
           }
     else
       DefaultQueryFile $
@@ -78,7 +82,8 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
                   & moduleNm .~ readOnlyCodeModuleName
                   & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
                   & simpleImports %~ (++ (if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)]))
-                  & ghcOptions %~ (++ ["-Wno-dodgy-exports"]),
+                  & ghcOptions %~ (++ ["-Wno-dodgy-exports"])
+                  & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody),
             transformerCode =
               if transformerCode' == mempty
                 then Nothing
@@ -88,6 +93,7 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
                       commonGeneratorInput
                         & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
                         & codeBody .~ transformerCode'
+                        & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
           }
   where
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix ++ "."
@@ -111,9 +117,12 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
           _extensions = [],
           _moduleNm = mempty,
           _simpleImports = packageOverride simpleImp,
-          _qualifiedImports = packageOverride allQualifiedImports,
+          _qualifiedImports = allQualifiedImports,
           _codeBody = mempty
         }
+
+    makeProperQualifiedImports :: Code -> [String] -> [String]
+    makeProperQualifiedImports cd = packageOverride . (removeUnusedQualifiedImports cd)
 
     allQualifiedImports :: [String]
     allQualifiedImports =

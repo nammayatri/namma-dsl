@@ -18,6 +18,7 @@ generateServantAPI :: DefaultImports -> ApiRead -> Apis -> Code
 generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
   generateCode generatorInput
   where
+    codeBody' = generateCodeBody (mkCodeBody apiRead) input
     servantApiModulePrefix = apiServantImportPrefix apiRead ++ "."
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
@@ -30,8 +31,8 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
           _extensions = [],
           _moduleNm = servantApiModulePrefix <> T.unpack (_moduleName input),
           _simpleImports = packageOverride allSimpleImports,
-          _qualifiedImports = packageOverride allQualifiedImports,
-          _codeBody = generateCodeBody (mkCodeBody apiRead) input
+          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _codeBody = codeBody'
         }
 
     allQualifiedImports :: [String]
