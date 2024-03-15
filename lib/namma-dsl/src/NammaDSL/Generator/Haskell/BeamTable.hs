@@ -23,7 +23,7 @@ type Writer w = TH.Writer TableDef w
 
 type Q w = TH.Q TableDef w
 
-generateBeamTable ::  DefaultImports -> StorageRead -> TableDef -> Code
+generateBeamTable :: DefaultImports -> StorageRead -> TableDef -> Code
 generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   generateCode generatorInput
   where
@@ -32,17 +32,15 @@ generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
-    simpleImports' = packageOverride ["Kernel.Prelude", "Tools.Beam.UtilsTH", "Kernel.External.Encryption"]
-    qualifiedImports' = packageOverride $ ["Database.Beam as B"] <> imports tableDef
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
-          _moduleNm = "Storage.Beam." <> capitalize (tableNameHaskell tableDef),
-          _simpleImports = simpleImports',
-          _qualifiedImports = qualifiedImports',
-          _codeBody = generateCodeBody mkCodeBody tableDef
+          _moduleNm = beamTypeModulePrefix <> capitalize (tableNameHaskell tableDef),
+          _simpleImports = packageOverride simpleImp,
+          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' (imports tableDef <> qualifiedImp),
+          _codeBody = codeBody'
         }
 
 mkCodeBody :: StorageM ()

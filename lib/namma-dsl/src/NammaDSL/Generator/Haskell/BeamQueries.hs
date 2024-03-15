@@ -1,8 +1,6 @@
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries, BeamQueryCode (..), DefaultQueryCode (..), ExtraQueryCode (..)) where
 
 import Control.Lens ((%~), (.~), (^.))
-import Control.Monad (when)
-import Control.Lens ((%~), (.~))
 import Control.Monad (forM_, when)
 import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
@@ -89,7 +87,6 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
       DefaultQueryFile $
         DefaultQueryCode
           { readOnlyCode = do
-              let simpleImports_ = if transformerCode' == mempty then [] else ["Storage.Queries.Transformers." ++ (capitalize $ tableNameHaskell tableDef)]
               generateCode $
                 commonGeneratorInput
                   & moduleNm .~ readOnlyCodeModuleName
@@ -193,7 +190,7 @@ mkCodeBody storageRead = do
     beamQueries storageRead
   when isDefault $ mkTTypeInstance storageRead
 
-mkTTypeInstance :: StorageM ()
+mkTTypeInstance :: StorageRead -> StorageM ()
 mkTTypeInstance storageRead = do
   tableDef <- ask
   tellM . fromMaybe mempty $ interpreter tableDef $ do
@@ -266,7 +263,7 @@ generateDefaultCreateManyQuery storageRead = do
   def <- ask
   let name = tableNameHaskell def
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
-  let qname = domainTypeModulePrefix ++ name ++ "." ++ name
+  let dName = domainTypeModulePrefix ++ name ++ "." ++ name
   TH.decsW $ do
     TH.sigDW "createMany" $ do
       TH.forallT [] [_EsqDBFlow, _MonadFlow, _CacheFlow] $
@@ -454,10 +451,10 @@ toTTypeExtractor :: Maybe String -> String -> String
 toTTypeExtractor extractor field = maybe field (\x -> x ++ " " ++ field) extractor
 
 toTTypeExtractorTH :: Maybe (Q TH.Exp) -> String -> Q TH.Exp
-toTTypeExtractorTH storageRead extractor field = maybe (vE field) (\x -> x ~ vE field) extractor
+toTTypeExtractorTH extractor field = maybe (vE field) (\x -> x ~ vE field) extractor
 
 generateBeamQuery :: StorageRead -> [FieldDef] -> String -> QueryDef -> Writer CodeUnit
-generateBeamQuery allHaskellFields tableNameHaskell query = do
+generateBeamQuery storageRead allHaskellFields tableNameHaskell query = do
   let paramFieldNames = nub $ map (fst . fst) (params query) <> (fst <$> getWhereClauseFieldNamesAndTypes (whereClause query))
   withFunctionSignature storageRead query tableNameHaskell $ do
     monadicToTTypeTransformerCode (Just paramFieldNames)
@@ -482,7 +479,7 @@ withFunctionSignature storageRead query tableNameHaskell stmts = do
   let qParams = filter ((/= "updatedAt") . fst) $
         map getIdsOut $
           nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
-  domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
+  let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   TH.decsW $ do
     TH.sigDW (TH.mkName query.queryName) $ do
       TH.forallT [] [_EsqDBFlow, _MonadFlow, _CacheFlow] $ do

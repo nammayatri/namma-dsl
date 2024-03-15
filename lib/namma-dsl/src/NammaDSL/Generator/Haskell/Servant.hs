@@ -101,10 +101,10 @@ mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
   input <- ask
   tellM . fromMaybe mempty $ interpreter input $ do
-    generateAPIHandler
+    generateAPIHandler apiRead
 
-generateAPIHandler :: Writer CodeUnit
-generateAPIHandler = do
+generateAPIHandler :: ApiRead -> Writer CodeUnit
+generateAPIHandler apiRead = do
   input <- ask
   let allApis = _apis input
       moduleName' = _moduleName input
@@ -122,6 +122,7 @@ generateAPIHandler = do
   forM_ allApis $ handlerFunctionDef moduleName'
   where
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
+
     isAuthPresent :: ApiTT -> Bool
     isAuthPresent apiT = case _authType apiT of
       Just NoAuth -> False
@@ -161,7 +162,7 @@ generateAPIHandler = do
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (isDashboardAuth apiT) $
-                TH.appendE $ vE (T.pack domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                TH.appendE $ vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
                   NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
 
 generateWithFlowHandlerAPI :: Bool -> (Q TH.Exp -> Q TH.Exp)

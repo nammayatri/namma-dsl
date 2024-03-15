@@ -8,8 +8,6 @@ import Data.Foldable
 import Data.Functor
 import qualified Data.List as L
 import qualified Data.List.Split as L
-import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Tuple.Extra (both)
 import NammaDSL.Config (DefaultImports (..))
 import Data.Maybe
 import qualified Data.Text as T
