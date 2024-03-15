@@ -47,6 +47,10 @@ library
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
+      NammaDSL.Lib
+      NammaDSL.Lib.Interpreter
+      NammaDSL.Lib.TH
+      NammaDSL.Lib.Types
       NammaDSL.Utils
   other-modules:
       Paths_namma_dsl
@@ -103,6 +107,7 @@ library
     , lens-aeson
     , mtl
     , parsec
+    , pretty
     , process
     , raw-strings-qq
     , record-dot-preprocessor
@@ -151,6 +156,10 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
+      NammaDSL.Lib
+      NammaDSL.Lib.Interpreter
+      NammaDSL.Lib.TH
+      NammaDSL.Lib.Types
       NammaDSL.Utils
       Paths_namma_dsl
   hs-source-dirs:
@@ -208,6 +217,7 @@ test-suite namma-dsl-tests
     , mtl
     , namma-dsl
     , parsec
+    , pretty
     , process
     , raw-strings-qq
     , record-dot-preprocessor

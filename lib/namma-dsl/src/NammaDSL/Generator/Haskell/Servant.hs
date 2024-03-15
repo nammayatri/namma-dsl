@@ -4,7 +4,7 @@ import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import Data.List.Extra (snoc)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (maybeToList, fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import NammaDSL.Config (DefaultImports (..))
@@ -12,7 +12,16 @@ import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperServant, checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils
+import NammaDSL.Lib hiding (Q, Writer)
+import qualified NammaDSL.Lib.TH as TH
+import qualified NammaDSL.Lib.Types as TH
 import Prelude
+import qualified Data.List.NonEmpty as NE
+import Control.Monad (forM_)
+
+type Writer w = TH.Writer Apis w
+
+type Q w = TH.Q Apis w
 
 generateServantAPI :: DefaultImports -> ApiRead -> Apis -> Code
 generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
@@ -91,18 +100,26 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
   input <- ask
+  tellM . fromMaybe mempty $ interpreter input $ do
+    generateAPIHandler
+
+generateAPIHandler :: Writer CodeUnit
+generateAPIHandler = do
+  input <- ask
   let allApis = _apis input
       moduleName' = _moduleName input
-      seperator = onNewLine (tellM " :<|> ")
-      handlerFunctionText' = tellM . T.unpack . handlerFunctionText
-  onNewLine $ do
-    tellM "type API = "
-    onNewLine $ withSpace $ intercalateA seperator (map apiTTToText allApis)
-  onNewLine $ do
-    tellM "handler  :: Environment.FlowServer API"
-    onNewLine $ tellM "handler = "
-    withSpace $ intercalateA seperator (map handlerFunctionText' allApis)
-  onNewLine $ intercalateA newLine (map (handlerFunctionDef moduleName') allApis)
+
+  tySynDW "API" [] $ do
+    appendInfixT ":<|>" . NE.fromList $ apiTTToText <$> allApis
+
+  TH.decsW $ do
+    sigDW "handler" $ do
+      cT "Environment.FlowServer" ~~ cT "API"
+    funDW "handler" $ do
+      TH.clauseW [] $
+        TH.normalB $
+          appendInfixE (vE ":<|>") (NE.fromList $ vE . T.unpack . handlerFunctionText <$> allApis)
+  forM_ allApis $ handlerFunctionDef moduleName'
   where
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     isAuthPresent :: ApiTT -> Bool
@@ -116,77 +133,82 @@ mkCodeBody apiRead = do
       Just (SafetyWebhookAuth _) -> True
       _ -> False
 
-    generateParams :: Bool -> Bool -> Int -> Int -> Text
-    generateParams _ _ _ 0 = ""
-    generateParams isAuth isbackParam mx n =
-      ( if mx == n && isbackParam && isAuth
-          then " (Control.Lens.over Control.Lens._1 Kernel.Prelude.Just a" <> T.pack (show n) <> ")"
-          else " a" <> T.pack (show n)
-      )
-        <> generateParams isAuth isbackParam mx (n - 1)
+    generateParamsPat :: Bool -> Int -> Int -> [Q TH.Pat]
+    generateParamsPat _ _ 0 = []
+    generateParamsPat isAuth mx n = vP ("a" <> show n) : generateParamsPat isAuth mx (n - 1)
 
-    handlerFunctionDef :: Text -> ApiTT -> ApisM ()
-    handlerFunctionDef moduleName' apiT =
+    generateParamsExp :: Bool -> Int -> Int -> [Q TH.Exp]
+    generateParamsExp _ _ 0 = []
+    generateParamsExp isAuth mx n =
+      ( if mx == n && isAuth
+          then vE "Control.Lens.over" ~ vE "Control.Lens._1" ~ cE "Kernel.Prelude.Just" ~ vE ("a" <> show n)
+          else vE ("a" <> show n)
+      )
+        : generateParamsExp isAuth mx (n - 1)
+
+    handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
+    handlerFunctionDef moduleName' apiT = do
       let functionName = handlerFunctionText apiT
           allTypes = handlerSignature apiT
-          showType = case filter (/= T.empty) (init allTypes) of
-            [] -> T.empty
-            ty -> T.intercalate " -> " ty
-          handlerTypes = showType <> (if length allTypes > 1 then " -> " else " ") <> "Environment.FlowHandler " <> last allTypes
-       in tellM $
-            T.unpack $
-              functionName <> maybe " :: " (\x -> " :: " <> x <> " -> ") (apiAuthTypeMapperServant apiT) <> handlerTypes
-                <> "\n"
-                <> functionName
-                <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) False (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
-                <> generateWithFlowHandlerAPI (isDashboardAuth apiT)
-                <> (T.pack domainHandlerModulePrefix)
-                <> moduleName'
-                <> "."
-                <> functionName
-                <> generateParams (isAuthPresent apiT && not (isDashboardAuth apiT)) True (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
-                <> "\n"
+          showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
+          handlerTypes = maybeToList (apiAuthTypeMapperServant apiT) <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
+      TH.decsW $ do
+        TH.sigDW (TH.mkNameT functionName) $ do
+          TH.forallT [] [] $
+            TH.appendArrow $ NE.fromList handlerTypes
+        TH.funDW (TH.mkNameT functionName) $ do
+          let pats = generateParamsPat (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
+          TH.clauseW pats $
+            TH.normalB $
+              generateWithFlowHandlerAPI (isDashboardAuth apiT) $
+                TH.appendE $ vE (T.pack domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                  NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
 
-generateWithFlowHandlerAPI :: Bool -> Text
+generateWithFlowHandlerAPI :: Bool -> (Q TH.Exp -> Q TH.Exp)
 generateWithFlowHandlerAPI = \case
-  True -> " = withFlowHandlerAPI' $ "
-  False -> " = withFlowHandlerAPI $ "
+  True -> (vE "withFlowHandlerAPI'" ~$)
+  False -> (vE "withFlowHandlerAPI" ~$)
 
-apiTTToText :: ApiTT -> ApisM ()
-apiTTToText apiTT =
+apiTTToText :: ApiTT -> Q TH.Type
+apiTTToText apiTT = do
+
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
-      apiReqText = apiReqToText (_apiReqType apiTT)
-      apiResText = apiResToText (_apiResType apiTT)
+      apiReqText = apiReqToText <$> _apiReqType apiTT
+      apiResText = apiResToText apiTypeText (_apiResType apiTT)
       headerText = map headerToText (_header apiTT)
-   in tellM $
-        T.unpack $
-          addAuthToApi (_authType apiTT) (T.concat urlPartsText <> T.concat headerText <> apiReqText <> " :> " <> apiTypeText <> apiResText)
+
+  TH.appendInfixT ":>" . NE.fromList $
+    maybeToList (addAuthToApi $ _authType apiTT)
+      <> urlPartsText
+      <> headerText
+      <> maybeToList apiReqText
+      <> [apiResText]
   where
-    addAuthToApi :: Maybe AuthType -> Text -> Text
-    addAuthToApi authtype apiDef = case authtype of
-      Just AdminTokenAuth -> "AdminTokenAuth" <> apiDef
-      Just (TokenAuth _) -> "TokenAuth" <> apiDef
-      Just (SafetyWebhookAuth dashboardAuthType) -> "SafetyWebhookAuth '" <> T.pack (show dashboardAuthType) <> apiDef
-      Just (DashboardAuth dashboardAuthType) -> "DashboardAuth '" <> T.pack (show dashboardAuthType) <> apiDef
-      Just NoAuth -> fromMaybe apiDef (T.stripPrefix " :>" apiDef)
-      Nothing -> "TokenAuth" <> apiDef
+    addAuthToApi :: Maybe AuthType -> Maybe (Q TH.Type)
+    addAuthToApi authtype = case authtype of
+      Just AdminTokenAuth -> Just $ cT "AdminTokenAuth"
+      Just (TokenAuth _) -> Just $ cT "TokenAuth"
+      Just (SafetyWebhookAuth dashboardAuthType) -> Just $ cT "SafetyWebhookAuth" ~~ cT ("'" <> show dashboardAuthType)
+      Just (DashboardAuth dashboardAuthType) -> Just $ cT "DashboardAuth" ~~ cT ("'" <> show dashboardAuthType)
+      Just NoAuth -> Nothing
+      Nothing -> Just $ cT "TokenAuth"
 
-    urlPartToText :: UrlParts -> Text
-    urlPartToText (UnitPath path) = " :> \"" <> path <> "\""
-    urlPartToText (Capture path ty) = " :> Capture \"" <> path <> "\" (" <> ty <> ")"
-    urlPartToText (QueryParam path ty isMandatory) =
-      " :> " <> (if isMandatory then "Mandatory" else "") <> "QueryParam \"" <> path <> "\" (" <> ty <> ")"
+    urlPartToText :: UrlParts -> Q TH.Type
+    urlPartToText (UnitPath path) = strT (T.unpack path)
+    urlPartToText (Capture path ty) = cT "Capture" ~~ strT (T.unpack path) ~~ TH.appendT (NE.fromList $ cT <$> words (T.unpack ty))
+    urlPartToText (QueryParam path ty isMandatory) = if isMandatory
+      then cT "MandatoryQueryParam"  ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
+      else cT "QueryParam"  ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
 
-    apiReqToText :: Maybe ApiReq -> Text
-    apiReqToText Nothing = ""
-    apiReqToText (Just (ApiReq ty frmt)) = " :> ReqBody '[" <> frmt <> "] " <> ty
+    apiReqToText :: ApiReq -> Q TH.Type
+    apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)
 
-    apiResToText :: ApiRes -> Text
-    apiResToText (ApiRes name ty) = " '[" <> ty <> "] " <> name
+    apiResToText :: Text -> ApiRes -> Q TH.Type
+    apiResToText apiTypeText (ApiRes name ty) = cT (T.unpack apiTypeText) ~~ promotedList1T (T.unpack ty) ~~ cT (T.unpack name)
 
-    headerToText :: HeaderType -> Text
-    headerToText (Header name ty) = " :> Header \"" <> name <> "\" " <> ty
+    headerToText :: HeaderType -> Q TH.Type
+    headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ cT (T.unpack ty)
 
 handlerFunctionText :: ApiTT -> Text
 handlerFunctionText apiTT =

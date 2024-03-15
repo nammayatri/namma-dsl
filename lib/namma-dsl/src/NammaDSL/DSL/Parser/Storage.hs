@@ -826,13 +826,13 @@ parseTypes = do
     extractString (String t) = T.unpack t
     extractString _ = error "Non-string type found in field definition"
 
-    splitTypeAndDerivation :: [(String, String)] -> ([(String, String)], [String])
-    splitTypeAndDerivation fields = (filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
+    splitTypeAndDerivation :: [(String, String)] -> ([(FieldName, FieldType)], [InstanceToDerive])
+    splitTypeAndDerivation fields = (bimap FieldName FieldType <$> filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
       where
-        extractDerive :: [(String, String)] -> [String]
+        extractDerive :: [(String, String)] -> [InstanceToDerive]
         extractDerive [] = []
         extractDerive ((k, value) : xs)
-          | k == "derive" = map T.unpack (T.split (== ',') (T.pack value))
+          | k == "derive" = map (InstanceToDerive . T.unpack) (T.split (== ',') (T.pack value))
           | otherwise = extractDerive xs
 
     extractRecordType :: Object -> RecordType
@@ -851,8 +851,9 @@ parseTypes = do
           )
 
     processType :: (Key, Value) -> TypeObject
-    processType (typeName, Object typeDef) =
-      TypeObject (extractRecordType typeDef) (toString typeName, splitTypeAndDerivation $ extractFields typeDef)
+    processType (typeName, Object typeDef) = do
+      let (fields, derivations) = splitTypeAndDerivation $ extractFields typeDef
+      TypeObject (extractRecordType typeDef) (TypeName $ toString typeName) fields derivations
     processType _ = error "Expected an object in fields"
 
 beamFieldsWithExtractors :: String -> String -> [String] -> StorageParserM [(String, String, [String])]

@@ -6,27 +6,45 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
+import NammaDSL.Lib
+import qualified NammaDSL.Lib.TH as TH
+import qualified NammaDSL.Lib.Types as TH
 import Prelude hiding (lookup)
 
-apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe Text
-apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
-  Just (DashboardAuth _) -> Just "TokenInfo"
-  Just NoAuth -> Nothing
-  Just (SafetyWebhookAuth _) -> Just "AuthToken"
-  Just (TokenAuth tp) -> case tp of
-    RIDER_TYPE -> Just "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
-    PROVIDER_TYPE -> Just "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant, Kernel.Types.Id.Id Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity)"
-  _ -> Just "(Kernel.Prelude.Maybe (Kernel.Types.Id.Id Domain.Types.Person.Person), Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
+_Maybe :: TH.Q r TH.Type
+_Maybe = cT "Kernel.Prelude.Maybe"
 
-apiAuthTypeMapperServant :: ApiTT -> Maybe Text
+_Id :: TH.Q r TH.Type
+_Id = cT "Kernel.Types.Id.Id"
+
+_Person :: TH.Q r TH.Type
+_Person = cT "Domain.Types.Person.Person"
+
+_Merchant :: TH.Q r TH.Type
+_Merchant = cT "Domain.Types.Merchant.Merchant"
+
+_MerchantOperatingCity :: TH.Q r TH.Type
+_MerchantOperatingCity = cT "Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity"
+
+apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe (TH.Q r TH.Type)
+apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
+  Just (DashboardAuth _) -> Just $ cT "TokenInfo"
+  Just NoAuth -> Nothing
+  Just (SafetyWebhookAuth _) -> Just $ cT "AuthToken"
+  Just (TokenAuth tp) -> case tp of
+    RIDER_TYPE -> Just $ tupleT 2 ~~ (_Maybe ~~ (_Id ~~ _Person)) ~~ (_Id ~~ _Merchant)
+    PROVIDER_TYPE -> Just $ tupleT 3 ~~ (_Maybe ~~ (_Id ~~ _Person)) ~~ (_Id ~~ _Merchant) ~~ (_Id ~~ _MerchantOperatingCity)
+  _ -> Just $ tupleT 2 ~~ (_Maybe ~~ (_Id ~~ _Person)) ~~ (_Id ~~ _Merchant)
+
+apiAuthTypeMapperServant :: ApiTT -> Maybe (TH.Q r TH.Type)
 apiAuthTypeMapperServant apiT = case _authType apiT of
-  Just (DashboardAuth _) -> Just "TokenInfo"
-  Just (SafetyWebhookAuth _) -> Just "AuthToken"
+  Just (DashboardAuth _) -> Just $ cT "TokenInfo"
+  Just (SafetyWebhookAuth _) -> Just $ cT "AuthToken"
   Just NoAuth -> Nothing
   Just (TokenAuth tp) -> case tp of
-    RIDER_TYPE -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
-    PROVIDER_TYPE -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant, Kernel.Types.Id.Id Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity)"
-  _ -> Just "(Kernel.Types.Id.Id Domain.Types.Person.Person, Kernel.Types.Id.Id Domain.Types.Merchant.Merchant)"
+    RIDER_TYPE -> Just $ tupleT 2 ~~ (_Id ~~ _Person) ~~ (_Id ~~ _Merchant)
+    PROVIDER_TYPE -> Just $ tupleT 3 ~~ (_Id ~~ _Person) ~~ (_Id ~~ _Merchant) ~~ (_Id ~~ _MerchantOperatingCity)
+  _ -> Just $ tupleT 2 ~~ (_Id ~~ _Person) ~~ (_Id ~~ _Merchant)
 
 getRecordType :: RecordType -> String
 getRecordType = \case

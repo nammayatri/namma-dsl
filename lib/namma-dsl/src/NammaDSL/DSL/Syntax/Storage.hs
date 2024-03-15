@@ -54,7 +54,19 @@ data BeamInstance
   | MakeTableInstancesWithTModifier String
   deriving (Show)
 
-data TypeObject = TypeObject RecordType (String, ([(String, String)], [String])) --  (TypeName, ([(Field, HaskellType)], [InstanceToDerive]))
+newtype TypeName = TypeName {getTypeName :: String}
+  deriving (Show, Eq)
+
+newtype FieldName = FieldName {getFieldName :: String}
+  deriving (Show, Eq)
+
+newtype FieldType = FieldType {getFieldType :: String}
+  deriving (Show)
+
+newtype InstanceToDerive = InstanceToDerive {getInstanceToDerive :: String}
+  deriving (Show, Eq)
+
+data TypeObject = TypeObject RecordType TypeName [(FieldName, FieldType)] [InstanceToDerive]
   deriving (Show)
 
 data QueryDef = QueryDef

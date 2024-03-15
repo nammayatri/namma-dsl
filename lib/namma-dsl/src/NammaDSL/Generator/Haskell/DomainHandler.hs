@@ -1,19 +1,24 @@
 module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 
--- import NammaDSL.DSL.Parser.API hiding (figureOutImports)
-
--- import NammaDSL.Utils
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
 import Data.List (isInfixOf, nub)
 import qualified Data.Text as T
 import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperDomainHandler, checkForPackageOverrides)
+import NammaDSL.Generator.Haskell.Common( apiAuthTypeMapperDomainHandler, checkForPackageOverrides )
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
 import NammaDSL.Utils (removeUnusedQualifiedImports)
+import NammaDSL.Lib hiding (Q, Writer)
+import qualified NammaDSL.Lib.Types as TH
 import Prelude
+import Control.Monad (forM_)
+import qualified NammaDSL.Lib.TH as TH
+import qualified Data.List.NonEmpty as NE
+import Data.Maybe (fromMaybe)
+
+type Writer w = TH.Writer Apis w
 
 generateDomainHandler :: DefaultImports -> ApiRead -> Apis -> Code
 generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
@@ -60,24 +65,22 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
 mkCodeBody :: ApisM ()
 mkCodeBody = do
   input <- ask
-  let separator = newLine *> newLine
-  onNewLine $
-    intercalateA separator (map handlerFunctionDef (_apis input))
-  where
-    handlerFunctionDef :: ApiTT -> ApisM ()
-    handlerFunctionDef apiT =
-      let functionName = handlerFunctionText apiT
-          autoToType = maybe [] pure (apiAuthTypeMapperDomainHandler apiT)
-          allTypes = handlerSignature apiT
-          showType = filter (/= T.empty) (init allTypes)
-          -- [] -> T.empty
-          -- ty -> " -> " <> T.intercalate " -> " ty
-          handlerTypes = autoToType <> showType <> ["Environment.Flow " <> last allTypes]
-       in tellM $
-            T.unpack $
-              functionName
-                <> " :: "
-                <> T.intercalate " -> " handlerTypes
-                <> "\n"
-                <> functionName
-                <> " = error \"Logic yet to be decided\""
+  tellM . fromMaybe mempty $ interpreter input $ do
+    generateHandlerFunctions
+
+generateHandlerFunctions :: Writer CodeUnit
+generateHandlerFunctions = do
+  input <- ask
+  forM_ (_apis input) $ \apiT -> decsW $ do
+    let functionName = handlerFunctionText apiT
+        autoToType = maybe [] pure (apiAuthTypeMapperDomainHandler apiT)
+        allTypes = handlerSignature apiT
+        showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
+        handlerTypes = autoToType <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
+    TH.sigDW (mkNameT functionName) $ do
+      TH.forallT [] [] $
+        TH.appendInfixT "->" $ NE.fromList handlerTypes
+    TH.funDW (mkNameT functionName) $ do
+      TH.clauseW [] $
+        TH.normalB $
+          vE "error" ~ strE "Logic yet to be decided"

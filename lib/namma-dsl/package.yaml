@@ -89,6 +89,7 @@ dependencies:
   - dhall
   - transformers
   - data-default
+  - pretty
 
 ghc-options:
   - -Wall
