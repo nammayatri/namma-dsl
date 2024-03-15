@@ -16,6 +16,7 @@ import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
+import NammaDSL.Utils (removeUnusedQualifiedImports)
 import Prelude
 
 type Writer w = TH.Writer Apis w

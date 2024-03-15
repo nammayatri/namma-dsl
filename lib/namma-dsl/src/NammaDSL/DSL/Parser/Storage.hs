@@ -68,27 +68,26 @@ parseExtraTypes = do
   defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
   parseTypes
   _types <- gets (types . tableDef)
-  let mkEnumTypeQualified = \enumTp ->
-        L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj) . L.breakOn " ") (L.trim <$> L.splitOn "," enumTp)
-      mkQualifiedTypeObject = \(TypeObject recType (_nm, (arrOfFields, derive))) ->
+  let mkEnumTypeQualified enumTp =
+        FieldType $ L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj) . L.breakOn " ") (L.trim <$> L.splitOn "," enumTp.getFieldType)
+      mkQualifiedTypeObject = \(TypeObject recType _nm arrOfFields derive) ->
         TypeObject
           recType
-          ( _nm,
-            ( map
-                ( \(_n, _t) ->
-                    ( _n,
-                      if _n == "enum"
-                        then mkEnumTypeQualified _t
-                        else makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj _t
-                    )
-                )
-                arrOfFields,
-              derive
-            )
+          _nm
+          ( map
+              ( \(_n, _t) ->
+                  ( _n,
+                    if _n.getFieldName == "enum"
+                      then mkEnumTypeQualified _t
+                      else FieldType $ makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj _t.getFieldType
+                  )
+              )
+              arrOfFields
           )
+          derive
       types' = fromMaybe [] _types
-      allExcludeQualified = map (\(TypeObject _ (name, _)) -> name) types'
-      allEnums = map (\(TypeObject _ (name, _)) -> name) $ filter isEnumType types'
+      allExcludeQualified = map (\(TypeObject _ name _ _) -> name.getTypeName) types'
+      allEnums = map (\(TypeObject _ name _ _) -> name.getTypeName) $ filter isEnumType types'
       qualifiedTypeObject = (map mkQualifiedTypeObject) <$> _types
       qualifiedAllEnums = map (\nm -> defaultImportModule ++ "." ++ moduleName ++ "." ++ nm) allEnums ++ allEnums
   modify $ \s -> s {tableDef = (tableDef s) {types = qualifiedTypeObject}, extraParseInfo = (extraParseInfo s) {enumList = qualifiedAllEnums, excludedImportList = allExcludeQualified}}
@@ -194,10 +193,10 @@ parseImports = do
     figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
 
     figureOutInsideTypeImports :: TypeObject -> [String]
-    figureOutInsideTypeImports tobj@(TypeObject _ (_, (tps, _))) =
+    figureOutInsideTypeImports tobj@(TypeObject _ _ tps _) =
       let isEnum = isEnumType tobj
        in concatMap
-            ( ( \potentialImport ->
+            ( ( \(FieldType potentialImport) ->
                   if isEnum
                     then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
                     else [potentialImport]
@@ -864,22 +863,22 @@ beamFieldsWithExtractors fieldName haskellType extractorFuncs = do
   obj <- gets (.extraParseInfo.dataObject)
   let beamFieldObj = obj ^? (ix acc_beamFields . _Object)
       qualified tp = domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ tp
-      findIfComplexType tpp = find (\(TypeObject _ (nm, (arrOfFields, _))) -> (nm == tpp || tpp == domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ nm) && all (\(k, _) -> k /= "enum") arrOfFields) definedTypes
+      findIfComplexType tpp = find (\(TypeObject _ (TypeName nm) arrOfFields _) -> (nm == tpp || tpp == domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ nm) && all (\(FieldName k, _) -> k /= "enum") arrOfFields) definedTypes
   case beamFieldObj >>= preview (ix (fromString fieldName) . _Object . to Object . to mkList) of
     Just arrOfFields ->
       pure $ foldl (\acc (nm, tpp) -> acc ++ [(nm, tpp, [])]) [] arrOfFields
     Nothing ->
       case findIfComplexType haskellType of
-        Just (TypeObject _ (_nm, (arrOfFields, _))) -> do
+        Just (TypeObject _ _nm arrOfFields _) -> do
           foldlM
-            ( \acc (nm, tpp) -> do
+            ( \acc (FieldName nm, FieldType tpp) -> do
                 bFieldWithExt <- beamFieldsWithExtractors (fieldName ++ capitalise nm) tpp (qualified nm : extractorFuncs)
                 pure $ acc ++ bFieldWithExt
             )
             []
             arrOfFields
         Nothing ->
-          pure $ [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
+          pure [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
   where
     capitalise :: String -> String
     capitalise [] = []
@@ -999,7 +998,7 @@ sqlDefaultsWrtName = \case
   _ -> Nothing
 
 isEnumType :: TypeObject -> Bool
-isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+isEnumType (TypeObject _ _ arrOfFields _) = any (\(FieldName k, _) -> k == "enum") arrOfFields
 
 -- SQL reverse parse
 findMatchingHaskellType :: [(String, String)] -> String -> String
