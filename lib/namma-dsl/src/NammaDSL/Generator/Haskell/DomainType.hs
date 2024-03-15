@@ -137,7 +137,7 @@ generateEncryptionInstance  = do
               let (fieldE, fieldUpdP, _) = mkTHVars f
               when f.isEncrypted $
                 if isMaybeType f.haskellType
-                  then fieldUpdP <-- (vE "encryptItem" ~ TH.tupE [Nothing, Just saltE] ~<$> fieldE ~ entityE)
+                  then fieldUpdP <-- (vE "encryptItem" ~$ TH.tupE [Nothing, Just saltE] ~<$> fieldE ~ entityE)
                   else fieldUpdP <-- (vE "encryptItem" ~ TH.tupE [Just $ fieldE ~ entityE, Just saltE])
             TH.noBindSW $ vE "pure" ~ updEntityExp
 
@@ -195,7 +195,14 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d) -> if tname == typeName then d else []) typeObj)
         let derives = TH.DerivClause Nothing (TH.ConT <$> ["Eq", "Ord", "Show", "Read", "Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
         case recType of
-          NewType -> error "Generate haskell domain enum types: expected Data but got NewType"
+          NewType -> do
+            let (newTypeCons, internalType) = case enumValues of
+                  [enumValue] -> case words enumValue of
+                    [a, b] -> (a, b)
+                    _ -> error "Newtype enum value should have exactly one field"
+                  _ -> error "Newtype enum value should have exactly one constructor"
+            TH.NewtypeD [] (TH.mkName typeName.getTypeName) [] Nothing (TH.NormalC (TH.mkName newTypeCons) [(defaultBang, TH.ConT $ TH.mkName internalType)]) [derives]
+            --error "Generate haskell domain enum types: expected Data but got NewType"
           Data -> TH.DataD [] (TH.mkName typeName.getTypeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
           Type -> error "Generate haskell domain enum types: expected Data but got Type"
       TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ _thTypeName
