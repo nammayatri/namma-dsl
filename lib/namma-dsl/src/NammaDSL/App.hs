@@ -22,7 +22,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.13"
+version = "1.0.14"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do

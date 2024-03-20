@@ -7,7 +7,7 @@ let outputPath =
       , _extraBeamQueries = outputPrefix ++ "Storage/Queries/Extra"
       , _beamTable = outputPrefix ++ "Storage/Beam"
       , _domainHandler = outputPrefix ++ "UI/Api/Action"
-      , _domainType = outputPrefix ++ "Storage/Domain/Types"
+      , _domainType = outputPrefix ++ "Domain/Types"
       , _servantApi = outputPrefix ++ "UI/Api"
       , _sql = outputPrefix ++ "/migrations"
       , _purescriptFrontend = ""
@@ -150,7 +150,7 @@ in  { _output = outputPath
       , _sqlTypeMapper = sqlMapper
       , _extraDefaultFields = extraDefaultFields
       }
-    , _defaultImports = [] : List DefaultImports
+    , _defaultImports = defaultImports
     , _defaultTypeImportMapper = defaultTypeImportMapper
     , _generate =
       [ GeneratorType.DOMAIN_TYPE

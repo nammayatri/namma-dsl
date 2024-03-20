@@ -11,6 +11,7 @@ $( makeAccKeysTH
      [r|
     fields
     excludedFields
+    excludedDefaultQueries
     fromTType
     toTType
     beamFields
