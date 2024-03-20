@@ -83,23 +83,26 @@ getFieldRelationAndHaskellType str' = do
       patternWithId :: String = "With(Cached){0,1}Id(Create){0,1}"
       patternWithIdCreate :: String = "With(Cached){0,1}IdCreate"
       patternFromCache :: String = "WithCachedId(Create){0,1}"
+      patternNormal :: String = "NoRelation"
       needToCreate = optionalRelation =~ patternWithIdCreate
       isFromCached = optionalRelation =~ patternFromCache
-
-  if optionalRelation =~ patternWithId -- patternWithId `L.isInfixOf` optionalRelation
-    then
-      if "Kernel.Prelude.Maybe" `L.isPrefixOf` str
-        then Just (WithId needToCreate isFromCached, getModuleNameAfterLastDot str)
-        else Just (WithIdStrict needToCreate isFromCached, getModuleNameAfterLastDot str)
+  if optionalRelation =~ patternNormal
+    then Nothing
     else
-      let fieldRelationAndHaskellType = case (regexExec str patternOneToOne', regexExec str patternMaybeOneToOne', regexExec str patternOneToMany') of
-            (Just haskellType, Nothing, Nothing) -> Just (OneToOne, haskellType)
-            (Nothing, Just haskellType, Nothing) -> Just (MaybeOneToOne, haskellType)
-            (Nothing, Nothing, Just haskellType) -> Just (OneToMany, haskellType)
-            (_, _, _) -> Nothing
-       in if isJust fieldRelationAndHaskellType && validatePattern
-            then fieldRelationAndHaskellType
-            else Nothing
+      if optionalRelation =~ patternWithId -- patternWithId `L.isInfixOf` optionalRelation
+        then
+          if "Kernel.Prelude.Maybe" `L.isPrefixOf` str
+            then Just (WithId needToCreate isFromCached, getModuleNameAfterLastDot str)
+            else Just (WithIdStrict needToCreate isFromCached, getModuleNameAfterLastDot str)
+        else
+          let fieldRelationAndHaskellType = case (regexExec str patternOneToOne', regexExec str patternMaybeOneToOne', regexExec str patternOneToMany') of
+                (Just haskellType, Nothing, Nothing) -> Just (OneToOne, haskellType)
+                (Nothing, Just haskellType, Nothing) -> Just (MaybeOneToOne, haskellType)
+                (Nothing, Nothing, Just haskellType) -> Just (OneToMany, haskellType)
+                (_, _, _) -> Nothing
+           in if isJust fieldRelationAndHaskellType && validatePattern
+                then fieldRelationAndHaskellType
+                else Nothing
   where
     getModuleNameAfterLastDot :: String -> String
     getModuleNameAfterLastDot = last . L.splitOn "."

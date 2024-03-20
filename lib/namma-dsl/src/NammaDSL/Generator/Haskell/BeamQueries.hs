@@ -183,10 +183,11 @@ extraFileCodeBody = do
 mkCodeBody :: StorageRead -> StorageM ()
 mkCodeBody storageRead = do
   tableDef <- ask
+  let excludedQueries = excludedDefaultQueries tableDef
   let isDefault = EXTRA_QUERY_FILE `notElem` extraOperations tableDef
   tellM . fromMaybe mempty $ interpreter tableDef $ do
-    generateDefaultCreateQuery storageRead
-    generateDefaultCreateManyQuery storageRead
+    when ("create" `notElem` excludedQueries) $ generateDefaultCreateQuery storageRead
+    when ("createMany" `notElem` excludedQueries) $ generateDefaultCreateManyQuery storageRead
     beamQueries storageRead
   when isDefault $ mkTTypeInstance storageRead
 
@@ -373,8 +374,9 @@ toTTypeInstance storageRead = do
 beamQueries :: StorageRead -> Writer CodeUnit
 beamQueries storageRead = do
   tableDef <- ask
+  let excludedQueries = excludedDefaultQueries tableDef
   forM_ (queries tableDef ++ defaultQueryDefs tableDef) $
-    generateBeamQuery storageRead tableDef.fields tableDef.tableNameHaskell
+    \queryDef -> when (queryName queryDef `notElem` excludedQueries) $ generateBeamQuery storageRead tableDef.fields tableDef.tableNameHaskell queryDef
 
 _Id :: Q TH.Exp
 _Id = cE "Kernel.Types.Id.Id"

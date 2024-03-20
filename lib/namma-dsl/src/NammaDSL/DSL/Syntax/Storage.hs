@@ -34,6 +34,7 @@ data TableDef = TableDef
     imports :: [String],
     importPackageOverrides :: Map String String,
     queries :: [QueryDef],
+    excludedDefaultQueries :: [String],
     primaryKey :: [String],
     secondaryKey :: [String],
     types :: Maybe [TypeObject],
@@ -46,7 +47,7 @@ data TableDef = TableDef
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef "" "" [] [] mempty [] [] [] Nothing False [] Nothing MakeTableInstances []
+  def = TableDef "" "" [] [] mempty [] [] [] [] Nothing False [] Nothing MakeTableInstances []
 
 data BeamInstance
   = MakeTableInstances

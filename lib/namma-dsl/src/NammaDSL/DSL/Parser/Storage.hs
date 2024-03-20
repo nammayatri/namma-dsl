@@ -217,6 +217,7 @@ parseQueries = do
   defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
   let makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
       mbQueries = obj ^? ix acc_queries . _Value . to mkListObject
+      excludedQueries = fromMaybe [] $ obj ^? ix acc_excludedDefaultQueries . _Array . to V.toList . to (map valueToString)
       parseQuery query =
         let queryName = fst query
             queryDataObj = snd query
@@ -228,6 +229,7 @@ parseQueries = do
   case mbQueries of
     Just queries -> modify $ \s -> s {tableDef = (tableDef s) {queries = map parseQuery queries}}
     Nothing -> pure ()
+  modify $ \s -> s {tableDef = (tableDef s) {excludedDefaultQueries = excludedQueries}}
   where
     addDefaultUpdatedAtToQueryParams :: String -> [((String, String), Bool)] -> [((String, String), Bool)]
     addDefaultUpdatedAtToQueryParams queryName params =
@@ -928,7 +930,7 @@ makeBeamFields fieldName haskellType = do
             isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
          in BeamField
               { bFieldName = fName,
-                hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj tpp,
+                hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj haskellType,
                 bFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj beamType,
                 bConstraints = constraints,
                 bFieldUpdates = [], -- not required while creating
