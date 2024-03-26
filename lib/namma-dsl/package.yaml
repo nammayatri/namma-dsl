@@ -90,6 +90,7 @@ dependencies:
   - transformers
   - data-default
   - pretty
+  - haskell-src-meta
 
 ghc-options:
   - -Wall

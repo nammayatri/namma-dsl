@@ -363,6 +363,30 @@ import "dashboard-api" Domain.Types.DataType1
       ```haskell
       $(mkTableInstancesWithTModifier ''MetaDataT "meta_data" [("deviceOS", "device_o_s")])
       ```
+    - Custom <instance name> <extra param>
+      ```yaml
+      beamInstance: Custom mkCacParseInstace [[Table2],[Table3]]
+      ```
+      ```haskell
+      $(mkCacParseInstace ''MetaDataT [[Table2], [Table3]])
+      ```
+        Limitation for now: Try not to include space inside a extra param as we split on space to get the params seperately
+        Give like this,
+        ```yaml
+         beamInstance: Custom mkCacParseInstace "table_name" [Table2] [Table3] [(a,b,c)]
+        ```
+    - If require more than one
+      ```yaml
+      beamInstance:
+        - MakeTableInstances
+        - Custom mkCacParseInstace [[Table2],[Table3]]
+        - Custom Tool.Something.mkSomething "abc" [(a,b,c)] [[a],[b],[c]]
+      ```
+      ```haskell
+      $(mkTableInstances ''PersonT "person")
+      $(mkCacParseInstace ''MetaDataT [[Table2], [Table3]])
+      $(Tool.Something.mkSomething ''MetaDataT "abc" [(a,b,c)] [[a],[b],[c]])
+      ```
 ---
 #### SQL TYPE
 - Generally sql type is auto detected according to beam types, but if not detected it takes **text** by default.

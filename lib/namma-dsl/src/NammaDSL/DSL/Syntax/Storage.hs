@@ -41,19 +41,20 @@ data TableDef = TableDef
     containsEncryptedField :: Bool,
     relationalTableNamesHaskell :: [String],
     derives :: Maybe String,
-    beamTableInstance :: BeamInstance,
+    beamTableInstance :: [BeamInstance],
     extraOperations :: [ExtraOperations]
   }
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef "" "" [] [] mempty [] [] [] [] Nothing False [] Nothing MakeTableInstances []
+  def = TableDef "" "" [] [] mempty [] [] [] [] Nothing False [] Nothing [MakeTableInstances] []
 
 data BeamInstance
   = MakeTableInstances
   | MakeTableInstancesGenericSchema
   | MakeTableInstancesWithTModifier String
-  deriving (Show)
+  | Custom String String -- Custom <Instance Name> <Auto Put table name> <Extra Params>
+  deriving (Eq, Show)
 
 newtype TypeName = TypeName {getTypeName :: String}
   deriving (Show, Eq)

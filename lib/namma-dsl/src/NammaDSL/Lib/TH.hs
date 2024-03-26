@@ -14,6 +14,7 @@ import Text.Read (readEither)
 import Prelude
 import Control.Applicative
 import qualified Data.Text as T
+import Language.Haskell.Meta.Parse (parseExp)
 
 -- TODO to be removed
 instance IsString TH.Name where
@@ -42,6 +43,8 @@ cT = pure . TH.ConT . TH.mkName
 strE :: String -> Q r TH.Exp
 strE = pure . TH.LitE . TH.StringL
 
+rawE :: String -> Q r TH.Exp
+rawE st = pure $ either (const (error ("Failed while making Exp of " <> st))) id (parseExp st)
 
 (-->) :: Q r TH.Type -> Q r TH.Type -> Q r TH.Type
 a --> b = uInfixT a (TH.mkName "->") b

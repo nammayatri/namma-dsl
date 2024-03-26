@@ -51,10 +51,10 @@ parseTableDef :: StorageParserM ()
 parseTableDef = do
   parseExtraTypes
   parseFields
+  parseBeamTypeInstance
   parseImports
   parseQueries
   parseDerives
-  parseBeamTypeInstance
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
@@ -184,11 +184,21 @@ modifyWithIdRelationalFields = do
 parseImports :: StorageParserM ()
 parseImports = do
   fields <- gets (fields . tableDef)
+  beamInstances <- gets (beamTableInstance . tableDef)
   typObj <- fromMaybe [] <$> gets (types . tableDef)
-  let _imports = figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields)
+  let _imports = figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields <> figureOutBeamInstancesImports beamInstances)
   modify $ \s -> s {tableDef = (tableDef s) {imports = _imports}}
   parseImportPackageOverrides
   where
+    figureOutBeamInstancesImports :: [BeamInstance] -> [String]
+    figureOutBeamInstancesImports bis =
+      filter (not . null) $
+        map
+          ( \bi -> case bi of
+              Custom iname _ -> iname
+              _ -> mempty
+          )
+          bis
     figureOutBeamFieldsImports :: [BeamField] -> [String]
     figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
 
@@ -267,7 +277,7 @@ parseDerives = do
 parseBeamTypeInstance :: StorageParserM ()
 parseBeamTypeInstance = do
   obj <- gets (dataObject . extraParseInfo)
-  let parsedBeamTypeInstance = fromMaybe MakeTableInstances $ obj ^? ix acc_beamInstance . _String . to mkBeamInstance
+  let parsedBeamTypeInstance = fromMaybe [MakeTableInstances] $ obj ^? ix acc_beamInstance . (_String . to mkBeamInstance . to pure `failing` _Array . to V.toList . to (map (mkBeamInstance . valueToString)))
   modify $ \s -> s {tableDef = (tableDef s) {beamTableInstance = parsedBeamTypeInstance}}
 
 parsePrimaryAndSecondaryKeys :: StorageParserM ()
@@ -757,6 +767,7 @@ mkBeamInstance rw =
     "MakeTableInstances" -> MakeTableInstances
     "MakeTableInstancesGenericSchema" -> MakeTableInstancesGenericSchema
     "MakeTableInstancesWithTModifier" -> MakeTableInstancesWithTModifier extraParams
+    "Custom" -> let (customInstanceName, customExtraParams) = L.break (== ' ') (L.trim extraParams) in Custom customInstanceName customExtraParams
     _ -> error $ "Unknow Beam Instance " <> instanceName
   where
     (instanceName, extraParams) = L.break (== ' ') rw
