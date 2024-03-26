@@ -4,9 +4,11 @@ module NammaDSL.Generator.Haskell.BeamTable (generateBeamTable) where
 
 import Control.Monad (forM_)
 import Control.Monad.Reader (ask)
+import Data.Bool (bool)
 import Data.Data (Proxy (..))
 import Data.Functor ((<&>))
 import Data.List (isInfixOf)
+import qualified Data.List.Extra as L
 import Data.List.NonEmpty (NonEmpty ((:|)), fromList)
 import Data.Maybe (fromMaybe)
 import NammaDSL.Config (DefaultImports (..))
@@ -131,15 +133,19 @@ tableInstancesToBeam = do
       `TH.AppE` TH.VarE (TH.mkName thTableName)
       `TH.AppE` TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> primaryKey def)
       `TH.AppE` TH.ListE (secondaryKey def <&> (\k -> TH.ListE [TH.VarE . TH.mkName . ("'" <>) $ k]))
-
-  let (instanceName, extraInstanceParam) = case beamTableInstance def of
-        MakeTableInstances -> ("mkTableInstances", Nothing)
-        MakeTableInstancesGenericSchema -> ("mkTableInstancesGenericSchema", Nothing)
-        MakeTableInstancesWithTModifier prm -> ("mkTableInstancesWithTModifier", Just prm)
-  spliceW $ do
-    TH.appendE . fromList $
-      [ vE instanceName,
-        vE thTableName,
-        strE $ tableNameSql def
-      ]
-        <> maybe [] (\prm -> [pure $ readExpUnsafe (Proxy @[(String, String)]) prm]) extraInstanceParam
+  mapM_
+    ( \instanceDef -> do
+        let (instanceName, extraInstanceParam, isCustomInstance) = case instanceDef of
+              MakeTableInstances -> ("mkTableInstances", Nothing, False)
+              MakeTableInstancesGenericSchema -> ("mkTableInstancesGenericSchema", Nothing, False)
+              MakeTableInstancesWithTModifier prm -> ("mkTableInstancesWithTModifier", Just prm, False)
+              Custom name prm -> (name, bool (Just prm) Nothing (null prm), True)
+        spliceW $ do
+          TH.appendE . fromList $
+            [ vE instanceName,
+              vE thTableName
+            ]
+              <> [strE $ tableNameSql def | not isCustomInstance]
+              <> maybe [] (\prm -> bool [pure $ readExpUnsafe (Proxy @[(String, String)]) prm] (rawE <$> (map L.trim (filter (not . null) $ L.splitOn " " prm))) isCustomInstance) extraInstanceParam
+    )
+    (beamTableInstance def)
