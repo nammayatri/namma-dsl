@@ -1,6 +1,11 @@
 let outputPrefix =
       "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/tests/src-read-only/"
 
+let sqlOutputPaths =
+      [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" }
+      , { _1 = outputPrefix ++ "/migrations2", _2 = "atlas_driver" }
+      ]
+
 let outputPath =
       { _apiRelatedTypes = outputPrefix ++ "UI/Api/Types"
       , _beamQueries = outputPrefix ++ "Storage/Queries"
@@ -9,7 +14,7 @@ let outputPath =
       , _domainHandler = outputPrefix ++ "UI/Api/Action"
       , _domainType = outputPrefix ++ "Domain/Types"
       , _servantApi = outputPrefix ++ "UI/Api"
-      , _sql = outputPrefix ++ "/migrations"
+      , _sql = sqlOutputPaths
       , _purescriptFrontend = ""
       }
 
@@ -46,6 +51,7 @@ let defaultTypeImportMapper =
       , { _1 = "Kilometers", _2 = "Kernel.Types.Common" }
       , { _1 = "HighPrecMoney", _2 = "Kernel.Types.Common" }
       , { _1 = "Seconds", _2 = "Kernel.Types.Common" }
+      , { _1 = "DbHash", _2 = "Kernel.External.Encryption" }
       ]
 
 let extraDefaultFields =
@@ -146,10 +152,7 @@ let defaultImports =
 
 in  { _output = outputPath
     , _storageConfig =
-      { _dbName = "namma-db"
-      , _sqlTypeMapper = sqlMapper
-      , _extraDefaultFields = extraDefaultFields
-      }
+      { _sqlTypeMapper = sqlMapper, _extraDefaultFields = extraDefaultFields }
     , _defaultImports = defaultImports
     , _defaultTypeImportMapper = defaultTypeImportMapper
     , _generate =

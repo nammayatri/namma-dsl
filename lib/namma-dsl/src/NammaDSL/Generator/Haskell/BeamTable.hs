@@ -73,12 +73,11 @@ fieldDefToBeam hfield = forM_ (beamFields hfield) $ \field -> do
           then cT "Maybe" ~~ beamType
           else beamType
   let wrapBeam t = cT "B.C" ~~ cT "f" ~~ t
+  let formattedType = TH.appendT . fromList $ cT <$> words (bFieldType field)
   if bIsEncrypted field
     then do
-      TH.fieldDecW (bfName <> "Encrypted") (wrapBeam $ wrapMaybe (cT "Text"))
-      TH.fieldDecW (bfName <> "Hash") (wrapBeam $ wrapMaybe (cT "DbHash"))
+      TH.fieldDecW bfName (wrapBeam $ wrapMaybe formattedType)
     else do
-      let formattedType = TH.appendT . fromList $ cT <$> words (bFieldType field)
       TH.fieldDecW bfName (wrapBeam formattedType)
 
 primaryKeyToBeam :: Writer CodeUnit

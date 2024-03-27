@@ -22,7 +22,8 @@ import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.String.Builder (build)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Dhall (auto, inputFile)
+import Dhall (inputFile)
+import Dhall.Marshal.Decode (auto)
 import Language.Haskell.TH hiding (match)
 import NammaDSL.Config
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))

@@ -17,6 +17,7 @@ import Data.Aeson.Key (fromString, toString)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (key, _Array, _Object, _Value)
 import Data.Bifunctor
+import Data.Bool (bool)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.Char (toUpper)
@@ -117,13 +118,14 @@ parseFields = do
               if has (ix acc_beamFields . _Object . ix fieldKey . _Object) obj
                 then Nothing
                 else getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
+        let isEncryptedHashedField = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType)
         pure $
           FieldDef
             { fieldName = fieldName,
               haskellType = typeQualifiedHaskellType,
               beamFields = getbeamFields,
-              fromTType = maybe (if length getbeamFields > 1 then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
-              isEncrypted = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType),
+              fromTType = maybe (if length getbeamFields > 1 && not isEncryptedHashedField then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
+              isEncrypted = isEncryptedHashedField,
               relation = fst <$> fieldRelationAndModule,
               relationalTableNameHaskell = snd <$> fieldRelationAndModule
             }
@@ -926,32 +928,69 @@ makeBeamFields fieldName haskellType = do
   enumList <- gets (.extraParseInfo.enumList)
   impObj <- gets (.extraParseInfo.yamlObject)
   obj <- gets (.extraParseInfo.dataObject)
+  let isEncryptedHashedField = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType)
   let constraintsObj = obj ^? (ix acc_constraints . _Object)
       sqlTypeObj = obj ^? (ix acc_sqlType . _Object)
       beamTypeObj = obj ^? (ix acc_beamType ._Object)
       defaultsObj = obj ^? (ix acc_default . _Object)
-  extractedBeamInfos <- beamFieldsWithExtractors fieldName haskellType []
-  let getBeamFieldDef (fName, tpp, extractorFuncs) =
-        let fieldKey = fromString fName
-            beamType = fromMaybe (findBeamType tpp) (beamTypeObj >>= preview (ix fieldKey . _String))
-            sqlType = fromMaybe (findMatchingSqlType sqlTypeMapper enumList tpp beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
-            defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
-            parseToTType = obj ^? (ix acc_toTType . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
-            constraints = L.nub $ getDefaultFieldConstraints fName tpp ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
-            isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
-         in BeamField
-              { bFieldName = fName,
-                hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj haskellType,
-                bFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj beamType,
-                bConstraints = constraints,
-                bFieldUpdates = [], -- not required while creating
-                bSqlType = sqlType,
-                bDefaultVal = defaultValue,
-                bToTType = parseToTType,
-                bfieldExtractor = extractorFuncs,
-                bIsEncrypted = isEncrypted
-              }
-  pure $ map getBeamFieldDef extractedBeamInfos
+  if isEncryptedHashedField && not (has (ix acc_beamFields . _Object . ix (fromString fieldName) . _Object) obj)
+    then do
+      -- its a excrypted field and needs default beam fields --
+      let isFieldMaybeType = isMaybeType haskellType
+          bEncryptedFieldName = fieldName ++ "Encrypted"
+          bHashFieldName = fieldName ++ "Hash"
+          bEncryptedFieldType = bool "Text" "Maybe Text" isFieldMaybeType
+          bHashFieldType = bool "Kernel.External.Encryption.DbHash" "Maybe Kernel.External.Encryption.DbHash" isFieldMaybeType
+          qType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj
+      pure $
+        [ BeamField
+            { bFieldName = bEncryptedFieldName,
+              hFieldType = qType haskellType,
+              bFieldType = qType bEncryptedFieldType,
+              bConstraints = getDefaultFieldConstraints bEncryptedFieldName bEncryptedFieldType ++ fromMaybe [] (constraintsObj >>= preview (ix (fromString bEncryptedFieldName) . _String . to (splitOn "|") . to (map getProperConstraint))),
+              bFieldUpdates = [], -- not required while creating
+              bSqlType = "character varying(255)",
+              bDefaultVal = obj ^? (ix acc_default . _Object . ix (fromString bEncryptedFieldName) . _String),
+              bToTType = Nothing,
+              bfieldExtractor = [],
+              bIsEncrypted = True
+            },
+          BeamField
+            { bFieldName = bHashFieldName,
+              hFieldType = qType haskellType,
+              bFieldType = qType bHashFieldType,
+              bConstraints = getDefaultFieldConstraints bHashFieldName bHashFieldType ++ fromMaybe [] (constraintsObj >>= preview (ix (fromString bHashFieldName) . _String . to (splitOn "|") . to (map getProperConstraint))),
+              bFieldUpdates = [], -- not required while creating
+              bSqlType = "bytea",
+              bDefaultVal = obj ^? (ix acc_default . _Object . ix (fromString bHashFieldName) . _String),
+              bToTType = Nothing,
+              bfieldExtractor = [],
+              bIsEncrypted = True
+            }
+        ]
+    else do
+      extractedBeamInfos <- beamFieldsWithExtractors fieldName haskellType []
+      let getBeamFieldDef (fName, tpp, extractorFuncs) =
+            let fieldKey = fromString fName
+                beamType = fromMaybe (findBeamType tpp) (beamTypeObj >>= preview (ix fieldKey . _String))
+                sqlType = fromMaybe (findMatchingSqlType sqlTypeMapper enumList tpp beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
+                defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
+                parseToTType = obj ^? (ix acc_toTType . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
+                constraints = L.nub $ getDefaultFieldConstraints fName tpp ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
+                isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
+             in BeamField
+                  { bFieldName = fName,
+                    hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj haskellType,
+                    bFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj beamType,
+                    bConstraints = constraints,
+                    bFieldUpdates = [], -- not required while creating
+                    bSqlType = sqlType,
+                    bDefaultVal = defaultValue,
+                    bToTType = parseToTType,
+                    bfieldExtractor = extractorFuncs,
+                    bIsEncrypted = isEncrypted
+                  }
+      pure $ map getBeamFieldDef extractedBeamInfos
 
 findBeamType :: String -> String
 findBeamType str = concatMap (typeMapper . L.trimStart) (split (whenElt (`elem` typeDelimiter)) str)

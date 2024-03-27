@@ -362,10 +362,12 @@ toTTypeInstance storageRead = do
                     if bIsEncrypted field
                       then do
                         let mapOperator = if isMaybeType (bFieldType field) then (~<&>) else (~&)
-                        TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field <> "Encrypted") $
-                          vE (bFieldName field) `mapOperator` (vE "unEncrypted" ~. vE "encrypted")
-                        TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field <> "Hash") $
-                          vE (bFieldName field) `mapOperator` vE "hash"
+                        if bFieldName field == fieldName hfield <> "Encrypted" then
+                          TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
+                            vE (fieldName hfield) `mapOperator` (vE "unEncrypted" ~. vE "encrypted")
+                        else
+                          TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
+                            vE (fieldName hfield) `mapOperator` vE "hash"
                         pure ()
                       else do
                         TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
@@ -556,7 +558,7 @@ correctSetField field tp beamField
   | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
   | "Kernel.Types.Id.Id " `isPrefixOf` tp = _getId ~ vE field
   | "Kernel.Types.Id.ShortId " `isPrefixOf` tp = _getShortId ~ vE field
-  | field == "updatedAt" && isNothing (bToTType beamField) = vE "_now"
+  | field == "updatedAt" && isNothing (bToTType beamField) = if "Kernel.Prelude.Maybe " `isPrefixOf` tp then vE "Just" ~ vE "_now" else vE "_now"
   | otherwise = case bToTType beamField of
     Nothing -> toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
     Just tf ->
