@@ -22,7 +22,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.15"
+version = "1.0.16"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -136,14 +136,17 @@ mkDomainType appConfigs storageRead tableDefs = do
 
 mkSQLFile :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
 mkSQLFile appConfigs _storageRead tableDefs = do
-  let filePath = appConfigs ^. output . sql
-      database = appConfigs ^. storageConfig . dbName
+  let filePathAndDatabase = appConfigs ^. output . sql
       sqlMapper = appConfigs ^. storageConfig . sqlTypeMapper
   mapM_
     ( \t -> do
         let filename = (tableNameSql t ++ ".sql")
-        mbOldMigrationFile <- getOldSqlFile sqlMapper database $ filePath </> filename
-        writeToFile filePath filename (generateSQL database mbOldMigrationFile t)
+        mapM_
+          ( \(filePath', database') -> do
+              mbOldMigrationFile <- getOldSqlFile sqlMapper database' $ filePath' </> filename
+              writeToFile filePath' filename (generateSQL database' mbOldMigrationFile t)
+          )
+          filePathAndDatabase
     )
     tableDefs
 

@@ -38,7 +38,7 @@ data OutputPath = OutputPath
     _domainHandler :: FilePath,
     _domainType :: FilePath,
     _servantApi :: FilePath,
-    _sql :: FilePath,
+    _sql :: [(FilePath, String)],
     _purescriptFrontend :: FilePath
   }
   deriving (Generic, Show, FromDhall)
@@ -47,8 +47,7 @@ $(makeLenses ''OutputPath)
 
 data StorageConfig = StorageConfig
   { _sqlTypeMapper :: [(String, String)],
-    _extraDefaultFields :: [(String, String)],
-    _dbName :: String
+    _extraDefaultFields :: [(String, String)]
   }
   deriving (Generic, Show, FromDhall)
 
