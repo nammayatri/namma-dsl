@@ -255,3 +255,11 @@ removeUnusedQualifiedImports (GC.Code codeBody') qualifiedImports = (removeExpla
           )
       )
         <$> qualifiedImports
+
+removeQuoteWrap :: String -> String
+removeQuoteWrap str =
+  case str of
+    '\"' : rest -> case reverse rest of
+      '\"' : remainder -> reverse remainder
+      _ -> str
+    _ -> str

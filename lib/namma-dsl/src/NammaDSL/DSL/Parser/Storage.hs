@@ -579,20 +579,20 @@ sqlManipulationApply mp = \case
 sqlAlterApply :: Map String BeamField -> SQL_ALTER -> Map String BeamField
 sqlAlterApply mp = \case
   ADD_COLUMN colName sqlType constraints ->
-    let newMp = M.insert (snakeCaseToCamelCase colName) (def {bFieldName = snakeCaseToCamelCase colName, bSqlType = sqlType}) mp
+    let newMp = M.insert (snakeCaseToCamelCase $ removeQuoteWrap colName) (def {bFieldName = snakeCaseToCamelCase $ removeQuoteWrap colName, bSqlType = sqlType}) mp
      in foldl (\acc constraint -> alterColumnApply acc colName constraint) newMp constraints
-  DROP_COLUMN colName -> M.delete (snakeCaseToCamelCase colName) mp
+  DROP_COLUMN colName -> M.delete (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
   ALTER_COLUMN colName action -> alterColumnApply mp colName action
   DROP_CONSTRAINT_PKS -> M.map (\bf -> bf {bConstraints = filter (/= PrimaryKey) bf.bConstraints}) mp
   ADD_PRIMARY_KEYS pks -> foldl (\acc pkField -> M.adjust (\bf -> bf {bConstraints = PrimaryKey : bf.bConstraints}) (snakeCaseToCamelCase pkField) acc) mp pks
 
 alterColumnApply :: Map String BeamField -> String -> ALTER_COLUMN_ACTION -> Map String BeamField
 alterColumnApply mp colName = \case
-  SET_NOT_NULL -> M.adjust (\bf -> bf {bConstraints = NotNull : bf.bConstraints}) (snakeCaseToCamelCase colName) mp
-  DROP_NOT_NULL -> M.adjust (\bf -> bf {bConstraints = filter (/= NotNull) bf.bConstraints}) (snakeCaseToCamelCase colName) mp
-  SET_DEFAULT val -> M.adjust (\bf -> bf {bDefaultVal = Just val}) (snakeCaseToCamelCase colName) mp
-  DROP_DEFAULT -> M.adjust (\bf -> bf {bDefaultVal = Nothing}) (snakeCaseToCamelCase colName) mp
-  CHANGE_TYPE newType -> M.adjust (\bf -> bf {bSqlType = newType}) (snakeCaseToCamelCase colName) mp
+  SET_NOT_NULL -> M.adjust (\bf -> bf {bConstraints = NotNull : bf.bConstraints}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
+  DROP_NOT_NULL -> M.adjust (\bf -> bf {bConstraints = filter (/= NotNull) bf.bConstraints}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
+  SET_DEFAULT val -> M.adjust (\bf -> bf {bDefaultVal = Just val}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
+  DROP_DEFAULT -> M.adjust (\bf -> bf {bDefaultVal = Nothing}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
+  CHANGE_TYPE newType -> M.adjust (\bf -> bf {bSqlType = newType}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
 
 migrationFileParser :: [(String, String)] -> String -> String -> Parser e MigrationFile
 migrationFileParser sqlTypeWrtType dbName lastSqlFile = do
