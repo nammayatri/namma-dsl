@@ -118,13 +118,14 @@ parseFields = do
               if has (ix acc_beamFields . _Object . ix fieldKey . _Object) obj
                 then Nothing
                 else getFieldRelationAndHaskellType $ typeQualifiedHaskellType <> optionalRelation
-        let isEncryptedHashedField = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType)
+            isEncryptedHashedField = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType)
+            getDefaultFromTTypeForEncryptedField fn = pure $ makeTF impObj ("EncryptedHashed (Encrypted " <> fn <> "Encrypted) " <> fn <> "Hash|E")
         pure $
           FieldDef
             { fieldName = fieldName,
               haskellType = typeQualifiedHaskellType,
               beamFields = getbeamFields,
-              fromTType = maybe (if length getbeamFields > 1 && not isEncryptedHashedField then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
+              fromTType = maybe (if isEncryptedHashedField then getDefaultFromTTypeForEncryptedField fieldName else if length getbeamFields > 1 then error ("Complex type (" <> fieldName <> ") should have fromTType function") else Nothing) pure parseFromTType,
               isEncrypted = isEncryptedHashedField,
               relation = fst <$> fieldRelationAndModule,
               relationalTableNameHaskell = snd <$> fieldRelationAndModule
@@ -903,16 +904,18 @@ makeTF :: Object -> String -> TransformerFunction
 makeTF impObj func =
   TransformerFunction
     { tfName = qualifiedName,
-      tfType = tfType'
+      tfType = tfType',
+      tfIsEmbeddedArgs = isEmbeddedArgs
     }
   where
     (name, details) = L.break (== '|') func
     tfType' = if 'M' `L.elem` details then MonadicT else PureT
-    isImported = 'I' `L.elem` details || '.' `L.elem` name
+    isImported = 'I' `L.elem` details || '.' `L.elem` name || 'E' `L.elem` details
+    isEmbeddedArgs = 'E' `L.elem` details
     qualifiedName =
       if isImported
         then
-          if '.' `L.elem` name
+          if '.' `L.elem` name || isEmbeddedArgs
             then name
             else maybe (error $ "Function " <> func <> " not imported") (\nm -> nm <> "." <> name) $ impObj ^? ix acc_imports . key (fromString name) . _String
         else name
@@ -942,6 +945,9 @@ makeBeamFields fieldName haskellType = do
           bEncryptedFieldType = bool "Text" "Maybe Text" isFieldMaybeType
           bHashFieldType = bool "Kernel.External.Encryption.DbHash" "Maybe Kernel.External.Encryption.DbHash" isFieldMaybeType
           qType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj
+          getToTType fn = obj ^? (ix acc_toTType . _Object) >>= preview (ix (fromString fn) . _String . to (makeTF impObj))
+          bEncryptedFieldDefaultToTType = TransformerFunction ("(" <> fieldName <> bool " & " " <&> " (isMaybeType haskellType) <> "unEncrypted . encrypted)") PureT True
+          bHashFieldDefaultToTType = TransformerFunction ("(" <> fieldName <> bool " & " " <&> " (isMaybeType haskellType) <> "hash)") PureT True
       pure $
         [ BeamField
             { bFieldName = bEncryptedFieldName,
@@ -951,7 +957,7 @@ makeBeamFields fieldName haskellType = do
               bFieldUpdates = [], -- not required while creating
               bSqlType = "character varying(255)",
               bDefaultVal = obj ^? (ix acc_default . _Object . ix (fromString bEncryptedFieldName) . _String),
-              bToTType = Nothing,
+              bToTType = maybe (pure bEncryptedFieldDefaultToTType) pure (getToTType bEncryptedFieldName),
               bfieldExtractor = [],
               bIsEncrypted = True
             },
@@ -963,7 +969,7 @@ makeBeamFields fieldName haskellType = do
               bFieldUpdates = [], -- not required while creating
               bSqlType = "bytea",
               bDefaultVal = obj ^? (ix acc_default . _Object . ix (fromString bHashFieldName) . _String),
-              bToTType = Nothing,
+              bToTType = maybe (pure bHashFieldDefaultToTType) pure (getToTType bHashFieldName),
               bfieldExtractor = [],
               bIsEncrypted = True
             }

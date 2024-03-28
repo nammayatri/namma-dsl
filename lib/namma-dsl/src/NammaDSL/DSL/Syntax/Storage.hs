@@ -127,7 +127,8 @@ data TFType = PureT | MonadicT deriving (Show, Eq)
 
 data TransformerFunction = TransformerFunction
   { tfName :: String,
-    tfType :: TFType
+    tfType :: TFType,
+    tfIsEmbeddedArgs :: Bool
   }
   deriving (Show)
 
