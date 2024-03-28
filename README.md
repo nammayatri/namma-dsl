@@ -425,6 +425,32 @@ import "dashboard-api" Domain.Types.DataType1
   Examples:
    1. [Estimate.yaml](https://github.com/nammayatri/nammayatri/blob/main/Backend/app/provider-platform/dynamic-offer-driver-app/Main/spec/Storage/Estimate.yaml#L41)
    2. [BecknConfig.yaml](https://github.com/nammayatri/nammayatri/blob/main/Backend/app/rider-platform/rider-app/Main/spec/Storage/BecknConfig.yaml#L47)
+- Embedded transfromer function **E**. This is be used to embed various imported functions and variables in user defined order. Can be combined with **M** like **EM**
+  Example Field:
+    ```yaml
+      fields:
+        isVerified: Bool
+        verificationUrl: Text
+        aadharId: Text
+    ```
+  Lets Consider ToTType for this example.
+  Example usage:
+   1. If isVerified uses aadardId, verificationUrl in this order without passing itself as arg
+      ```yaml
+        toTType:
+          isVerified: (K.B.verify aadharId verificationUrl)|E
+      ```
+   2. if required in different order like this also with itself being passed.
+      ```yaml
+        toTType:
+          isVerified: K.B.verify isVerified aadharId verificationUrl)|EM
+      ```
+   3. Much more can achieved by this embedded mode like this:
+      ```yaml
+        toTType:
+          isVerified: K.B.verify isVerified (K.B.C.isCorrectAadhar aadharId) verificationUrl)|EM
+      ```
+
 
 
 ---
