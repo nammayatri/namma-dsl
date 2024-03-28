@@ -125,9 +125,13 @@ addColumnSQL database tableName beamFields =
       )
       beamFields
   where
+    sqlKeywords = ["group", "order", "inner", "left", "right", "full", "union", "insert", "values", "update", "set", "delete", "create", "alter", "drop", "truncate", "index", "constraint", "primary", "foreign", "default", "not", "distinct", "like", "between", "in", "exists", "case", "then", "else", "end", "null", "is", "count", "avg", "sum", "max", "min", "any", "all", "as"]
+    wrapWithQuotes columnName
+      | columnName `elem` sqlKeywords = "\"" ++ columnName ++ "\""
+      | otherwise = columnName
     generateAlterColumnSQL :: Database -> String -> String -> BeamField -> String
     generateAlterColumnSQL database' fieldName_ sqlType_ beamField =
-      ("ALTER TABLE " <> database' <> ".") ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [fieldName_, sqlType_]) ++ " "
+      ("ALTER TABLE " <> database' <> ".") ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [wrapWithQuotes fieldName_, sqlType_]) ++ " "
         ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
         ++ maybe "" (" default " ++) (bDefaultVal beamField)
         ++ ";"
