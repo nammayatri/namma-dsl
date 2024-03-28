@@ -322,7 +322,7 @@ monadicFromTTypeTransformerCode = do
       case tfType tf of
         MonadicT -> do
           let transformerExp =
-                if tfIsEmbeddedArgs tf then vE (tfName tf) -- TODO: check if vE acts as rawE then will remove rawE
+                if tfIsEmbeddedArgs tf then vE (tfName tf)
                 else TH.appendE $ vE (tfName tf) NE.:| map (vE . bFieldName) (beamFields hfield)
           vP (fieldName hfield <> "'") <-- transformerExp
         PureT -> pure ()
@@ -364,17 +364,17 @@ toTTypeInstance storageRead = do
               TH.recConEW (TH.mkName beamTypeT) $
                 forM_ fs $ \hfield -> do
                   forM_ (beamFields hfield) $ \field -> do
-                    if bIsEncrypted field
-                      then do
-                        let mapOperator = if isMaybeType (bFieldType field) then (~<&>) else (~&)
-                        if bFieldName field == fieldName hfield <> "Encrypted" then
-                          TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
-                            vE (fieldName hfield) `mapOperator` (vE "unEncrypted" ~. vE "encrypted")
-                        else
-                          TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
-                            vE (fieldName hfield) `mapOperator` vE "hash"
-                        pure ()
-                      else do
+                    -- if bIsEncrypted field
+                    --   then do
+                    --     let mapOperator = if isMaybeType (bFieldType field) then (~<&>) else (~&)
+                    --     if bFieldName field == fieldName hfield <> "Encrypted" then
+                    --       TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
+                    --         vE (fieldName hfield) `mapOperator` (vE "unEncrypted" ~. vE "encrypted")
+                    --     else
+                    --       TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
+                    --         vE (fieldName hfield) `mapOperator` vE "hash"
+                    --     pure ()
+                    --   else do
                         TH.fieldExpW (TH.mkName $ "Beam." <> bFieldName field) $
                           toTTypeConversionFunction (bToTType field) (haskellType hfield) (toTTypeExtractor (makeExtractorFunction $ bfieldExtractor field) (fieldName hfield)) (bFieldName field)
 
@@ -404,7 +404,7 @@ toTTypeConversionFunction transformer haskellType fieldName beamFieldName
     if tfType (fromJust transformer) == MonadicT
       then vE $ beamFieldName <> "'"
       else if tfIsEmbeddedArgs (fromJust transformer) then
-        rawE (tfName $ fromJust transformer)
+        vE (tfName $ fromJust transformer)
       else vE (tfName $ fromJust transformer) ~ vE fieldName
   | "Kernel.Types.Id.Id " `Text.isPrefixOf` Text.pack haskellType = _getId ~ vE fieldName
   | "Kernel.Types.Id.Id " `Text.isInfixOf` Text.pack haskellType = _getId ~<$> vE fieldName
@@ -417,7 +417,7 @@ fromTTypeConversionFunction fromTTypeFunc haskellType fieldName relation dFieldN
   | isJust fromTTypeFunc =
       if tfType (fromJust fromTTypeFunc) == MonadicT then vE $ dFieldName ++ "'"
       else if tfIsEmbeddedArgs (fromJust fromTTypeFunc) then
-        rawE (tfName $ fromJust fromTTypeFunc)
+        vE (tfName $ fromJust fromTTypeFunc)
       else vE (tfName $ fromJust fromTTypeFunc) ~ vE fieldName
   | isJust relation = if isWithIdRelation (fromJust relation) then vE $ dFieldName ++ "'" else vE $ fieldName ++ "'"
   | "Kernel.Types.Id.Id " `Text.isPrefixOf` Text.pack haskellType = _Id ~ vE fieldName
