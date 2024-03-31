@@ -132,15 +132,15 @@ tableInstancesToBeam = do
       `TH.AppE` TH.ListE (secondaryKey def <&> (\k -> TH.ListE [TH.VarE . TH.mkName . ("'" <>) $ k]))
   mapM_
     ( \instanceDef -> do
-        let (instanceName, extraInstanceParam, isCustomInstance) = case instanceDef of
-              MakeTableInstances -> ("mkTableInstances", Nothing, False)
-              MakeTableInstancesGenericSchema -> ("mkTableInstancesGenericSchema", Nothing, False)
-              MakeTableInstancesWithTModifier prm -> ("mkTableInstancesWithTModifier", Just prm, False)
-              Custom name prm -> (name, bool (Just prm) Nothing (null prm), True)
+        let (instanceName, dName, extraInstanceParam, isCustomInstance) = case instanceDef of
+              MakeTableInstances -> ("mkTableInstances", Nothing, Nothing, False)
+              MakeTableInstancesGenericSchema -> ("mkTableInstancesGenericSchema", Nothing, Nothing, False)
+              MakeTableInstancesWithTModifier prm -> ("mkTableInstancesWithTModifier", Nothing, Just prm, False)
+              Custom name dataName prm -> (name, dataName, bool (Just prm) Nothing (null prm), True)
         spliceW $ do
           TH.appendE . fromList $
             [ vE instanceName,
-              vE thTableName
+              maybe (vE thTableName) (vE . ("''" ++)) dName
             ]
               <> [strE $ tableNameSql def | not isCustomInstance]
               <> maybe [] (\prm -> bool [pure $ readExpUnsafe (Proxy @[(String, String)]) prm] (rawE <$> (map L.trim (filter (not . null) $ L.splitOn " " prm))) isCustomInstance) extraInstanceParam

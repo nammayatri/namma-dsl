@@ -23,6 +23,7 @@ $( makeAccKeysTH
     extraOperations
     derives
     beamInstance
+    domainInstance
     types
     recordType
     imports

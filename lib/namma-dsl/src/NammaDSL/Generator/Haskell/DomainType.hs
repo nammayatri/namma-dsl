@@ -7,12 +7,15 @@ import Control.Monad.Writer hiding (Writer)
 import Data.Foldable
 import Data.Functor
 import qualified Data.List as L
-import qualified Data.List.Split as L
+import qualified Data.List.Extra as L
 import NammaDSL.Config (DefaultImports (..))
+import Data.Data (Proxy (..))
 import Data.Maybe
 import qualified Data.Text as T
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
+import Data.List.NonEmpty (fromList)
+import Data.Bool (bool)
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Writer, Q)
@@ -71,6 +74,7 @@ mkCodeBody = do
     genTableType
     when (def.containsEncryptedField) $ generateEncryptionInstance
     forM_ (types def) generateHaskellTypes
+    domaintableInstances
 
 genTableType :: Writer CodeUnit
 genTableType  = do
@@ -188,9 +192,10 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
 
     generateEnum :: RecordType -> TypeName -> [(FieldName, FieldType)] -> Writer CodeUnit
     generateEnum recType typeName [(FieldName "enum", values)] = do
+      def <- ask
       let enumValues = L.splitOn "," values.getFieldType -- TODO move to parsing
       let _thTypeName = vE $ "''" <> typeName.getTypeName
-
+      let isOverrideDomainInstance = not $ null (domainTableInstance def)
       TH.decW . pure $ do
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d) -> if tname == typeName then d else []) typeObj)
         let derives = TH.DerivClause Nothing (TH.ConT <$> ["Eq", "Ord", "Show", "Read", "Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
@@ -205,11 +210,12 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
             --error "Generate haskell domain enum types: expected Data but got NewType"
           Data -> TH.DataD [] (TH.mkName typeName.getTypeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
           Type -> error "Generate haskell domain enum types: expected Data but got Type"
-      TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ _thTypeName
-      when (isHttpInstanceDerived typeObj) $
-        TH.spliceW $ vE"mkHttpInstancesForEnum" ~ _thTypeName
-      when (isJsonInstanceDerived typeObj typeName) $
-        TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ _thTypeName
+      unless isOverrideDomainInstance $ do
+        TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ _thTypeName
+        when (isHttpInstanceDerived typeObj) $
+          TH.spliceW $ vE"mkHttpInstancesForEnum" ~ _thTypeName
+        when (isJsonInstanceDerived typeObj typeName) $
+          TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ _thTypeName
     generateEnum _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [InstanceToDerive] -> [TH.Name]
@@ -221,6 +227,8 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
 
     generateDataStructure :: RecordType -> TypeName -> [(FieldName, FieldType)] -> Writer CodeUnit
     generateDataStructure recType typeName fields = do
+      def <- ask
+      let isOverrideDomainInstance = not $ null (domainTableInstance def)
       TH.decW . pure $ do
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d) -> if tname == typeName then d else []) typeObj)
         let derives = TH.DerivClause Nothing (TH.ConT <$> ["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
@@ -234,9 +242,29 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
             TH.NewtypeD [] thTypeName [] Nothing (TH.RecC thTypeName [(TH.mkName f.getFieldName, defaultBang, TH.ConT $ TH.mkName t.getFieldType)]) [derives]
           Data -> TH.DataD [] thTypeName [] Nothing [TH.RecC thTypeName (fields <&> \(f, t) -> (TH.mkName f.getFieldName, defaultBang, TH.ConT $ TH.mkName t.getFieldType))] [derives]
           Type -> error "Generate data structure: expected Data but got Type"
+      unless isOverrideDomainInstance $ do
+        let spliceTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName.getTypeName
+        when (isListInstanceDerived typeObj typeName) $
+          TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ spliceTypeName
+        when (isJsonInstanceDerived typeObj typeName) $
+          TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ spliceTypeName
 
-      let spliceTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName.getTypeName
-      when (isListInstanceDerived typeObj typeName) $
-        TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ spliceTypeName
-      when (isJsonInstanceDerived typeObj typeName) $
-        TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ spliceTypeName
+
+
+domaintableInstances :: Writer CodeUnit
+domaintableInstances = do
+  def <- ask
+  let thTableName = "''" <> (tableNameHaskell def) <> "T"
+  mapM_
+    ( \instanceDef -> do
+        let (instanceName, dName, extraInstanceParam, isCustomInstance) = case instanceDef of
+              Custom name dataName prm -> (name, dataName, bool (Just prm) Nothing (null prm), True)
+              _ -> error "Please add custom instance in domain type"
+        spliceW $ do
+          TH.appendE . fromList $
+            [ vE instanceName,
+              maybe (vE thTableName) (vE . ("''" ++)) dName
+            ]
+             <> maybe [] (\prm -> bool [pure $ readExpUnsafe (Proxy @[(String, String)]) prm] (vE <$> (map L.trim (filter (not . null) $ L.splitOn " " prm))) isCustomInstance) extraInstanceParam
+    )
+    (domainTableInstance def)
