@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module NammaDSL.Generator.Haskell.BeamQueries (generateBeamQueries, BeamQueryCode (..), DefaultQueryCode (..), ExtraQueryCode (..)) where
 
 import Control.Lens ((%~), (.~), (^.))
@@ -209,12 +211,13 @@ mkTransformerCodeBody = do
 generateDefaultCreateQuery :: StorageRead -> Writer CodeUnit
 generateDefaultCreateQuery storageRead = do
   tableDef <- ask
+  let isHasSchemaNameRequired' = isHasSchemaNameRequired tableDef
   let name = tableNameHaskell tableDef
   let withIdFields = getAllFieldsWithIdRelation (fields tableDef)
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
   TH.decsW $ do
     TH.sigDW "create" $ do
-      TH.forallT [] [_EsqDBFlow, _MonadFlow, _CacheFlow] $
+      TH.forallT [] ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) $
         cT dName --> vT "m" ~~ _UnitType
     if null withIdFields
       then do
@@ -256,6 +259,9 @@ _MonadFlow = cT "MonadFlow" ~~ vT "m"
 _CacheFlow :: Q TH.Type
 _CacheFlow = cT "CacheFlow" ~~ vT "m" ~~ vT "r"
 
+_HasSchemaName :: String -> Q TH.Type
+_HasSchemaName tableName = cT "HasSchemaName" ~~ cT ("Beam." <> tableName <> "T")
+
 _UnitType :: Q TH.Type
 _UnitType = pure $ TH.TupleT 0
 
@@ -264,11 +270,12 @@ generateDefaultCreateManyQuery :: StorageRead -> Writer CodeUnit
 generateDefaultCreateManyQuery storageRead = do
   def <- ask
   let name = tableNameHaskell def
+  let isHasSchemaNameRequired' = isHasSchemaNameRequired def
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
   TH.decsW $ do
     TH.sigDW "createMany" $ do
-      TH.forallT [] [_EsqDBFlow, _MonadFlow, _CacheFlow] $
+      TH.forallT [] ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired']) $
         TH.listT ~~ cT dName
           --> vT "m" ~~ _UnitType
     TH.funDW "createMany" $ do
@@ -491,13 +498,15 @@ ignoreEncryptionFlag ((field, tp), _) = (field, tp)
 
 withFunctionSignature :: StorageRead -> QueryDef -> String -> Writer TH.Stmt -> Writer CodeUnit
 withFunctionSignature storageRead query tableNameHaskell stmts = do
-  let qParams = filter ((/= "updatedAt") . fst) $
+  def <- ask
+  let isHasSchemaNameRequired' = isHasSchemaNameRequired def
+      qParams = filter ((/= "updatedAt") . fst) $
         map getIdsOut $
           nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   TH.decsW $ do
     TH.sigDW (TH.mkName query.queryName) $ do
-      TH.forallT [] [_EsqDBFlow, _MonadFlow, _CacheFlow] $ do
+      TH.forallT [] ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [ (_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) $ do
         let returnType = vT "m" ~~ generateQueryReturnType storageRead query.kvFunction tableNameHaskell
         let typeParams = if query.takeFullObjectAsInput
               then [cT (domainTypeModulePrefix <> tableNameHaskell <> "." <> tableNameHaskell)]
@@ -692,3 +701,11 @@ isWithIdRelation = \case
   WithId _ _ -> True
   WithIdStrict _ _ -> True
   _ -> False
+
+
+isHasSchemaNameRequired :: TableDef -> Bool
+isHasSchemaNameRequired _def = any (\case
+      MakeTableInstancesGenericSchema -> True
+      Custom nm _ _ -> "mkTableInstancesGenericSchema" `isInfixOf` nm
+      _ -> False
+  ) (beamTableInstance _def)

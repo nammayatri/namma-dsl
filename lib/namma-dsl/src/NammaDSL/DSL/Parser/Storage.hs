@@ -32,6 +32,7 @@ import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
 import qualified Data.Text as T
 import Data.Tuple (swap)
+import qualified Data.Tuple.Extra as TE
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import qualified Debug.Trace as DT
@@ -52,7 +53,7 @@ parseTableDef :: StorageParserM ()
 parseTableDef = do
   parseExtraTypes
   parseFields
-  parseBeamTypeInstance
+  parseInstances
   parseImports
   parseQueries
   parseDerives
@@ -188,17 +189,18 @@ parseImports :: StorageParserM ()
 parseImports = do
   fields <- gets (fields . tableDef)
   beamInstances <- gets (beamTableInstance . tableDef)
+  domainInstances <- gets (domainTableInstance . tableDef)
   typObj <- fromMaybe [] <$> gets (types . tableDef)
-  let _imports = figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields <> figureOutBeamInstancesImports beamInstances)
+  let _imports = figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields <> figureOutInstancesImports (beamInstances <> domainInstances))
   modify $ \s -> s {tableDef = (tableDef s) {imports = _imports}}
   parseImportPackageOverrides
   where
-    figureOutBeamInstancesImports :: [BeamInstance] -> [String]
-    figureOutBeamInstancesImports bis =
+    figureOutInstancesImports :: [Instance] -> [String]
+    figureOutInstancesImports bis =
       filter (not . null) $
         map
           ( \bi -> case bi of
-              Custom iname _ -> iname
+              Custom iname _ _ -> iname
               _ -> mempty
           )
           bis
@@ -277,11 +279,12 @@ parseDerives = do
   let parsedDerives = obj ^? ix acc_derives ._String
   modify $ \s -> s {tableDef = (tableDef s) {derives = parsedDerives}}
 
-parseBeamTypeInstance :: StorageParserM ()
-parseBeamTypeInstance = do
+parseInstances :: StorageParserM ()
+parseInstances = do
   obj <- gets (dataObject . extraParseInfo)
-  let parsedBeamTypeInstance = fromMaybe [MakeTableInstances] $ obj ^? ix acc_beamInstance . (_String . to mkBeamInstance . to pure `failing` _Array . to V.toList . to (map (mkBeamInstance . valueToString)))
-  modify $ \s -> s {tableDef = (tableDef s) {beamTableInstance = parsedBeamTypeInstance}}
+  let parsedBeamInstance = fromMaybe [MakeTableInstances] $ obj ^? ix acc_beamInstance . (_String . to mkInstance . to pure `failing` _Array . to V.toList . to (map (mkInstance . valueToString)))
+      parseDomainInstance = fromMaybe [] $ obj ^? ix acc_domainInstance . (_String . to mkInstance . to pure `failing` _Array . to V.toList . to (map (mkInstance . valueToString)))
+  modify $ \s -> s {tableDef = (tableDef s) {beamTableInstance = parsedBeamInstance, domainTableInstance = parseDomainInstance}}
 
 parsePrimaryAndSecondaryKeys :: StorageParserM ()
 parsePrimaryAndSecondaryKeys = do
@@ -764,16 +767,20 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
       TableDef {fields = fields <> [foreignField], queries = queries <> query, ..}
     Nothing -> TableDef {..}
 
-mkBeamInstance :: String -> BeamInstance
-mkBeamInstance rw =
+mkInstance :: String -> Instance
+mkInstance rw =
   case instanceName of
     "MakeTableInstances" -> MakeTableInstances
     "MakeTableInstancesGenericSchema" -> MakeTableInstancesGenericSchema
-    "MakeTableInstancesWithTModifier" -> MakeTableInstancesWithTModifier extraParams
-    "Custom" -> let (customInstanceName, customExtraParams) = L.break (== ' ') (L.trim extraParams) in Custom customInstanceName customExtraParams
+    "MakeTableInstancesWithTModifier" -> MakeTableInstancesWithTModifier remArgs'
+    "Custom" ->
+      let (customName, remArgs) = TE.both L.trim (L.break (== ' ') remArgs')
+          (potentialDataName, remExtraParams) = TE.both L.trim $ L.break (== ' ') remArgs
+          (dataName, extraParams) = if "<" `L.isPrefixOf` potentialDataName && ">" `L.isSuffixOf` potentialDataName then ((pure . init . tail) potentialDataName, remExtraParams) else (Nothing, remArgs)
+       in Custom customName dataName extraParams
     _ -> error $ "Unknow Beam Instance " <> instanceName
   where
-    (instanceName, extraParams) = L.break (== ' ') rw
+    (instanceName, remArgs') = TE.both L.trim (L.break (== ' ') rw)
 
 searchForKey :: [FieldDef] -> String -> ((String, String), Bool)
 searchForKey fields inputKey = do
