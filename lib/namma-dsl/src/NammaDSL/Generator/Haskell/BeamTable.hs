@@ -90,8 +90,8 @@ primaryKeyToBeam = do
       do
         let keyTypes =
               fromMaybe (error ("Primary Key not found for " ++ tableNameHaskell def)) $
-                generateKeyTypes (filter (\f -> fieldName f `elem` primaryKey def) $ fields def)
-        TH.normalCW (TH.mkName $ _TableId def) keyTypes
+                generateKeyTypes (filter (\f -> PrimaryKey `elem` bConstraints f) $ concatMap beamFields $ fields def)
+        TH.normalCW (TH.mkName $ _TableId def) $ keyTypes
       (TH.derivClauseW Nothing $ TH.ConT <$> ["Generic", "B.Beamable"])
     TH.funDW "primaryKey" $ do
       let primaryKeyNames = primaryKey def
@@ -111,12 +111,10 @@ primaryKeyToBeam = do
         then TH.appendT . fromList $ cT <$> words t
         else cT t
 
-    getBeamTypeOfPrimaryKey :: FieldDef -> String
-    getBeamTypeOfPrimaryKey field = case beamFields field of
-      [beamField] -> bFieldType beamField
-      _ -> error "Primary key should have only one beam field"
+    getBeamTypeOfPrimaryKey :: BeamField -> String
+    getBeamTypeOfPrimaryKey field = bFieldType field
 
-    generateKeyTypes :: [FieldDef] -> Maybe [Q TH.Type]
+    generateKeyTypes :: [BeamField] -> Maybe [Q TH.Type]
     generateKeyTypes [] = Nothing
     generateKeyTypes xs = Just $ (\x -> TH.appendT $ cT "B.C" :| [vT "f", formatType (getBeamTypeOfPrimaryKey x)]) <$> xs
 
