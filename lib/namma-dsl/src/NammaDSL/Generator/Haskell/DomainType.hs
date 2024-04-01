@@ -11,7 +11,7 @@ import qualified Data.List.Extra as L
 import NammaDSL.Config (DefaultImports (..))
 import Data.Data (Proxy (..))
 import Data.Maybe
-import qualified Data.Text as T
+--import qualified Data.Text as T
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import Data.List.NonEmpty (fromList)
@@ -82,8 +82,8 @@ genTableType  = do
   decW . pure $ do
     let derives' = case derives def of
           Nothing -> derivingInstances $ containsEncryptedField def
-          Just derivesStr -> do
-            let derivesStrList = map T.unpack (T.split (== ',') (T.pack derivesStr)) -- FIXME move to parsing
+          Just deriveList -> do
+            let derivesStrList = filter (\x -> not $ L.isPrefixOf "'" x) $ getInstanceToDerive <$> deriveList
             TH.DerivClause Nothing $ TH.ConT . TH.mkName <$> derivesStrList
     let (typeName, typeVars) =
           if def.containsEncryptedField

@@ -40,7 +40,7 @@ data TableDef = TableDef
     types :: Maybe [TypeObject],
     containsEncryptedField :: Bool,
     relationalTableNamesHaskell :: [String],
-    derives :: Maybe String,
+    derives :: Maybe [InstanceToDerive],
     beamTableInstance :: [Instance],
     domainTableInstance :: [Instance],
     extraOperations :: [ExtraOperations]
