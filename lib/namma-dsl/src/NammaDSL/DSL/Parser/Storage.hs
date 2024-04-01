@@ -54,9 +54,9 @@ parseTableDef = do
   parseExtraTypes
   parseFields
   parseInstances
+  parseDerives
   parseImports
   parseQueries
-  parseDerives
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
@@ -191,7 +191,8 @@ parseImports = do
   beamInstances <- gets (beamTableInstance . tableDef)
   domainInstances <- gets (domainTableInstance . tableDef)
   typObj <- fromMaybe [] <$> gets (types . tableDef)
-  let _imports = figureOutImports (map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields <> figureOutInstancesImports (beamInstances <> domainInstances))
+  deriveList <- fromMaybe [] <$> gets (derives . tableDef)
+  let _imports = figureOutImports (map getInstanceToDerive deriveList <> map haskellType fields <> concatMap figureOutInsideTypeImports typObj <> concatMap (figureOutBeamFieldsImports . beamFields) fields <> figureOutInstancesImports (beamInstances <> domainInstances))
   modify $ \s -> s {tableDef = (tableDef s) {imports = _imports}}
   parseImportPackageOverrides
   where
@@ -208,17 +209,18 @@ parseImports = do
     figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
 
     figureOutInsideTypeImports :: TypeObject -> [String]
-    figureOutInsideTypeImports tobj@(TypeObject _ _ tps _) =
+    figureOutInsideTypeImports tobj@(TypeObject _ _ tps derives) =
       let isEnum = isEnumType tobj
-       in concatMap
-            ( ( \(FieldType potentialImport) ->
-                  if isEnum
-                    then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
-                    else [potentialImport]
+       in (getInstanceToDerive <$> derives)
+            <> concatMap
+              ( ( \(FieldType potentialImport) ->
+                    if isEnum
+                      then filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) potentialImport
+                      else [potentialImport]
+                )
+                  . snd
               )
-                . snd
-            )
-            tps
+              tps
 
 parseQueries :: StorageParserM ()
 parseQueries = do
@@ -276,7 +278,7 @@ parseExtraOperations = do
 parseDerives :: StorageParserM ()
 parseDerives = do
   obj <- gets (dataObject . extraParseInfo)
-  let parsedDerives = obj ^? ix acc_derives ._String
+  let parsedDerives = map InstanceToDerive <$> (obj ^? ix acc_derives . _String . to (L.split (== ',')))
   modify $ \s -> s {tableDef = (tableDef s) {derives = parsedDerives}}
 
 parseInstances :: StorageParserM ()
