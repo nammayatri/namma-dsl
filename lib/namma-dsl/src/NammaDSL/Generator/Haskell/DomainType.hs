@@ -58,7 +58,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
-        { _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
+        { _ghcOptions = ["-Wno-unused-imports"] <> ["-Wno-dodgy-exports" | isExtraCode],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
           _simpleImports = packageOverride allSimpleImports,
@@ -87,6 +87,7 @@ createDefaultImports tableDef =
     <> ["Kernel.Utils.TH" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
     <> ["Data.Aeson" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
     <> ["Kernel.External.Encryption" | tableDef.containsEncryptedField]
+    <> ["Domain.Types.Common (UsageSafety (..))" | isUsageSafetyRequired tableDef.derives]
 
 removeDefaultImports :: [String] -> String -> [String] -> [String]
 removeDefaultImports defaultImports moduleName = filter (moduleName /=) . filter (`notElem` defaultImports)
@@ -109,9 +110,12 @@ genTableType  = do
           Just deriveList -> do
             let derivesStrList = filter (\x -> not $ L.isPrefixOf "'" x) $ getInstanceToDerive <$> deriveList
             TH.DerivClause Nothing $ TH.ConT . TH.mkName <$> derivesStrList
+        isUsageSafetyRequired' = isUsageSafetyRequired (derives def)
     let (typeName, typeVars) =
           if def.containsEncryptedField
             then (TH.mkName $ tableNameHaskell def <> "E", [TH.PlainTV (TH.mkName "e") ()])
+            else if isUsageSafetyRequired'
+            then (TH.mkName $ tableNameHaskell def <> "D", [TH.KindedTV (TH.mkName "s") () (TH.ConT (TH.mkName "UsageSafety"))])
             else (TH.mkName $ tableNameHaskell def, [])
     TH.DataD [] typeName typeVars Nothing [TH.RecC (TH.mkName $ tableNameHaskell def) (fields def <&> \field -> (TH.mkName field.fieldName, defaultBang, TH.ConT $ TH.mkName field.haskellType))] [derives']
 
@@ -201,6 +205,9 @@ isListInstanceDerived typeObj tpName =
 isJsonInstanceDerived :: [TypeObject] -> TypeName -> Bool
 isJsonInstanceDerived typeObj tpName =
   any (\case TypeObject _ nm _ derive -> (tpName == nm) && InstanceToDerive "'JsonInstance" `elem` derive) typeObj
+
+isUsageSafetyRequired :: Maybe [InstanceToDerive] -> Bool
+isUsageSafetyRequired derives = fromMaybe False (("'UsageSafety" `elem`) <$> map getInstanceToDerive <$> derives)
 
 isEnum :: [(FieldName, FieldType)] -> Bool
 isEnum [(FieldName "enum", _)] = True
