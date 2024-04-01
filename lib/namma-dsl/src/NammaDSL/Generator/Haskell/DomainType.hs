@@ -28,15 +28,23 @@ type Writer w = TH.Writer TableDef w
 
 type Q w = TH.Q TableDef w
 
-generateDomainType ::  DefaultImports -> StorageRead -> TableDef -> Code
+data DomainTypeCode = DomainTypeCode {
+    domainTypeDefaultCode :: Code,
+    domainTypeExtraCode :: Maybe Code
+  }
+
+generateDomainType ::  DefaultImports -> StorageRead -> TableDef -> DomainTypeCode
 generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
-  generateCode generatorInput
+  DomainTypeCode defaultCode extraDomainCode
   where
+    defaultCode = generateCode generatorInput
+    extraDomainCode = bool Nothing (Just $ generateCode extraFileGeneratorInput) (EXTRA_DOMAIN_TYPE_FILE `elem` (extraOperations tableDef))
     domainTypeModulePrefix = storageRead.domainTypeModulePrefix
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
     moduleName' = domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef
+    extraFileModuleName = domainTypeModulePrefix ++ ".Extra." ++ tableNameHaskell tableDef
 
     allSimpleImports :: [String]
     allSimpleImports = createDefaultImports tableDef <> simpleImp
@@ -56,6 +64,21 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _codeBody = codeBody'
         }
+    extraFileGeneratorInput :: GeneratorInput
+    extraFileGeneratorInput =
+      GeneratorInput
+        {
+          _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
+          _extensions = ["ApplicativeDo", "TemplateHaskell"],
+          _moduleNm = extraFileModuleName ++ " (module " ++ moduleName' ++ ", module ReExport)",
+          _simpleImports = packageOverride $ allSimpleImports <> [moduleName'],
+          _qualifiedImports = [moduleName' ++ " as ReExport"],
+          _codeBody = generateCodeBody extraFileCodeBody tableDef
+        }
+
+extraFileCodeBody :: StorageM ()
+extraFileCodeBody = do
+  onNewLine $ tellM "-- Extra code goes here -- "
 
 createDefaultImports :: TableDef -> [String]
 createDefaultImports tableDef =
