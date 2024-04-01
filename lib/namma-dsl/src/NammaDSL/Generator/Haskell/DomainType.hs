@@ -37,13 +37,14 @@ generateDomainType ::  DefaultImports -> StorageRead -> TableDef -> DomainTypeCo
 generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   DomainTypeCode defaultCode extraDomainCode
   where
+    isExtraCode = EXTRA_DOMAIN_TYPE_FILE `elem` (extraOperations tableDef)
     defaultCode = generateCode generatorInput
-    extraDomainCode = bool Nothing (Just $ generateCode extraFileGeneratorInput) (EXTRA_DOMAIN_TYPE_FILE `elem` (extraOperations tableDef))
+    extraDomainCode = bool Nothing (Just $ generateCode extraFileGeneratorInput) isExtraCode
     domainTypeModulePrefix = storageRead.domainTypeModulePrefix
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
-    moduleName' = domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef
+    moduleName' = bool (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef ++ " (module " ++ extraFileModuleName ++ ", module ReExport)") isExtraCode
     extraFileModuleName = domainTypeModulePrefix ++ ".Extra." ++ tableNameHaskell tableDef
 
     allSimpleImports :: [String]
@@ -57,11 +58,11 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
-        { _ghcOptions = ["-Wno-unused-imports"],
+        { _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
           _simpleImports = packageOverride allSimpleImports,
-          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _qualifiedImports = (packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports) <> [extraFileModuleName ++ " as ReExport" | isExtraCode],
           _codeBody = codeBody'
         }
     extraFileGeneratorInput :: GeneratorInput
@@ -70,9 +71,9 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
         {
           _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
-          _moduleNm = extraFileModuleName ++ " (module " ++ moduleName' ++ ", module ReExport)",
-          _simpleImports = packageOverride $ allSimpleImports <> [moduleName'],
-          _qualifiedImports = [moduleName' ++ " as ReExport"],
+          _moduleNm = extraFileModuleName,
+          _simpleImports = packageOverride $ allSimpleImports,
+          _qualifiedImports = [],
           _codeBody = generateCodeBody extraFileCodeBody tableDef
         }
 
