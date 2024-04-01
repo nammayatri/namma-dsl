@@ -22,7 +22,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.19"
+version = "1.0.20"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -130,9 +130,20 @@ mkBeamQueries appConfigs storageRead tableDefs = do
 mkDomainType :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
 mkDomainType appConfigs storageRead tableDefs = do
   let filePath = appConfigs ^. output . domainType
+      extraFilePath = filePath </> "Extra"
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs DOMAIN_TYPE
       generateDomainType' = generateDomainType defaultImportsFromConfig storageRead
-  mapM_ (\t -> writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ generateDomainType' t)) tableDefs
+  mapM_
+    ( \t -> do
+        let genCode = generateDomainType' t
+            defaultCode = domainTypeDefaultCode genCode
+            extraCode = domainTypeExtraCode genCode
+        writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ defaultCode)
+        case extraCode of
+          Just code -> writeToFile extraFilePath (tableNameHaskell t ++ ".hs") (show code)
+          Nothing -> return ()
+    )
+    tableDefs
 
 mkSQLFile :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
 mkSQLFile appConfigs _storageRead tableDefs = do

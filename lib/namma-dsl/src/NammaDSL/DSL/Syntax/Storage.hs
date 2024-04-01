@@ -23,7 +23,7 @@ data MigrationFile = MigrationFile
   }
   deriving (Show)
 
-data ExtraOperations = EXTRA_QUERY_FILE deriving (Show, Eq)
+data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE deriving (Show, Eq)
 
 type Database = String
 

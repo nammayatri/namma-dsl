@@ -180,8 +180,10 @@ mkList (Object obj) =
 mkList _ = []
 
 extraOperation :: String -> ExtraOperations
-extraOperation "EXTRA_QUERY_FILE" = EXTRA_QUERY_FILE
-extraOperation _ = error "Invalid extra operation"
+extraOperation = \case
+  "EXTRA_QUERY_FILE" -> EXTRA_QUERY_FILE
+  "EXTRA_DOMAIN_TYPE_FILE" -> EXTRA_DOMAIN_TYPE_FILE
+  _ -> error "Invalid extra operation"
 
 defaultOrderBy :: (String, Order)
 defaultOrderBy = ("createdAt", Desc)
