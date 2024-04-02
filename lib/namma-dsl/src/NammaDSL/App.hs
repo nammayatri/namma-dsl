@@ -6,6 +6,7 @@ import Control.Lens ((^.))
 import Control.Monad (unless, when)
 import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.Text as T
+import Data.List.Extra (replace)
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
@@ -22,7 +23,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.24"
+version = "1.0.25"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -130,7 +131,7 @@ mkBeamQueries appConfigs storageRead tableDefs = do
 mkDomainType :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
 mkDomainType appConfigs storageRead tableDefs = do
   let filePath = appConfigs ^. output . domainType
-      extraFilePath = filePath </> "Extra"
+      extraFilePath = (replace "src-read-only" "src" filePath) </> "Extra"
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs DOMAIN_TYPE
       generateDomainType' = generateDomainType defaultImportsFromConfig storageRead
   mapM_
