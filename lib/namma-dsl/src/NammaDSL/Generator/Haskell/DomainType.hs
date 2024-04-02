@@ -55,14 +55,17 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
 
     codeBody' = generateCodeBody mkCodeBody tableDef
 
+    preventSameModuleImports :: [String] -> [String]
+    preventSameModuleImports = filter (\x -> not ((domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) `L.isInfixOf` x))
+
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"] <> ["-Wno-dodgy-exports" | isExtraCode],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
-          _simpleImports = packageOverride allSimpleImports,
-          _qualifiedImports = (packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports) <> [extraFileModuleName ++ " as ReExport" | isExtraCode],
+          _simpleImports = packageOverride $ preventSameModuleImports $ allSimpleImports,
+          _qualifiedImports = packageOverride $ preventSameModuleImports $ (removeUnusedQualifiedImports codeBody' allQualifiedImports) <> [(extraFileModuleName ++ " as ReExport") | isExtraCode],
           _codeBody = codeBody'
         }
     extraFileGeneratorInput :: GeneratorInput
