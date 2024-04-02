@@ -4,9 +4,9 @@ module NammaDSL.App where
 
 import Control.Lens ((^.))
 import Control.Monad (unless, when)
+import Data.List.Extra (replace)
 import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.Text as T
-import Data.List.Extra (replace)
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
@@ -23,7 +23,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.25"
+version = "1.0.26"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
