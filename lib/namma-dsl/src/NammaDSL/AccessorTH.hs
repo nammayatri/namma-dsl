@@ -12,6 +12,7 @@ $( makeAccKeysTH
     fields
     excludedFields
     excludedDefaultQueries
+    tableName
     fromTType
     toTType
     beamFields
