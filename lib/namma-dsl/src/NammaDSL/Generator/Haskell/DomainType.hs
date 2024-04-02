@@ -44,7 +44,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
 
-    moduleName' = bool (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef ++ " (module " ++ extraFileModuleName ++ ", module ReExport)") isExtraCode
+    moduleName' = bool (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef ++ " (module " ++ (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) ++ ", module ReExport)") isExtraCode
     extraFileModuleName = domainTypeModulePrefix ++ ".Extra." ++ tableNameHaskell tableDef
 
     allSimpleImports :: [String]
