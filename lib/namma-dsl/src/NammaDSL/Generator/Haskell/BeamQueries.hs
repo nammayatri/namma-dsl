@@ -640,7 +640,7 @@ generateToTTypeFuncs  = do
               MonadicT -> do
                 TH.decsW $ do
                   TH.sigDW (TH.mkName $ tfName tf) $ do
-                    TH.forallT [] [_MonadFlow] $ cT (hFieldType bfield) --> vT "m" ~~ cT (bFieldType bfield)
+                    TH.forallT [] [_MonadFlow] $ cT (hFieldType bfield) --> vT "m" ~~ cT ("(" ++ bFieldType bfield ++ ")")
                   TH.funDW (TH.mkName $ tfName tf) $ do
                     TH.clauseW [] $ TH.normalB $ vE "error" ~ strE "TODO"
 
@@ -650,7 +650,7 @@ generateFromTypeFuncs = do
   forM_ (fields def) $ \field -> do
     let (params, types) = first (map ("_" ++)) $ unzip $ map (\bfield -> (bFieldName bfield, bFieldType bfield)) (beamFields field)
         funcType = TH.appendInfixT "->" . NE.fromList $ cT <$> (types <> [haskellType field])
-        funcTypeM = TH.forallT [] [_MonadFlow] $ TH.appendInfixT "->" . NE.fromList $ ((cT <$> types) <> [vT "m" ~~ cT (haskellType field)])
+        funcTypeM = TH.forallT [] [_MonadFlow] $ TH.appendInfixT "->" . NE.fromList $ ((cT <$> types) <> [vT "m" ~~ cT ("(" ++ haskellType field ++ ")")])
     whenJust (fromTType field) $ \tf ->
       if '.' `elem` tfName tf || tfIsEmbeddedArgs tf
         then pure ()
