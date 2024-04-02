@@ -23,7 +23,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.26"
+version = "1.0.27"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -141,7 +141,7 @@ mkDomainType appConfigs storageRead tableDefs = do
             extraCode = domainTypeExtraCode genCode
         writeToFile filePath (tableNameHaskell t ++ ".hs") (show $ defaultCode)
         case extraCode of
-          Just code -> writeToFile extraFilePath (tableNameHaskell t ++ ".hs") (show code)
+          Just code -> writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ ".hs") (show code)
           Nothing -> return ()
     )
     tableDefs
