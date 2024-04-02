@@ -51,6 +51,7 @@ import Prelude
 
 parseTableDef :: StorageParserM ()
 parseTableDef = do
+  parseSqlTableName
   parseExtraTypes
   parseFields
   parseInstances
@@ -60,6 +61,13 @@ parseTableDef = do
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
+
+parseSqlTableName :: StorageParserM ()
+parseSqlTableName = do
+  obj <- gets (dataObject . extraParseInfo)
+  defaultName <- gets (tableNameSql . tableDef)
+  let sqlTableName = fromMaybe defaultName (obj ^? (ix acc_tableName . _String))
+  modify $ \s -> s {tableDef = (tableDef s) {tableNameSql = sqlTableName}}
 
 parseExtraTypes :: StorageParserM ()
 parseExtraTypes = do
