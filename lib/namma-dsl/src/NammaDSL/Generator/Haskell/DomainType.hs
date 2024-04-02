@@ -100,6 +100,7 @@ mkCodeBody = do
     when (def.containsEncryptedField) $ generateEncryptionInstance
     forM_ (types def) generateHaskellTypes
     domaintableInstances
+    when (isUsageSafetyRequired def.derives) usageSafetyInstance
 
 genTableType :: Writer CodeUnit
 genTableType  = do
@@ -124,6 +125,14 @@ derivingInstances containsEncryptedField =
   if containsEncryptedField
     then TH.DerivClause Nothing $ TH.ConT <$> ["Generic"]
     else TH.DerivClause Nothing $ TH.ConT <$> ["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"]
+
+usageSafetyInstance :: Writer CodeUnit
+usageSafetyInstance = do
+  def <- ask
+  let tableName = tableNameHaskell def
+  tySynDW (TH.mkName tableName) [] (cT (tableName <> "D") ~~ cT "'Safe")
+  TH.instanceDW (pure []) (cT "FromJSON" ~~ cT ("(" ++ tableName ++ "D 'Unsafe)")) (pure ())
+  TH.instanceDW (pure []) (cT "ToJSON" ~~ cT ("(" ++ tableName ++ "D 'Unsafe)")) (pure ())
 
 -- didn't find how we can use record wild cards for TH, so using simple records
 generateEncryptionInstance :: Writer CodeUnit
