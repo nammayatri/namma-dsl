@@ -64,8 +64,8 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
         { _ghcOptions = ["-Wno-unused-imports"] <> ["-Wno-dodgy-exports" | isExtraCode],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
-          _simpleImports = packageOverride $ preventSameModuleImports $ allSimpleImports,
-          _qualifiedImports = packageOverride $ preventSameModuleImports $ (removeUnusedQualifiedImports codeBody' allQualifiedImports) <> [(extraFileModuleName ++ " as ReExport") | isExtraCode],
+          _simpleImports = packageOverride $ preventSameModuleImports $ allSimpleImports <> [(extraFileModuleName ++ " as ReExport") | isExtraCode],
+          _qualifiedImports = packageOverride $ preventSameModuleImports $ (removeUnusedQualifiedImports codeBody' allQualifiedImports),
           _codeBody = codeBody'
         }
     extraFileGeneratorInput :: GeneratorInput
