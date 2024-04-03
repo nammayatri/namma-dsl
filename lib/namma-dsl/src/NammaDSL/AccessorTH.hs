@@ -21,6 +21,7 @@ $( makeAccKeysTH
     orderBy
     params
     importPackageOverrides
+    intermediateTransformers
     extraOperations
     derives
     beamInstance
