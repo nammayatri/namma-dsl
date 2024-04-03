@@ -129,7 +129,7 @@ makeTypeQualified defaultTypeImport moduleName excludedList dList defaultImportM
       | '.' `elem` word || ',' `elem` word = word
       | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = defaultImportModule ++ "." ++ fromJust moduleName ++ "." ++ word
       | isJust dList && L.elem word (fromJust dList) = defaultImportModule ++ "." ++ word ++ "." ++ word
-      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
+      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e", "s"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
 
 figureOutImports :: [String] -> [String]
 figureOutImports fieldTypes =
