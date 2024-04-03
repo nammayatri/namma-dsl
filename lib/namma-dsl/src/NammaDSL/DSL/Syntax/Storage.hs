@@ -85,7 +85,9 @@ newtype FieldType = FieldType {getFieldType :: String}
 newtype InstanceToDerive = InstanceToDerive {getInstanceToDerive :: String}
   deriving (Show, Eq)
 
-data TypeObject = TypeObject RecordType TypeName [(FieldName, FieldType)] [InstanceToDerive]
+type OverrideDefaultDerive = Bool
+
+data TypeObject = TypeObject RecordType TypeName [(FieldName, FieldType)] [InstanceToDerive] OverrideDefaultDerive
   deriving (Show)
 
 data QueryDef = QueryDef

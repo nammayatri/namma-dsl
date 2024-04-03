@@ -91,7 +91,7 @@ parseExtraTypes = do
   _types <- gets (types . tableDef)
   let mkEnumTypeQualified enumTp =
         FieldType $ L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj) . L.breakOn " ") (L.trim <$> L.splitOn "," enumTp.getFieldType)
-      mkQualifiedTypeObject = \(TypeObject recType _nm arrOfFields derive) ->
+      mkQualifiedTypeObject = \(TypeObject recType _nm arrOfFields derive overrideDerives) ->
         TypeObject
           recType
           _nm
@@ -106,9 +106,10 @@ parseExtraTypes = do
               arrOfFields
           )
           derive
+          overrideDerives
       types' = fromMaybe [] _types
-      allExcludeQualified = map (\(TypeObject _ name _ _) -> name.getTypeName) types'
-      allEnums = map (\(TypeObject _ name _ _) -> name.getTypeName) $ filter isEnumType types'
+      allExcludeQualified = map (\(TypeObject _ name _ _ _) -> name.getTypeName) types'
+      allEnums = map (\(TypeObject _ name _ _ _) -> name.getTypeName) $ filter isEnumType types'
       qualifiedTypeObject = (map mkQualifiedTypeObject) <$> _types
       qualifiedAllEnums = map (\nm -> defaultImportModule ++ "." ++ moduleName ++ "." ++ nm) allEnums ++ allEnums
   modify $ \s -> s {tableDef = (tableDef s) {types = qualifiedTypeObject}, extraParseInfo = (extraParseInfo s) {enumList = qualifiedAllEnums, excludedImportList = allExcludeQualified}}
@@ -228,7 +229,7 @@ parseImports = do
     figureOutBeamFieldsImports bms = map bFieldType bms <> map hFieldType bms
 
     figureOutInsideTypeImports :: TypeObject -> [String]
-    figureOutInsideTypeImports tobj@(TypeObject _ _ tps derives) =
+    figureOutInsideTypeImports tobj@(TypeObject _ _ tps derives _) =
       let isEnum = isEnumType tobj
        in (getInstanceToDerive <$> derives)
             <> concatMap
@@ -869,13 +870,14 @@ parseTypes = do
     extractString (String t) = T.unpack t
     extractString _ = error "Non-string type found in field definition"
 
-    splitTypeAndDerivation :: [(String, String)] -> ([(FieldName, FieldType)], [InstanceToDerive])
-    splitTypeAndDerivation fields = (bimap FieldName FieldType <$> filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
+    splitTypeAndDerivation :: [(String, String)] -> ([(FieldName, FieldType)], [InstanceToDerive], OverrideDefaultDerive)
+    splitTypeAndDerivation fields = (bimap FieldName FieldType <$> filter (\(k, _) -> not $ k `elem` ["derive", "recordType", "derive'"]) fields, extractDerive fields, overrideDerives)
       where
+        overrideDerives = any (\(nm, _) -> nm == "derive'") fields
         extractDerive :: [(String, String)] -> [InstanceToDerive]
         extractDerive [] = []
         extractDerive ((k, value) : xs)
-          | k == "derive" = map (InstanceToDerive . T.unpack) (T.split (== ',') (T.pack value))
+          | (k == "derive" || k == "derive'") = map (InstanceToDerive . T.unpack) (T.split (== ',') (T.pack value))
           | otherwise = extractDerive xs
 
     extractRecordType :: Object -> RecordType
@@ -895,8 +897,8 @@ parseTypes = do
 
     processType :: (Key, Value) -> TypeObject
     processType (typeName, Object typeDef) = do
-      let (fields, derivations) = splitTypeAndDerivation $ extractFields typeDef
-      TypeObject (extractRecordType typeDef) (TypeName $ toString typeName) fields derivations
+      let (fields, derivations, overrideDerives) = splitTypeAndDerivation $ extractFields typeDef
+      TypeObject (extractRecordType typeDef) (TypeName $ toString typeName) fields derivations overrideDerives
     processType _ = error "Expected an object in fields"
 
 beamFieldsWithExtractors :: String -> String -> [String] -> StorageParserM [(String, String, [String])]
@@ -907,13 +909,13 @@ beamFieldsWithExtractors fieldName haskellType extractorFuncs = do
   obj <- gets (.extraParseInfo.dataObject)
   let beamFieldObj = obj ^? (ix acc_beamFields . _Object)
       qualified tp = domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ tp
-      findIfComplexType tpp = find (\(TypeObject _ (TypeName nm) arrOfFields _) -> (nm == tpp || tpp == domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ nm) && all (\(FieldName k, _) -> k /= "enum") arrOfFields) definedTypes
+      findIfComplexType tpp = find (\(TypeObject _ (TypeName nm) arrOfFields _ _) -> (nm == tpp || tpp == domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ nm) && all (\(FieldName k, _) -> k /= "enum") arrOfFields) definedTypes
   case beamFieldObj >>= preview (ix (fromString fieldName) . _Object . to Object . to mkList) of
     Just arrOfFields ->
       pure $ foldl (\acc (nm, tpp) -> acc ++ [(nm, tpp, [])]) [] arrOfFields
     Nothing ->
       case findIfComplexType haskellType of
-        Just (TypeObject _ _nm arrOfFields _) -> do
+        Just (TypeObject _ _nm arrOfFields _ _) -> do
           foldlM
             ( \acc (FieldName nm, FieldType tpp) -> do
                 bFieldWithExt <- beamFieldsWithExtractors (fieldName ++ capitalise nm) tpp (qualified nm : extractorFuncs)
@@ -1084,7 +1086,7 @@ sqlDefaultsWrtName = \case
   _ -> Nothing
 
 isEnumType :: TypeObject -> Bool
-isEnumType (TypeObject _ _ arrOfFields _) = any (\(FieldName k, _) -> k == "enum") arrOfFields
+isEnumType (TypeObject _ _ arrOfFields _ _) = any (\(FieldName k, _) -> k == "enum") arrOfFields
 
 -- SQL reverse parse
 findMatchingHaskellType :: [(String, String)] -> String -> String

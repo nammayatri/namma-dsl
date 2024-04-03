@@ -87,8 +87,8 @@ extraFileCodeBody = do
 createDefaultImports :: TableDef -> [String]
 createDefaultImports tableDef =
   ["Kernel.Prelude"] -- <> ["Tools.Beam.UtilsTH" | shouldImportUtilsTH (fromMaybe [] $ types tableDef)]
-    <> ["Kernel.Utils.TH" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
-    <> ["Data.Aeson" | isHttpInstanceDerived (fromMaybe [] $ types tableDef)]
+    <> ["Kernel.Utils.TH" | isHttpInstanceImportRequired (fromMaybe [] $ types tableDef)]
+    <> ["Data.Aeson" | isHttpInstanceImportRequired (fromMaybe [] $ types tableDef)]
     <> ["Kernel.External.Encryption" | tableDef.containsEncryptedField]
     <> ["Domain.Types.Common (UsageSafety (..))" | isUsageSafetyRequired tableDef.derives]
 
@@ -207,16 +207,21 @@ generateEncryptionInstance  = do
       TH.clauseW [] $
         TH.normalB (vE "fst")
 
-isHttpInstanceDerived :: [TypeObject] -> Bool
-isHttpInstanceDerived = any (\case TypeObject _ _ _ derive -> InstanceToDerive "HttpInstance" `elem` derive)
+isHttpInstanceDerived' :: [TypeObject] -> TypeName -> Bool
+isHttpInstanceDerived' typeObj tpName =
+  any (\case TypeObject _ nm _ derive _ -> (tpName == nm) && InstanceToDerive "HttpInstance" `elem` derive) typeObj
+
+isHttpInstanceImportRequired :: [TypeObject] -> Bool
+isHttpInstanceImportRequired = any (\case TypeObject _ _ _ derive _ -> InstanceToDerive "HttpInstance" `elem` derive)
+
 
 isListInstanceDerived :: [TypeObject] -> TypeName -> Bool
 isListInstanceDerived typeObj tpName =
-  any (\case TypeObject _ nm _ derive -> (tpName == nm) && InstanceToDerive "'ListInstance" `elem` derive) typeObj
+  any (\case TypeObject _ nm _ derive _ -> (tpName == nm) && InstanceToDerive "'ListInstance" `elem` derive) typeObj
 
 isJsonInstanceDerived :: [TypeObject] -> TypeName -> Bool
 isJsonInstanceDerived typeObj tpName =
-  any (\case TypeObject _ nm _ derive -> (tpName == nm) && InstanceToDerive "'JsonInstance" `elem` derive) typeObj
+  any (\case TypeObject _ nm _ derive _ -> (tpName == nm) && InstanceToDerive "'JsonInstance" `elem` derive) typeObj
 
 isUsageSafetyRequired :: Maybe [InstanceToDerive] -> Bool
 isUsageSafetyRequired derives = fromMaybe False (("'UsageSafety" `elem`) <$> map getInstanceToDerive <$> derives)
@@ -229,7 +234,7 @@ generateHaskellTypes :: [TypeObject] -> Writer CodeUnit
 generateHaskellTypes typeObj = traverse_ processType typeObj
   where
     processType :: TypeObject -> Writer CodeUnit
-    processType (TypeObject recType typeName fields _)
+    processType (TypeObject recType typeName fields _ _)
       | isEnum fields = generateEnum recType typeName fields
       | otherwise = generateDataStructure recType typeName fields
 
@@ -240,8 +245,9 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
       let _thTypeName = vE $ "''" <> typeName.getTypeName
       let isOverrideDomainInstance = not $ null (domainTableInstance def)
       TH.decW . pure $ do
-        let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d) -> if tname == typeName then d else []) typeObj)
-        let derives = TH.DerivClause Nothing (TH.ConT <$> ["Eq", "Ord", "Show", "Read", "Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
+        let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d _) -> if tname == typeName then d else []) typeObj)
+        let overrideDerives = maybe False (\(TypeObject _ _ _ _ od) -> od) $ find (\(TypeObject _ tname _ _ _) -> tname == typeName) typeObj
+        let derives = TH.DerivClause Nothing (TH.ConT <$> (bool (["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations) restDerivations overrideDerives))
         case recType of
           NewType -> do
             let (newTypeCons, internalType) = case enumValues of
@@ -255,7 +261,7 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
           Type -> error "Generate haskell domain enum types: expected Data but got Type"
       unless isOverrideDomainInstance $ do
         TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ _thTypeName
-        when (isHttpInstanceDerived typeObj) $
+        when (isHttpInstanceDerived' typeObj typeName) $
           TH.spliceW $ vE"mkHttpInstancesForEnum" ~ _thTypeName
         when (isJsonInstanceDerived typeObj typeName) $
           TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ _thTypeName
@@ -273,8 +279,9 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
       def <- ask
       let isOverrideDomainInstance = not $ null (domainTableInstance def)
       TH.decW . pure $ do
-        let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d) -> if tname == typeName then d else []) typeObj)
-        let derives = TH.DerivClause Nothing (TH.ConT <$> ["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
+        let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d _) -> if tname == typeName then d else []) typeObj)
+        let overrideDerives = maybe False (\(TypeObject _ _ _ _ od) -> od) $ find (\(TypeObject _ tname _ _ _) -> tname == typeName) typeObj
+        let derives = TH.DerivClause Nothing (TH.ConT <$> (bool (["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations) restDerivations overrideDerives))
         let thTypeName = TH.mkName typeName.getTypeName
         case recType of
           NewType -> do
