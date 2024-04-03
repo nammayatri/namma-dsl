@@ -152,17 +152,25 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
       where
         fromTTypeFuncImports :: [String]
         fromTTypeFuncImports =
-          tableDef.fields
+          (tableDef.fields
             & map (fmap tfName . fromTType)
             & getAllJust
-            & figureOutImports
+            & figureOutImports) <>
+           (tableDef.intermediateTransformers.getFromTTypes
+             & map (\(ITransformer _ fnc) -> tfName fnc)
+             & figureOutImports
+           )
 
         toTTypeFuncImports :: [String]
         toTTypeFuncImports =
-          (concatMap beamFields (tableDef.fields))
+          ((concatMap beamFields (tableDef.fields))
             & map (fmap tfName . bToTType)
             & getAllJust
-            & figureOutImports
+            & figureOutImports) <>
+            (tableDef.intermediateTransformers.getToTTypes
+              & map (\(ITransformer _ fnc) -> tfName fnc)
+              & figureOutImports
+            )
 
     getStorageRelationImports :: FieldDef -> [String]
     getStorageRelationImports fieldDef =
@@ -299,6 +307,7 @@ fromTTypeInstance storageRead = do
       TH.clauseW [wildRecordsP beamTypeT] $
         TH.normalB $
           TH.doEW $ do
+            intermediateTransformerCode (tableDef.intermediateTransformers.getFromTTypes)
             monadicFromTTypeTransformerCode
             forM_ (fields tableDef) \field -> do
               fromTTypeMConversionFunction storageRead (tableNameHaskell tableDef) (haskellType field) (fieldName field) (relation field)
@@ -334,6 +343,17 @@ monadicFromTTypeTransformerCode = do
           vP (fieldName hfield <> "'") <-- transformerExp
         PureT -> pure ()
 
+
+intermediateTransformerCode :: [ITransformer] -> Writer TH.Stmt
+intermediateTransformerCode itfs = do
+  forM_ itfs (\(ITransformer outputVarName tf) ->
+    case tfType tf of
+      MonadicT -> do
+          let transformerExp = vE (tfName tf)
+          vP (outputVarName) <-- transformerExp
+      PureT -> pure ()
+   )
+
 -- Is it correct? toTType' is not monadic function
 monadicToTTypeTransformerCode :: Maybe [String] -> Writer TH.Stmt
 monadicToTTypeTransformerCode specificFields = do
@@ -365,6 +385,7 @@ toTTypeInstance storageRead = do
       TH.clauseW [wildRecordsP domainType] $
         TH.normalB $
           TH.doEW $ do
+            intermediateTransformerCode (tableDef.intermediateTransformers.getToTTypes)
             monadicToTTypeTransformerCode Nothing
             let fs = filter (removeBeamFieldsWRTRelation . relation) (fields tableDef)
             TH.noBindSW $

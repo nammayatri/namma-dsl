@@ -27,6 +27,21 @@ data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE deriving (Show,
 
 type Database = String
 
+data ITransformer = ITransformer
+  { outputVariableName :: String,
+    transformer :: TransformerFunction
+  }
+  deriving (Show)
+
+data IntermediateTransformers = IntermediateTransformers
+  { getToTTypes :: [ITransformer],
+    getFromTTypes :: [ITransformer]
+  }
+  deriving (Show, Generic)
+
+instance Default IntermediateTransformers where
+  def = IntermediateTransformers [] []
+
 data TableDef = TableDef
   { tableNameHaskell :: String,
     tableNameSql :: String,
@@ -43,12 +58,13 @@ data TableDef = TableDef
     derives :: Maybe [InstanceToDerive],
     beamTableInstance :: [Instance],
     domainTableInstance :: [Instance],
-    extraOperations :: [ExtraOperations]
+    extraOperations :: [ExtraOperations],
+    intermediateTransformers :: IntermediateTransformers
   }
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef "" "" [] [] mempty [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] []
+  def = TableDef "" "" [] [] mempty [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
 
 data Instance
   = MakeTableInstances

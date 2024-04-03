@@ -53,6 +53,7 @@ parseTableDef :: StorageParserM ()
 parseTableDef = do
   parseSqlTableName
   parseExtraTypes
+  parseIntermediateTransformers
   parseFields
   parseInstances
   parseDerives
@@ -61,6 +62,16 @@ parseTableDef = do
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
+
+parseIntermediateTransformers :: StorageParserM ()
+parseIntermediateTransformers = do
+  obj <- gets (dataObject . extraParseInfo)
+  impObj <- gets (.extraParseInfo.yamlObject)
+  let mkInterTfs (outputVarName, rawTf) = ITransformer outputVarName (makeTF impObj rawTf)
+      toTTypeTfs = fromMaybe [] (obj ^? (ix acc_intermediateTransformers . _Object . ix acc_toTType . _Array . to V.toList . to (concatMap mkList) . to (map mkInterTfs)))
+      fromTTypeTfs = fromMaybe [] (obj ^? (ix acc_intermediateTransformers . _Object . ix acc_fromTType . _Array . to V.toList . to (concatMap mkList) . to (map mkInterTfs)))
+      interTfs = IntermediateTransformers toTTypeTfs fromTTypeTfs
+  modify $ \s -> s {tableDef = (tableDef s) {intermediateTransformers = interTfs}}
 
 parseSqlTableName :: StorageParserM ()
 parseSqlTableName = do
