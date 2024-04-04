@@ -247,7 +247,7 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
       TH.decW . pure $ do
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d _) -> if tname == typeName then d else []) typeObj)
         let overrideDerives = maybe False (\(TypeObject _ _ _ _ od) -> od) $ find (\(TypeObject _ tname _ _ _) -> tname == typeName) typeObj
-        let derives = TH.DerivClause Nothing (TH.ConT <$> (bool (["Generic", "Show", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations) restDerivations overrideDerives))
+        let derives = TH.DerivClause Nothing (TH.ConT <$> (bool (["Eq", "Ord", "Show", "Read", "Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations) restDerivations overrideDerives))
         case recType of
           NewType -> do
             let (newTypeCons, internalType) = case enumValues of
