@@ -598,34 +598,34 @@ generateQueryParams allFields params = pure @[] . TH.listEW $ forM_ params \((fi
 
 correctSetField :: String -> String -> BeamField -> Q TH.Exp
 correctSetField field tp beamField
-  | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
-  | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
-  | "Kernel.Types.Id.Id " `isPrefixOf` tp = _getId ~ vE field
-  | "Kernel.Types.Id.ShortId " `isPrefixOf` tp = _getShortId ~ vE field
-  | field == "updatedAt" && isNothing (bToTType beamField) = if "Kernel.Prelude.Maybe " `isPrefixOf` tp then vE "Just" ~ vE "_now" else vE "_now"
-  | otherwise = case (bToTType beamField) of
-      Nothing -> toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
-      Just tf ->
-        if tfType tf == MonadicT
+  | isJust (bToTType beamField) =
+      let tf = fromJust (bToTType beamField)
+       in if tfType tf == MonadicT
           then vE $ bFieldName beamField <> "'"
           else if (tfIsEmbeddedArgs tf) then
             vE (tfName tf)
           else
             vE (tfName tf) ~ toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+  | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
+  | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
+  | "Kernel.Types.Id.Id " `isPrefixOf` tp = _getId ~ vE field
+  | "Kernel.Types.Id.ShortId " `isPrefixOf` tp = _getShortId ~ vE field
+  | field == "updatedAt" && isNothing (bToTType beamField) = if "Kernel.Prelude.Maybe " `isPrefixOf` tp then vE "Just" ~ vE "_now" else vE "_now"
+  | otherwise = toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
 
 correctEqField :: String -> String -> BeamField -> Q TH.Exp
 correctEqField field tp beamField
-  | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
-  | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
-  | otherwise = case bToTType beamField of
-      Nothing -> toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
-      Just tf ->
-        if tfType tf == MonadicT
+  | isJust (bToTType beamField) =
+      let tf = fromJust (bToTType beamField)
+       in if tfType tf == MonadicT
           then vE $ bFieldName beamField <> "'"
           else if tfIsEmbeddedArgs tf then
             vE (tfName tf)
           else
             vE (tfName tf) ~ toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+  | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
+  | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
+  | otherwise = toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
 
 -- Function to process each clause
 generateClause :: [FieldDef] -> Bool -> WhereClause -> [Q TH.Exp]

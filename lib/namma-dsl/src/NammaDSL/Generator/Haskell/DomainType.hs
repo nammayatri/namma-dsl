@@ -56,7 +56,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     codeBody' = generateCodeBody mkCodeBody tableDef
 
     preventSameModuleImports :: [String] -> [String]
-    preventSameModuleImports = filter (\x -> not ((domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) `L.isInfixOf` x))
+    preventSameModuleImports = filter (\x -> not ((domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) == L.trim x))
 
     generatorInput :: GeneratorInput
     generatorInput =
@@ -234,16 +234,14 @@ generateHaskellTypes :: [TypeObject] -> Writer CodeUnit
 generateHaskellTypes typeObj = traverse_ processType typeObj
   where
     processType :: TypeObject -> Writer CodeUnit
-    processType (TypeObject recType typeName fields _ _)
-      | isEnum fields = generateEnum recType typeName fields
+    processType (TypeObject recType typeName fields _ domainInstanceOverriden)
+      | isEnum fields = generateEnum recType typeName fields domainInstanceOverriden
       | otherwise = generateDataStructure recType typeName fields
 
-    generateEnum :: RecordType -> TypeName -> [(FieldName, FieldType)] -> Writer CodeUnit
-    generateEnum recType typeName [(FieldName "enum", values)] = do
-      def <- ask
+    generateEnum :: RecordType -> TypeName -> [(FieldName, FieldType)] -> Bool -> Writer CodeUnit
+    generateEnum recType typeName [(FieldName "enum", values)] isOverrideDomainInstance = do
       let enumValues = L.splitOn "," values.getFieldType -- TODO move to parsing
       let _thTypeName = vE $ "''" <> typeName.getTypeName
-      let isOverrideDomainInstance = not $ null (domainTableInstance def)
       TH.decW . pure $ do
         let restDerivations = addRestDerivations (concatMap (\(TypeObject _ tname _ d _) -> if tname == typeName then d else []) typeObj)
         let overrideDerives = maybe False (\(TypeObject _ _ _ _ od) -> od) $ find (\(TypeObject _ tname _ _ _) -> tname == typeName) typeObj
@@ -265,7 +263,7 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
           TH.spliceW $ vE"mkHttpInstancesForEnum" ~ _thTypeName
         when (isJsonInstanceDerived typeObj typeName) $
           TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ _thTypeName
-    generateEnum _ _ _ = error "Invalid enum definition"
+    generateEnum _ _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [InstanceToDerive] -> [TH.Name]
     addRestDerivations derivations = map (TH.mkName . toInstanceName) $ filter (\x -> not $ L.isPrefixOf "'" x) $ getInstanceToDerive <$> derivations
