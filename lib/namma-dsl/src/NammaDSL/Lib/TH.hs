@@ -268,6 +268,11 @@ appendT = foldl1 (~~)
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB
 
+letStmt :: TH.Name -> TH.Exp -> Writer r TH.Stmt
+letStmt vName rhsExp = do
+  let valP = TH.VarP vName
+  tell [TH.LetS [TH.ValD valP (TH.NormalB rhsExp) []]]
+
 forallT :: [TH.TyVarBndr TH.Specificity] -> [Q r TH.Type] -> Q r TH.Type -> Q r TH.Type
 forallT a b = liftA2 (TH.ForallT a) (sequenceA b)
 

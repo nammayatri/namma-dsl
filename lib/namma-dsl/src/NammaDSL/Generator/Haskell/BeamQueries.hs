@@ -7,7 +7,6 @@ import Control.Monad (forM_, when)
 import Control.Monad.Extra (whenJust)
 import qualified Data.Text as T
 import Control.Monad.Reader (ask)
-import Control.Monad.Writer (tell)
 import Data.Bifunctor (first)
 import Data.Bool
 import Data.Function ((&))
@@ -355,8 +354,7 @@ intermediateTransformerCode itfs = do
           vP (outputVarName) <-- transformerExp
       PureT -> do
           let transformerExp = TH.VarE $ TH.mkName (tfName tf)
-          let valP = TH.VarP (mkNameT $ T.pack outputVarName)
-          tell [TH.LetS [TH.ValD valP (TH.NormalB transformerExp) []]]
+          letStmt (mkNameT $ T.pack outputVarName) transformerExp
    )
 
 -- Is it correct? toTType' is not monadic function
