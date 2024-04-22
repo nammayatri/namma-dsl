@@ -597,7 +597,7 @@ generateQueryParams allFields params = pure @[] . TH.listEW $ forM_ params \((fi
         --     else
         --       TH.itemW $ cE "Se.Set" ~ vE ("Beam." <> bFieldName bField) ~$ vE field `mapOperator` vE "hash"
         --  else
-        TH.itemW $ cE "Se.Set" ~ vE ("Beam." <> bFieldName bField) ~ correctSetField field tp bField
+        TH.itemW $ cE "Se.Set" ~ vE ("Beam." <> bFieldName bField) ~ (if field == "updatedAt" then (if "Kernel.Prelude.Maybe " `isPrefixOf` (bFieldType bField) then vE "Just" ~ vE "_now" else vE "_now") else correctSetField field tp bField)
 
 correctSetField :: String -> String -> BeamField -> Q TH.Exp
 correctSetField field tp beamField
