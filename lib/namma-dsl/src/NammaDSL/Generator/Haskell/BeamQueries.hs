@@ -603,7 +603,7 @@ correctSetField :: String -> String -> BeamField -> Q TH.Exp
 correctSetField field tp beamField
   | isJust (bToTType beamField) =
       let tf = fromJust (bToTType beamField)
-       in if tfType tf == MonadicT
+       in TH.ParensE <$> if tfType tf == MonadicT
           then vE $ bFieldName beamField <> "'"
           else if (tfIsEmbeddedArgs tf) then
             vE (tfName tf)
@@ -620,7 +620,7 @@ correctEqField :: String -> String -> BeamField -> Q TH.Exp
 correctEqField field tp beamField
   | isJust (bToTType beamField) =
       let tf = fromJust (bToTType beamField)
-       in if tfType tf == MonadicT
+       in TH.ParensE <$> if tfType tf == MonadicT
           then vE $ bFieldName beamField <> "'"
           else if tfIsEmbeddedArgs tf then
             vE (tfName tf)
