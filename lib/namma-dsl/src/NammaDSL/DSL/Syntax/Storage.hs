@@ -49,6 +49,7 @@ data TableDef = TableDef
     imports :: [String],
     importPackageOverrides :: Map String String,
     queries :: [QueryDef],
+    defaultQueryTypeConstraint :: Maybe String,
     excludedDefaultQueries :: [String],
     primaryKey :: [String],
     secondaryKey :: [String],
@@ -64,7 +65,7 @@ data TableDef = TableDef
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef "" "" [] [] mempty [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
+  def = TableDef "" "" [] [] mempty [] Nothing [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
 
 data Instance
   = MakeTableInstances
@@ -96,7 +97,8 @@ data QueryDef = QueryDef
     params :: [((String, String), Bool)],
     whereClause :: WhereClause,
     orderBy :: (String, Order),
-    takeFullObjectAsInput :: Bool
+    takeFullObjectAsInput :: Bool,
+    typeConstraint :: Maybe String
   }
   deriving (Show)
 

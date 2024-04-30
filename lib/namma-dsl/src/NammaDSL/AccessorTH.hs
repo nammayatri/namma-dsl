@@ -46,5 +46,7 @@ $( makeAccKeysTH
     mandatoryQuery
     headers
     name
+    typeConstraint
+    defaultQueryTypeConstraint
     |]
  )

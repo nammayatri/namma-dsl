@@ -58,10 +58,17 @@ parseTableDef = do
   parseInstances
   parseDerives
   parseImports
+  parseDefaultQueryTypeConstraint
   parseQueries
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
+
+parseDefaultQueryTypeConstraint :: StorageParserM ()
+parseDefaultQueryTypeConstraint = do
+  obj <- gets (dataObject . extraParseInfo)
+  let defaultQueryTypeConstraint' = obj ^? ix acc_defaultQueryTypeConstraint . _String
+  modify $ \s -> s {tableDef = (tableDef s) {defaultQueryTypeConstraint = defaultQueryTypeConstraint'}}
 
 parseIntermediateTransformers :: StorageParserM ()
 parseIntermediateTransformers = do
@@ -262,7 +269,8 @@ parseQueries = do
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
             whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause makeTypeQualified' "eq" fields))
             orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields))
-         in QueryDef queryName kvFunction params whereClause orderBy False
+            typeConstraint = queryDataObj ^? ix acc_typeConstraint . _String
+         in QueryDef queryName kvFunction params whereClause orderBy False typeConstraint
   case mbQueries of
     Just queries -> modify $ \s -> s {tableDef = (tableDef s) {queries = map parseQuery queries}}
     Nothing -> pure ()
@@ -770,7 +778,8 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                         Just Eq
                       ),
                   orderBy = defaultOrderBy,
-                  takeFullObjectAsInput = False
+                  takeFullObjectAsInput = False,
+                  typeConstraint = Nothing
                 },
               QueryDef
                 { queryName = "findBy" ++ foreignTableNameHaskell ++ "Id",
@@ -783,7 +792,8 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                         Just Eq
                       ),
                   orderBy = defaultOrderBy,
-                  takeFullObjectAsInput = False
+                  takeFullObjectAsInput = False,
+                  typeConstraint = Nothing
                 }
             ]
       TableDef {fields = fields <> [foreignField], queries = queries <> query, ..}
