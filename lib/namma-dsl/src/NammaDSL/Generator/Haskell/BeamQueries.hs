@@ -13,7 +13,7 @@ import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.List (find, intercalate, isInfixOf, isPrefixOf, nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as Text
 import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.Storage
@@ -145,8 +145,16 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
       ]
         <> imports tableDef
         <> getAllFunctionImports
+        <> getAllTypeConstraintImports
         <> concatMap getStorageRelationImports tableDef.fields
         <> qualifiedImp
+
+    getAllTypeConstraintImports :: [String]
+    getAllTypeConstraintImports =
+      ((tableDef.queries
+        & map (.typeConstraint)) ++ [tableDef.defaultQueryTypeConstraint])
+        & catMaybes
+        & figureOutImports
 
     getAllFunctionImports :: [String]
     getAllFunctionImports = fromTTypeFuncImports ++ toTTypeFuncImports
@@ -224,9 +232,10 @@ generateDefaultCreateQuery storageRead = do
   let name = tableNameHaskell tableDef
   let withIdFields = getAllFieldsWithIdRelation (fields tableDef)
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
+  let fungSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) (pure . vT) tableDef.defaultQueryTypeConstraint
   TH.decsW $ do
     TH.sigDW "create" $ do
-      TH.forallT [] ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) $
+      TH.forallT [] fungSign $
         cT dName --> vT "m" ~~ _UnitType
     if null withIdFields
       then do
@@ -282,9 +291,10 @@ generateDefaultCreateManyQuery storageRead = do
   let isHasSchemaNameRequired' = isHasSchemaNameRequired def
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
+  let fungSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) (pure . vT) (defaultQueryTypeConstraint def)
   TH.decsW $ do
     TH.sigDW "createMany" $ do
-      TH.forallT [] ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired']) $
+      TH.forallT [] fungSign $
         TH.listT ~~ cT dName
           --> vT "m" ~~ _UnitType
     TH.funDW "createMany" $ do
@@ -528,9 +538,11 @@ withFunctionSignature storageRead query tableNameHaskell stmts = do
         map getIdsOut $
           nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
+  let defaultFuncSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [ (_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) (pure . vT) (def.defaultQueryTypeConstraint)
+  let funcSign = maybe defaultFuncSign (pure . vT) (typeConstraint query)
   TH.decsW $ do
     TH.sigDW (TH.mkName query.queryName) $ do
-      TH.forallT [] ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [ (_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) $ do
+      TH.forallT [] funcSign $ do
         let returnType = vT "m" ~~ generateQueryReturnType storageRead query.kvFunction tableNameHaskell
         let typeParams = if query.takeFullObjectAsInput
               then [cT (domainTypeModulePrefix <> tableNameHaskell <> "." <> tableNameHaskell)]
@@ -693,8 +705,8 @@ operator = cE . ("Se." <>) . show
 
 defaultQueryDefs :: TableDef -> [QueryDef]
 defaultQueryDefs tableDef =
-  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimaryKeyWhereClause defaultOrderBy False,
-    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimaryKeyWhereClause defaultOrderBy True
+  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimaryKeyWhereClause defaultOrderBy False tableDef.defaultQueryTypeConstraint,
+    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimaryKeyWhereClause defaultOrderBy True tableDef.defaultQueryTypeConstraint
   ]
   where
     getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [((String, String), Bool)]
