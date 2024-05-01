@@ -58,7 +58,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
                         (T.unpack <$> concatMap handlerSignature (_apis input))
                     )
            )
-        <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
+        <> ["Domain.Types.Merchant.MerchantOperatingCity" | ifProviderPlatform]
 
     allSimpleImports :: [String]
     allSimpleImports =

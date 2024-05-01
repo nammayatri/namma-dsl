@@ -23,9 +23,8 @@ _Person = cT "Domain.Types.Person.Person"
 _Merchant :: TH.Q r TH.Type
 _Merchant = cT "Domain.Types.Merchant.Merchant"
 
--- TODO: These should n't be hardcoded ..
 _MerchantOperatingCity :: TH.Q r TH.Type
-_MerchantOperatingCity = cT "Domain.Types.MerchantOperatingCity.MerchantOperatingCity"
+_MerchantOperatingCity = cT "Domain.Types.Merchant.MerchantOperatingCity.MerchantOperatingCity"
 
 apiAuthTypeMapperDomainHandler :: ApiTT -> Maybe (TH.Q r TH.Type)
 apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
