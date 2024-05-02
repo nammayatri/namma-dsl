@@ -46,8 +46,8 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
       nub $
         preventSameModuleImports $
           (T.unpack <$> (_imports input))
-            <> ["Domain.Types.Merchant.MerchantOperatingCity" | ifProviderPlatform]
             <> qualifiedImp
+            <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
 
     ifProviderPlatform :: Bool
     ifProviderPlatform =
