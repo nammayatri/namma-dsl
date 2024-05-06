@@ -48,5 +48,6 @@ $( makeAccKeysTH
     name
     typeConstraint
     defaultQueryTypeConstraint
+    fullObjectAsParam
     |]
  )

@@ -269,8 +269,9 @@ parseQueries = do
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
             whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause makeTypeQualified' "eq" fields))
             orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields))
+            takeFullObjectAsParam = DT.traceShowId $ fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
             typeConstraint = queryDataObj ^? ix acc_typeConstraint . _String
-         in QueryDef queryName kvFunction params whereClause orderBy False typeConstraint
+         in QueryDef queryName kvFunction params whereClause orderBy takeFullObjectAsParam typeConstraint
   case mbQueries of
     Just queries -> modify $ \s -> s {tableDef = (tableDef s) {queries = map parseQuery queries}}
     Nothing -> pure ()
