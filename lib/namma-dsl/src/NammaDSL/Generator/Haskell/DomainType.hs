@@ -136,6 +136,8 @@ usageSafetyInstance = do
   tySynDW (TH.mkName tableName) [] (cT (tableName <> "D") ~~ cT "'Safe")
   TH.instanceDW (pure []) (cT "FromJSON" ~~ cT ("(" ++ tableName ++ "D 'Unsafe)")) (pure ())
   TH.instanceDW (pure []) (cT "ToJSON" ~~ cT ("(" ++ tableName ++ "D 'Unsafe)")) (pure ())
+  TH.instanceDW (pure []) (cT "FromJSON" ~~ cT ("(" ++ tableName ++ "D 'Safe)")) (pure ())
+  TH.instanceDW (pure []) (cT "ToJSON" ~~ cT ("(" ++ tableName ++ "D 'Safe)")) (pure ())
 
 -- didn't find how we can use record wild cards for TH, so using simple records
 generateEncryptionInstance :: Writer CodeUnit
