@@ -265,11 +265,11 @@ parseQueries = do
       parseQuery query =
         let queryName = fst query
             queryDataObj = snd query
-            params = addDefaultUpdatedAtToQueryParams queryName $ map (first (second makeTypeQualified')) $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (searchForKey fields . valueToString)))
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
+            params = addDefaultUpdatedAtToQueryParams kvFunction fields $ map (first (second makeTypeQualified')) $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (searchForKey fields . valueToString)))
             whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause makeTypeQualified' "eq" fields))
             orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields))
-            takeFullObjectAsParam = DT.traceShowId $ fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
+            takeFullObjectAsParam = fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
             typeConstraint = queryDataObj ^? ix acc_typeConstraint . _String
          in QueryDef queryName kvFunction params whereClause orderBy takeFullObjectAsParam typeConstraint
   case mbQueries of
@@ -277,10 +277,19 @@ parseQueries = do
     Nothing -> pure ()
   modify $ \s -> s {tableDef = (tableDef s) {excludedDefaultQueries = excludedQueries}}
   where
-    addDefaultUpdatedAtToQueryParams :: String -> [((String, String), Bool)] -> [((String, String), Bool)]
-    addDefaultUpdatedAtToQueryParams queryName params =
-      if "update" `L.isPrefixOf` queryName
-        then if any (\((k, _), _) -> k == "updatedAt") params then params else params <> [(("updatedAt", "Kernel.Prelude.UTCTime"), False)]
+    addDefaultUpdatedAtToQueryParams :: String -> [FieldDef] -> [((String, String), Bool)] -> [((String, String), Bool)]
+    addDefaultUpdatedAtToQueryParams kvFunctionName fields params =
+      if "update" `L.isPrefixOf` kvFunctionName
+        then
+          let searchUpdatedAtType = haskellType <$> find (("updatedAt" ==) . fieldName) fields
+           in maybe
+                params
+                ( \hType ->
+                    if any (\((k, _), _) -> k == "updatedAt") params
+                      then params
+                      else params <> [(("updatedAt", hType), False)]
+                )
+                searchUpdatedAtType
         else params
 
     parseOrderBy :: [FieldDef] -> Value -> (String, Order)
