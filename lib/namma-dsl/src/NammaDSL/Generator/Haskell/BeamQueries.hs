@@ -515,7 +515,8 @@ generateBeamQuery storageRead allHaskellFields tableNameHaskell query = do
   withFunctionSignature storageRead query tableNameHaskell $ do
     monadicToTTypeTransformerCode (Just paramFieldNames)
     let queryParams = generateQueryParams allHaskellFields (query.params)
-    generateBeamFunctionCall query.kvFunction $ queryParams <> [TH.listE genWhereClause] <> orderAndLimit query
+        isUpdatedAtPresent = any (\((k,_),_) -> k == "updatedAt") (query.params)
+    generateBeamFunctionCall query.kvFunction isUpdatedAtPresent $ queryParams <> [TH.listE genWhereClause] <> orderAndLimit query
   where
     genWhereClause = generateClause allHaskellFields query.takeFullObjectAsInput query.whereClause
 
@@ -584,9 +585,9 @@ getWhereClauseFieldNamesAndTypes EmptyWhere = []
 getWhereClauseFieldNamesAndTypes (Leaf (field, _type, op)) = if op == Just In then [(field, "[" <> _type <> "]")] else [(field, _type)]
 getWhereClauseFieldNamesAndTypes (Query (_, clauses)) = concatMap getWhereClauseFieldNamesAndTypes clauses
 
-generateBeamFunctionCall :: String -> [Q TH.Exp] -> Writer TH.Stmt
-generateBeamFunctionCall kvFunction params = do
-  when ("update" `isPrefixOf` kvFunction) $ do
+generateBeamFunctionCall :: String -> Bool -> [Q TH.Exp] -> Writer TH.Stmt
+generateBeamFunctionCall kvFunction isUpdatedAtPresent params = do
+  when ("update" `isPrefixOf` kvFunction && isUpdatedAtPresent) $ do
     vP "_now" <-- vE "getCurrentTime"
   noBindSW $ TH.appendE $ vE kvFunction NE.:| params
 
