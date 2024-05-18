@@ -258,7 +258,7 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
             TH.NewtypeD [] (TH.mkName typeName.getTypeName) [] Nothing (TH.NormalC (TH.mkName newTypeCons) [(defaultBang, TH.ConT $ TH.mkName internalType)]) [derives]
             --error "Generate haskell domain enum types: expected Data but got NewType"
           Data -> TH.DataD [] (TH.mkName typeName.getTypeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
-          Type -> error "Generate haskell domain enum types: expected Data but got Type"
+          Type -> TH.TySynD (TH.mkName typeName.getTypeName) [] (foldl1 TH.AppT $ map (TH.VarT . TH.mkName) enumValues)
       unless isOverrideDomainInstance $ do
         TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ _thTypeName
         when (isHttpInstanceDerived' typeObj typeName) $
