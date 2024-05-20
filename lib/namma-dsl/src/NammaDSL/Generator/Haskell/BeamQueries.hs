@@ -232,7 +232,7 @@ generateDefaultCreateQuery storageRead = do
   let name = tableNameHaskell tableDef
   let withIdFields = getAllFieldsWithIdRelation (fields tableDef)
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
-  let fungSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) (pure . vT) tableDef.defaultQueryTypeConstraint
+  let fungSign = maybe ([_KvDbFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) (pure . vT) tableDef.defaultQueryTypeConstraint
   TH.decsW $ do
     TH.sigDW "create" $ do
       TH.forallT [] fungSign $
@@ -271,6 +271,9 @@ generateDefaultCreateQuery storageRead = do
 _EsqDBFlow :: Q TH.Type
 _EsqDBFlow = cT "EsqDBFlow" ~~ vT "m" ~~ vT "r"
 
+_KvDbFlow :: Q TH.Type
+_KvDbFlow = cT "KvDbFlow" ~~ vT "m" ~~ vT "r"
+
 _MonadFlow :: Q TH.Type
 _MonadFlow = cT "MonadFlow" ~~ vT "m"
 
@@ -291,7 +294,7 @@ generateDefaultCreateManyQuery storageRead = do
   let isHasSchemaNameRequired' = isHasSchemaNameRequired def
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
-  let fungSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) (pure . vT) (defaultQueryTypeConstraint def)
+  let fungSign = maybe ([_KvDbFlow] <> [_HasSchemaName name | isHasSchemaNameRequired' ]) (pure . vT) (defaultQueryTypeConstraint def)
   TH.decsW $ do
     TH.sigDW "createMany" $ do
       TH.forallT [] fungSign $
@@ -539,7 +542,7 @@ withFunctionSignature storageRead query tableNameHaskell stmts = do
         map getIdsOut $
           nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
-  let defaultFuncSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [ (_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) (pure . vT) (def.defaultQueryTypeConstraint)
+  let defaultFuncSign = maybe ([_KvDbFlow] <> [ (_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) (pure . vT) (def.defaultQueryTypeConstraint)
   let funcSign = maybe defaultFuncSign (pure . vT) (typeConstraint query)
   TH.decsW $ do
     TH.sigDW (TH.mkName query.queryName) $ do
