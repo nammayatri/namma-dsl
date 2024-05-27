@@ -23,7 +23,7 @@ data MigrationFile = MigrationFile
   }
   deriving (Show)
 
-data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE deriving (Show, Eq)
+data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE | EXTRA_CACHED_QUERY_FILE deriving (Show, Eq)
 
 type Database = String
 
@@ -50,6 +50,7 @@ data TableDef = TableDef
     importPackageOverrides :: Map String String,
     queries :: [QueryDef],
     defaultQueryTypeConstraint :: Maybe String,
+    cachedQueries :: [CachedQueryDef],
     excludedDefaultQueries :: [String],
     primaryKey :: [String],
     secondaryKey :: [String],
@@ -65,7 +66,35 @@ data TableDef = TableDef
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef "" "" [] [] mempty [] Nothing [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
+  def = TableDef "" "" [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
+
+data CachedQueryDef = CachedQueryDef
+  { cQueryName :: String,
+    withCrossAppRedis :: Bool,
+    ctypeConstraint :: Maybe String,
+    returnType :: CQReturnType,
+    keyMaker :: Maybe String, -- will be used in future if required
+    keyParams :: [Param],
+    dbQuery :: String,
+    dbQueryParams :: [Param],
+    paramsOrder :: Maybe [String]
+  }
+  deriving (Show, Generic)
+
+data Param = Constant String ParamConstantType | Variable String String deriving (Show, Generic) -- Variable Name Type -- Constant Value Type
+
+--might require later for embedded constants in beam queries ?
+data ParamConstantType = PString | PInt | PBool | PDouble | PImportedData deriving (Show, Generic, Eq)
+
+data CQReturnType = CArray | COne deriving (Show, Eq)
+
+getParamName :: Param -> String
+getParamName (Constant _ _) = error "This is a constant, cant get name"
+getParamName (Variable x _) = x
+
+getVarParamType :: Param -> String
+getVarParamType (Constant _ _) = error "This is a constant, cant get type"
+getVarParamType (Variable _ x) = x
 
 data Instance
   = MakeTableInstances
@@ -193,14 +222,16 @@ data StorageRead = StorageRead
   { domainTypeModulePrefix :: String,
     beamTypeModulePrefix :: String,
     queryModulePrefix :: String,
+    cachedQueryModulePrefix :: String,
     sqlMapper :: [(String, String)],
     extraDefaultFields :: [(String, String)],
-    storageDefaultTypeImportMapper :: [(String, String)]
+    storageDefaultTypeImportMapper :: [(String, String)],
+    defaultCachedQueryKeyPfx :: String
   }
   deriving (Show)
 
 instance Default StorageRead where
-  def = StorageRead "" "" "" [] [] []
+  def = StorageRead "" "" "" "" [] [] [] ""
 
 type StorageParserM = ParserM StorageRead StorageState
 

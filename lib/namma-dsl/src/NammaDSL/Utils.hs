@@ -135,7 +135,7 @@ figureOutImports :: [String] -> [String]
 figureOutImports fieldTypes =
   nub $ filter (not . null) $ concatMap (map extractUptoLastDot) extractWords
   where
-    extractWords = splitWhen (`elem` typeDelimiter) <$> fieldTypes
+    extractWords = splitWhen (`elem` (typeDelimiter ++ ",")) <$> fieldTypes
     extractUptoLastDot str =
       let pp = splitOn "." str
        in if length pp > 1
@@ -183,6 +183,7 @@ extraOperation :: String -> ExtraOperations
 extraOperation = \case
   "EXTRA_QUERY_FILE" -> EXTRA_QUERY_FILE
   "EXTRA_DOMAIN_TYPE_FILE" -> EXTRA_DOMAIN_TYPE_FILE
+  "EXTRA_CACHED_QUERY_FILE" -> EXTRA_CACHED_QUERY_FILE
   _ -> error "Invalid extra operation"
 
 defaultOrderBy :: (String, Order)
