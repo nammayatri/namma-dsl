@@ -60,6 +60,7 @@ parseTableDef = do
   parseImports
   parseDefaultQueryTypeConstraint
   parseQueries
+  parseCachedQueries
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
@@ -248,6 +249,66 @@ parseImports = do
                   . snd
               )
               tps
+
+parseCachedQueries :: StorageParserM ()
+parseCachedQueries = do
+  moduleName <- gets (.extraParseInfo.domainName)
+  excludedList <- gets (.extraParseInfo.excludedImportList)
+  dList <- gets (.extraParseInfo.dList)
+  fields <- gets (.tableDef.fields)
+  impObj <- gets (.extraParseInfo.yamlObject)
+  obj <- gets (.extraParseInfo.dataObject)
+  defaultImportModule <- asks (.domainTypeModulePrefix)
+  defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
+  let makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
+      rawCachedQueries = obj ^? ix acc_cachedQueries . _Value . to mkListObject
+      parseKeyParam paramValue = case paramValue of
+        pObj@(Object _) ->
+          let (paramKey, paramType) = head $ mkList pObj
+           in Variable paramKey (makeTypeQualified' paramType)
+        pStr@(String _) ->
+          let paramKey = valueToString pStr
+           in if "|C" `L.isInfixOf` paramKey
+                then parseConstantParam paramKey
+                else Variable paramKey (haskellType $ fromMaybe (error "Param Key not found in fields") $ find (\f -> (fieldName f) == paramKey) fields)
+        _ -> error "Invalid Param Type"
+      parseCachedQuery cquery =
+        let cQueryName = fst cquery
+            cqueryObj = snd cquery
+            withCrossAppRedis = fromMaybe False (cqueryObj ^? ix acc_withCrossAppRedis ._Bool)
+            ctypeConstraint = cqueryObj ^? ix acc_typeConstraint . _String
+            returnType = fromMaybe (COne) $ cqueryObj ^? ix acc_returnType . _String . to parseReturnType
+            keyMaker = cqueryObj ^? ix acc_keyMaker . _String
+            keyParams = fromMaybe (error "Key Params for cached query is missing") (cqueryObj ^? ix acc_keyParams . _Array . to V.toList . to (map parseKeyParam))
+            dbQuery = fromMaybe (fst cquery) (cqueryObj ^? ix acc_dbQuery . _String)
+            dbQueryParams = fromMaybe [] (cqueryObj ^? ix acc_dbQueryParams . _Array . to V.toList . to (map parseKeyParam))
+            paramsOrder = cqueryObj ^? ix acc_paramsOrder . _Array . to V.toList . to (map valueToString)
+         in CachedQueryDef {..}
+  case rawCachedQueries of
+    Just cqueries -> modify $ \s -> s {tableDef = (tableDef s) {cachedQueries = map parseCachedQuery cqueries}}
+    Nothing -> pure ()
+  where
+    parseConstantParam :: String -> Param
+    parseConstantParam prm =
+      case L.splitOn "|" prm of
+        [constant, code] ->
+          Constant constant (parseConstantType code)
+        _ -> error "Invalid input format for constant param"
+    parseConstantType :: String -> ParamConstantType
+    parseConstantType = \case
+      "CS" -> PString
+      "CI" -> PInt
+      "CB" -> PBool
+      "CD" -> PDouble
+      "CIM" -> PImportedData
+      "C" -> PString
+      _ -> error "Invalid Constant Type"
+
+    parseReturnType :: String -> CQReturnType
+    parseReturnType = \case
+      "Array" -> CArray
+      "One" -> COne
+      _ -> error "Invalid ReturnType"
 
 parseQueries :: StorageParserM ()
 parseQueries = do

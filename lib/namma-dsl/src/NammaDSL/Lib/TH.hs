@@ -103,6 +103,11 @@ infixr 9 ~.
 
 infixl 1 ~>>=
 
+(~/=<<) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
+(~/=<<) e1 = uInfixE e1 (vE "/=<<")
+
+infix 1 ~/=<<
+
 -- based on Language.Haskell.TH.Lib, only Writer added instead of lists
 tySynDW :: TH.Name -> [TH.TyVarBndr ()] -> Q r TH.Type -> Writer r CodeUnit
 tySynDW name vars tQ = do
@@ -282,6 +287,9 @@ listT = pure TH.ListT
 listE :: [Q r TH.Exp] -> Q r TH.Exp
 listE a = fmap TH.ListE (sequenceA a)
 
+parenE :: Q r TH.Exp -> Q r TH.Exp
+parenE a = fmap TH.ParensE a
+
 tupE :: [Maybe (Q r TH.Exp)] -> Q r TH.Exp
 tupE a = fmap TH.TupE (traverse sequenceA a)
 
@@ -306,3 +314,15 @@ strT = pure . TH.LitT . TH.StrTyLit
 
 promotedList1T :: String -> Q r TH.Type
 promotedList1T str = cT $ "'[" <> str <> "]"
+
+lambdaCaseE :: [Q r TH.Match] -> Q r TH.Exp
+lambdaCaseE = fmap TH.LamCaseE . sequenceA
+
+lamEE :: [Q r TH.Pat] -> Q r TH.Exp -> Q r TH.Exp
+lamEE patsQ = liftA2 TH.LamE (sequenceA patsQ)
+
+matchWOD :: Q r TH.Pat -> Q r TH.Body -> Q r TH.Match
+matchWOD patQ bodyQ = do
+  pat <- patQ
+  body <- bodyQ
+  pure $ TH.Match pat body []

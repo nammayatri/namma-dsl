@@ -49,5 +49,13 @@ $( makeAccKeysTH
     typeConstraint
     defaultQueryTypeConstraint
     fullObjectAsParam
+    cachedQueries
+    withCrossAppRedis
+    keyMaker
+    keyParams
+    dbQuery
+    dbQueryParams
+    returnType
+    paramsOrder
     |]
  )

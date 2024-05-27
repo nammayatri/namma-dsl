@@ -20,10 +20,11 @@ import NammaDSL.Utils
 import System.Directory
 import System.FilePath
 import System.Process (readProcess)
+--import qualified Debug.Trace as DT
 import Prelude
 
 version :: String
-version = "1.0.44"
+version = "1.0.45"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -34,9 +35,11 @@ runStorageGenerator configPath yamlPath = do
           { domainTypeModulePrefix = modulePrefix domainType,
             beamTypeModulePrefix = modulePrefix beamTable,
             queryModulePrefix = modulePrefix beamQueries,
+            cachedQueryModulePrefix = modulePrefix NammaDSL.Config.cachedQueries,
             sqlMapper = config ^. storageConfig . sqlTypeMapper,
             extraDefaultFields = _extraDefaultFields (config ^. storageConfig),
-            storageDefaultTypeImportMapper = config ^. defaultTypeImportMapper
+            storageDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
+            defaultCachedQueryKeyPfx = config ^. storageConfig . defaultCachedQueryKeyPrefix
           }
   tableDefs <- storageParser storageRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
@@ -45,6 +48,7 @@ runStorageGenerator configPath yamlPath = do
     [ (DOMAIN_TYPE, mkDomainType),
       (BEAM_TABLE, mkBeamTable),
       (BEAM_QUERIES, mkBeamQueries),
+      (CACHED_QUERIES, mkCachedQueries),
       (SQL, mkSQLFile)
     ]
 
@@ -125,6 +129,23 @@ mkBeamQueries appConfigs storageRead tableDefs = do
             writeToFile (defaultFilePath </> "OrphanInstances") (tableNameHaskell t ++ ".hs") (show instanceCode)
             when (isJust $ transformerCode defaultCode) $ writeToFileIfNotExists (extraFilePath </> "Transformers") (tableNameHaskell t ++ ".hs") (show $ fromJust (transformerCode defaultCode))
             writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show extraQueryFile)
+    )
+    tableDefs
+
+mkCachedQueries :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
+mkCachedQueries appConfigs storageRead tableDefs = do
+  let defaultFilePath = appConfigs ^. output . NammaDSL.Config.cachedQueries
+      extraFilePath = appConfigs ^. output . extraCachedQueries
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs CACHED_QUERIES
+  mapM_
+    ( \t -> do
+        let cachedQ = generateCachedQueries defaultImportsFromConfig storageRead t
+        case cachedQ of
+          DefaultCachedQueryFile (DefaultCachedQueryCode {..}) -> do
+            writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show creadOnlyCode)
+          WithExtraCachedQueryFile (ExtraCachedQueryCode {..}) -> do
+            writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show (creadOnlyCode cdefaultCode))
+            writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show cextraQueryFile)
     )
     tableDefs
 

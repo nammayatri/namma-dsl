@@ -16,6 +16,7 @@ data GenerationType
   | API_TYPES
   | DOMAIN_HANDLER
   | BEAM_QUERIES
+  | CACHED_QUERIES
   | BEAM_TABLE
   | DOMAIN_TYPE
   | SQL
@@ -34,6 +35,8 @@ data OutputPath = OutputPath
   { _apiRelatedTypes :: FilePath,
     _beamQueries :: FilePath,
     _extraBeamQueries :: FilePath,
+    _cachedQueries :: FilePath,
+    _extraCachedQueries :: FilePath,
     _beamTable :: FilePath,
     _domainHandler :: FilePath,
     _domainType :: FilePath,
@@ -47,7 +50,8 @@ $(makeLenses ''OutputPath)
 
 data StorageConfig = StorageConfig
   { _sqlTypeMapper :: [(String, String)],
-    _extraDefaultFields :: [(String, String)]
+    _extraDefaultFields :: [(String, String)],
+    _defaultCachedQueryKeyPrefix :: String
   }
   deriving (Generic, Show, FromDhall)
 
