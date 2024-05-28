@@ -58,5 +58,6 @@ $( makeAccKeysTH
     cacheDataType
     returnType
     paramsOrder
+    queryType
     |]
  )

@@ -77,7 +77,8 @@ data CachedQueryDef = CachedQueryDef
     keyParams :: [Param],
     dbQuery :: String,
     dbQueryParams :: [Param],
-    paramsOrder :: Maybe [String]
+    paramsOrder :: Maybe [String],
+    cQueryType :: CQueryType
   }
   deriving (Show, Generic)
 
@@ -87,6 +88,8 @@ data Param = Constant String ParamConstantType | Variable String String deriving
 data ParamConstantType = PString | PInt | PBool | PDouble | PImportedData deriving (Show, Generic, Eq)
 
 data CQReturnType = CArray | COne deriving (Show, Eq)
+
+data CQueryType = FindAndCache | FindOnly | CacheOnly | DeleteCache deriving (Show, Eq)
 
 getParamName :: Param -> String
 getParamName (Constant _ _) = error "This is a constant, cant get name"
