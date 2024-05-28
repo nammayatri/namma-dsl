@@ -283,11 +283,27 @@ parseCachedQueries = do
             dbQuery = fromMaybe (fst cquery) (cqueryObj ^? ix acc_dbQuery . _String)
             dbQueryParams = fromMaybe [] (cqueryObj ^? ix acc_dbQueryParams . _Array . to V.toList . to (map parseKeyParam))
             paramsOrder = cqueryObj ^? ix acc_paramsOrder . _Array . to V.toList . to (map valueToString)
+            cQueryType = fromMaybe (figureCQueryType cQueryName) $ cqueryObj ^? ix acc_queryType . _String . to parseCQueryType
          in CachedQueryDef {..}
   case rawCachedQueries of
     Just cqueries -> modify $ \s -> s {tableDef = (tableDef s) {cachedQueries = map parseCachedQuery cqueries}}
     Nothing -> pure ()
   where
+    figureCQueryType :: String -> CQueryType
+    figureCQueryType cQueryName
+      | "cache" `L.isPrefixOf` cQueryName = CacheOnly
+      | "delete" `L.isPrefixOf` cQueryName = DeleteCache
+      | "clear" `L.isPrefixOf` cQueryName = DeleteCache
+      | otherwise = FindAndCache
+
+    parseCQueryType :: String -> CQueryType
+    parseCQueryType = \case
+      "FindAndCache" -> FindAndCache
+      "FindOnly" -> FindOnly
+      "CacheOnly" -> CacheOnly
+      "DeleteCache" -> DeleteCache
+      _ -> error "Invalid CQueryType"
+
     parseConstantParam :: String -> Param
     parseConstantParam prm =
       case L.splitOn "|" prm of

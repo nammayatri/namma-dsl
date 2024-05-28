@@ -150,7 +150,47 @@ mkCodeBody storageRead = do
    tableDef <- ask
    tellM . fromMaybe mempty $ interpreter tableDef $ do
     forM_ (cachedQueries tableDef) $
-      \cachedQuery -> generateCachedQuery storageRead tableDef cachedQuery
+      \cachedQuery -> (generatorSelector cachedQuery.cQueryType) storageRead tableDef cachedQuery
+
+
+generatorSelector :: CQueryType -> (StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit)
+generatorSelector = \case
+  DeleteCache -> generateDeleteCachedQuery
+  _ -> generateCachedQuery
+
+
+generateDeleteCachedQuery :: StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit
+generateDeleteCachedQuery storageRead tableDef cachedQuery = do
+    let _funcSign = maybe ([_CacheFlow]) (pure . vT) (cachedQuery.ctypeConstraint)
+        _functionParamFields = filter (\x -> case x of
+          Constant _ _ -> False
+          Variable _ _ -> True) (keyParams cachedQuery)
+    TH.decsW $ do
+      TH.sigDW (TH.mkName cachedQuery.cQueryName) $ do
+        TH.forallT [] _funcSign $ do
+          let returnType =  vT "m" ~~ _UnitType
+          let typeParams = cT . getVarParamType <$> _functionParamFields
+          TH.appendInfixT "->" $ NE.fromList (typeParams <> [returnType])
+      TH.funDW (TH.mkName cachedQuery.cQueryName) $ do
+        let patParams = vP . getParamName <$> _functionParamFields
+        TH.clauseW patParams $
+          TH.normalB $
+            TH.doEW deleteCacheStmts
+    where
+      hedisDeleteExpr :: Q TH.Exp
+      hedisDeleteExpr = parenE (vE "Hedis.del" ~$ keyExpr)
+
+      keyExpr :: Q TH.Exp
+      keyExpr = makeKeyExpr storageRead tableDef cachedQuery
+
+      hedisCrossAppRedis :: Q TH.Exp
+      hedisCrossAppRedis = if cachedQuery.withCrossAppRedis then
+        vE "Hedis.withCrossAppRedis" ~ hedisDeleteExpr else hedisDeleteExpr
+
+      deleteCacheStmts :: Writer TH.Stmt
+      deleteCacheStmts = noBindSW hedisCrossAppRedis
+
+
 
 generateCachedQuery :: StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit
 generateCachedQuery storageRead tableDef cachedQuery = do
@@ -172,6 +212,9 @@ generateCachedQuery storageRead tableDef cachedQuery = do
         TH.normalB $
           TH.doEW cachedQueryStmts
   where
+  keyExpr :: Q TH.Exp
+  keyExpr = makeKeyExpr storageRead tableDef cachedQuery
+
   sortParamsAccordingToOrder :: [Param] -> [Param]
   sortParamsAccordingToOrder params =
     if isNothing cachedQuery.paramsOrder then params
@@ -209,21 +252,10 @@ generateCachedQuery storageRead tableDef cachedQuery = do
     )
   hedisSetExpr :: Q TH.Exp
   hedisSetExpr = do
-    let setExp = vE "Hedis.setExp" ~ (parenE makeKeyExpr) ~ vE "dataToBeCached" ~ vE "expTime"
+    let setExp = vE "Hedis.setExp" ~ (parenE $ keyExpr) ~ vE "dataToBeCached" ~ vE "expTime"
     if cachedQuery.withCrossAppRedis then
       vE "Hedis.withCrossAppRedis" ~$ setExp
     else setExp
-
-  directPassParamToExpr :: Param -> Q TH.Exp
-  directPassParamToExpr = \case
-    Constant vl tp
-      | tp == PString -> strE vl
-      | tp == PInt -> vE vl
-      | tp == PBool -> vE vl
-      | tp == PDouble -> vE vl
-      | tp == PImportedData -> vE vl
-      | otherwise -> vE vl
-    Variable vl _ -> vE vl
 
   hedisCrossAppRedis :: Q TH.Exp
   hedisCrossAppRedis = if cachedQuery.withCrossAppRedis then
@@ -231,7 +263,7 @@ generateCachedQuery storageRead tableDef cachedQuery = do
     else hedisGetExpr
 
   hedisGetExpr :: Q TH.Exp
-  hedisGetExpr = parenE (vE "Hedis.safeGet" ~$ makeKeyExpr)
+  hedisGetExpr = parenE (vE "Hedis.safeGet" ~$ keyExpr)
 
   nubByParamComparator :: Param -> Param -> Bool
   nubByParamComparator p1 p2
@@ -248,38 +280,48 @@ generateCachedQuery storageRead tableDef cachedQuery = do
     else
       cT "Kernel.Prelude.Maybe" ~~ dType
 
-  keyParamHeader :: Param -> Q TH.Exp
-  keyParamHeader = \case
-    Constant _ _ -> strE ":Constant-"
-    Variable vl _ -> strE (":" ++ capitalize vl ++ "-")
+keyParamMaker :: Param -> [Q TH.Exp]
+keyParamMaker prm = [keyParamHeader prm, keyParamToTextExpr prm]
 
-  keyParamToTextExpr :: Param -> Q TH.Exp
-  keyParamToTextExpr = \case
-    Constant vl tp
-      | tp == PString -> strE vl
-      | tp == PInt -> _Show ~ (vE vl)
-      | tp == PBool -> _Show ~ (vE vl)
-      | tp == PDouble -> _Show ~ (vE vl)
-      | tp == PImportedData -> _Show ~ (vE vl)
-      | otherwise -> vE vl
-    Variable vl tp
-      | "Kernel.Types.Id.Id " `L.isPrefixOf` tp -> _getId ~ vE vl
-      | "Kernel.Types.Id.Id " `L.isInfixOf` tp -> _Show ~ (_getId ~<$> vE vl)
-      | "Kernel.Types.Id.ShortId " `L.isPrefixOf` tp -> _getShortId ~ vE vl
-      | "Kernel.Types.Id.ShortId " `L.isInfixOf` tp -> _Show ~ (_getShortId ~<$> vE vl)
-      | otherwise -> _Show ~ vE vl
-
-  keyParamMaker :: Param -> [Q TH.Exp]
-  keyParamMaker prm = [keyParamHeader prm, keyParamToTextExpr prm]
-
+makeKeyExpr :: StorageRead -> TableDef -> CachedQueryDef -> Q TH.Exp
+makeKeyExpr storageRead tableDef cachedQuery' = maybe
+  (appendInfixE (vE "<>") $ NE.fromList (defaultCachedQueryKeyPrefix : concatMap keyParamMaker (keyParams cachedQuery')))
+  (\km -> appendInfixE (vE " ") $ NE.fromList $ [vE km] ++ map directPassParamToExpr (keyParams cachedQuery')) cachedQuery'.keyMaker
+  where
   defaultCachedQueryKeyPrefix :: Q TH.Exp
   defaultCachedQueryKeyPrefix = strE (storageRead.defaultCachedQueryKeyPfx ++ "CachedQueries:" ++ tableDef.tableNameHaskell ++ ":")
 
-  makeKeyExpr :: Q TH.Exp
-  makeKeyExpr = maybe
-    (appendInfixE (vE "<>") $ NE.fromList (defaultCachedQueryKeyPrefix : concatMap keyParamMaker (keyParams cachedQuery)))
-    (\km -> appendInfixE (vE " ") $ NE.fromList $ [vE km] ++ map directPassParamToExpr (keyParams cachedQuery)) cachedQuery.keyMaker
+keyParamHeader :: Param -> Q TH.Exp
+keyParamHeader = \case
+    Constant _ _ -> strE ":Constant-"
+    Variable vl _ -> strE (":" ++ capitalize vl ++ "-")
 
+keyParamToTextExpr :: Param -> Q TH.Exp
+keyParamToTextExpr = \case
+  Constant vl tp
+    | tp == PString -> strE vl
+    | tp == PInt -> _Show ~ (vE vl)
+    | tp == PBool -> _Show ~ (vE vl)
+    | tp == PDouble -> _Show ~ (vE vl)
+    | tp == PImportedData -> _Show ~ (vE vl)
+    | otherwise -> vE vl
+  Variable vl tp
+    | "Kernel.Types.Id.Id " `L.isPrefixOf` tp -> _getId ~ vE vl
+    | "Kernel.Types.Id.Id " `L.isInfixOf` tp -> _Show ~ (_getId ~<$> vE vl)
+    | "Kernel.Types.Id.ShortId " `L.isPrefixOf` tp -> _getShortId ~ vE vl
+    | "Kernel.Types.Id.ShortId " `L.isInfixOf` tp -> _Show ~ (_getShortId ~<$> vE vl)
+    | otherwise -> _Show ~ vE vl
+
+directPassParamToExpr :: Param -> Q TH.Exp
+directPassParamToExpr = \case
+    Constant vl tp
+      | tp == PString -> strE vl
+      | tp == PInt -> vE vl
+      | tp == PBool -> vE vl
+      | tp == PDouble -> vE vl
+      | tp == PImportedData -> vE vl
+      | otherwise -> vE vl
+    Variable vl _ -> vE vl
 
 _EsqDBFlow :: Q TH.Type
 _EsqDBFlow = cT "EsqDBFlow" ~~ vT "m" ~~ vT "r"
