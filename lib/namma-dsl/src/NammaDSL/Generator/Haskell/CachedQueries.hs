@@ -49,41 +49,46 @@ data ExtraCachedQueryCode = ExtraCachedQueryCode
   deriving (Show)
 
 
-generateCachedQueries :: DefaultImports -> StorageRead -> TableDef -> CachedQueryCode
+generateCachedQueries :: DefaultImports -> StorageRead -> TableDef -> Maybe CachedQueryCode
 generateCachedQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   if EXTRA_CACHED_QUERY_FILE `elem` extraOperations tableDef
     then
-      WithExtraCachedQueryFile $
-        ExtraCachedQueryCode
-          { cdefaultCode =
-              DefaultCachedQueryCode
-                { creadOnlyCode = do
-                    generateCode $
-                      commonGeneratorInput
-                        & moduleNm .~ readOnlyCodeModuleName ++ " (module " ++ readOnlyCodeModuleName ++ ", module ReExport)"
-                        & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
-                        & simpleImports %~ (++ ([readOnlyCodeModuleName ++ "Extra as ReExport"]))
-                        & ghcOptions %~ (++ ["-Wno-dodgy-exports"])
-                        & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
-                },
-            cextraQueryFile =
-              generateCode $
-                commonGeneratorInput
-                  & moduleNm .~ readOnlyCodeModuleName ++ "Extra"
-                  & codeBody .~ generateCodeBody extraFileCodeBody tableDef
-                  & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
-          }
-    else
-      DefaultCachedQueryFile $
-          DefaultCachedQueryCode
-            { creadOnlyCode = do
+      Just $
+        WithExtraCachedQueryFile $
+          ExtraCachedQueryCode
+            { cdefaultCode =
+                DefaultCachedQueryCode
+                  { creadOnlyCode = do
+                      generateCode $
+                        commonGeneratorInput
+                          & moduleNm .~ readOnlyCodeModuleName ++ " (module " ++ readOnlyCodeModuleName ++ ", module ReExport)"
+                          & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
+                          & simpleImports %~ (++ ([readOnlyCodeModuleName ++ "Extra as ReExport"]))
+                          & ghcOptions %~ (++ ["-Wno-dodgy-exports"])
+                          & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
+                  },
+              cextraQueryFile =
                 generateCode $
                   commonGeneratorInput
-                    & moduleNm .~ readOnlyCodeModuleName
-                    & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
-                    & ghcOptions %~ (++ ["-Wno-dodgy-exports"])
+                    & moduleNm .~ readOnlyCodeModuleName ++ "Extra"
+                    & codeBody .~ generateCodeBody extraFileCodeBody tableDef
                     & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
             }
+    else
+      let codeBody' = generateCodeBody (mkCodeBody storageRead) tableDef
+       in
+        if codeBody' == mempty then Nothing
+        else
+          Just $ DefaultCachedQueryFile $
+            DefaultCachedQueryCode
+              { creadOnlyCode = do
+                  generateCode $
+                    commonGeneratorInput
+                      & moduleNm .~ readOnlyCodeModuleName
+                      & codeBody .~ generateCodeBody (mkCodeBody storageRead) tableDef
+                      & ghcOptions %~ (++ ["-Wno-dodgy-exports"])
+                      & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
+              }
   where
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix ++ "."
     domainTypeModulePrefix = storageRead.domainTypeModulePrefix ++ "."
@@ -187,12 +192,12 @@ generateCachedQuery storageRead tableDef cachedQuery = do
      matchWOD (vP "Nothing") (normalB (hedisCacheMissBody ~/=<< findQueryExpr))
    ]
   hedisCacheHitBody :: Q TH.Exp
-  hedisCacheHitBody = case cachedQuery.returnType of
+  hedisCacheHitBody = case cachedQuery.cacheDataType of
     COne -> vE "pure" ~ (vE "Just" ~ vE "a")
     CArray -> vE "pure" ~ vE "a"
 
   hedisCacheMissBody :: Q TH.Exp
-  hedisCacheMissBody = case cachedQuery.returnType of
+  hedisCacheMissBody = case cachedQuery.cacheDataType of
     CArray -> hedisQueryAndCacheBody
     COne -> vE "flip whenJust" ~ hedisQueryAndCacheBody
 
@@ -237,7 +242,7 @@ generateCachedQuery storageRead tableDef cachedQuery = do
   generateCachedQueryReturnType = do
     let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
         dType = cT $ domainTypeModulePrefix ++ tableDef.tableNameHaskell ++ "." ++ tableDef.tableNameHaskell
-    if cachedQuery.returnType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName then
+    if cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName then
         listT ~~ dType
     else
       cT "Kernel.Prelude.Maybe" ~~ dType
