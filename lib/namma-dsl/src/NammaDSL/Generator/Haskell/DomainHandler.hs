@@ -1,22 +1,22 @@
 module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
 
 import Control.Lens ((^.))
+import Control.Monad (forM_)
 import Control.Monad.Reader (ask)
 import Data.List (isInfixOf, nub)
+import qualified Data.List.NonEmpty as NE
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common( apiAuthTypeMapperDomainHandler, checkForPackageOverrides )
+import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperDomainHandler, checkForPackageOverrides)
 import NammaDSL.Generator.Haskell.Servant (handlerFunctionText, handlerSignature)
 import NammaDSL.GeneratorCore
-import NammaDSL.Utils (removeUnusedQualifiedImports)
 import NammaDSL.Lib hiding (Q, Writer)
-import qualified NammaDSL.Lib.Types as TH
-import Prelude
-import Control.Monad (forM_)
 import qualified NammaDSL.Lib.TH as TH
-import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe)
+import qualified NammaDSL.Lib.Types as TH
+import NammaDSL.Utils (removeUnusedQualifiedImports)
+import Prelude
 
 type Writer w = TH.Writer Apis w
 
@@ -65,8 +65,9 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _) apiRead input =
 mkCodeBody :: ApisM ()
 mkCodeBody = do
   input <- ask
-  tellM . fromMaybe mempty $ interpreter input $ do
-    generateHandlerFunctions
+  tellM . fromMaybe mempty $
+    interpreter input $ do
+      generateHandlerFunctions
 
 generateHandlerFunctions :: Writer CodeUnit
 generateHandlerFunctions = do
@@ -83,4 +84,4 @@ generateHandlerFunctions = do
     TH.funDW (mkNameT functionName) $ do
       TH.clauseW [] $
         TH.normalB $
-          vE "error" ~ strE "Logic yet to be decided"
+          vE "error" ~* strE "Logic yet to be decided"
