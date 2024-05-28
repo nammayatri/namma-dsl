@@ -289,7 +289,7 @@ makeKeyExpr storageRead tableDef cachedQuery' = maybe
   (\km -> appendInfixE (vE " ") $ NE.fromList $ [vE km] ++ map directPassParamToExpr (keyParams cachedQuery')) cachedQuery'.keyMaker
   where
   defaultCachedQueryKeyPrefix :: Q TH.Exp
-  defaultCachedQueryKeyPrefix = strE (storageRead.defaultCachedQueryKeyPfx ++ "CachedQueries:" ++ tableDef.tableNameHaskell ++ ":")
+  defaultCachedQueryKeyPrefix = strE (storageRead.defaultCachedQueryKeyPfx ++ "CachedQueries:" ++ tableDef.tableNameHaskell ++ concat [":" | not (null $ keyParams cachedQuery')])
 
 keyParamHeader :: Param -> Q TH.Exp
 keyParamHeader = \case
