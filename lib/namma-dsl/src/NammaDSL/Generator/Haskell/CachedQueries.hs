@@ -108,6 +108,7 @@ generateCachedQueries (DefaultImports qualifiedImp simpleImp _) storageRead tabl
       ]
        <> concatMap getAllCachedQueryRelatedImports (cachedQueries tableDef)
        <> imports tableDef
+       <> qualifiedImp
 
     getAllCachedQueryRelatedImports :: CachedQueryDef -> [String]
     getAllCachedQueryRelatedImports cachedQuery =
