@@ -236,14 +236,14 @@ generateCachedQuery storageRead tableDef cachedQuery = do
      matchWOD (vP "Nothing") (normalB (hedisCacheMissBody ~/=<< findQueryExpr))
    ]
   hedisCacheHitBody :: Q TH.Exp
-  hedisCacheHitBody = case cachedQuery.cacheDataType of
-    COne -> vE "pure" ~ (vE "Just" ~ vE "a")
-    CArray -> vE "pure" ~ vE "a"
+  hedisCacheHitBody
+    | cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName = vE "pure" ~ vE "a"
+    | otherwise = vE "pure" ~ (vE "Just" ~ vE "a")
 
   hedisCacheMissBody :: Q TH.Exp
-  hedisCacheMissBody = case cachedQuery.cacheDataType of
-    CArray -> hedisQueryAndCacheBody
-    COne -> vE "flip whenJust" ~ hedisQueryAndCacheBody
+  hedisCacheMissBody
+    | cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName = hedisQueryAndCacheBody
+    | otherwise = vE "flip whenJust" ~ hedisQueryAndCacheBody
 
   hedisQueryAndCacheBody :: Q TH.Exp
   hedisQueryAndCacheBody = TH.lamEE [vP "dataToBeCached"] (TH.doEW $ do
