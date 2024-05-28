@@ -4,6 +4,7 @@ module NammaDSL.App where
 
 import Control.Lens ((^.))
 import Control.Monad (unless, when)
+import Control.Monad.Extra (whenJust)
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.Text as T
@@ -24,7 +25,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.45"
+version = "1.0.46"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -139,13 +140,14 @@ mkCachedQueries appConfigs storageRead tableDefs = do
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs CACHED_QUERIES
   mapM_
     ( \t -> do
-        let cachedQ = generateCachedQueries defaultImportsFromConfig storageRead t
-        case cachedQ of
-          DefaultCachedQueryFile (DefaultCachedQueryCode {..}) -> do
-            writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show creadOnlyCode)
-          WithExtraCachedQueryFile (ExtraCachedQueryCode {..}) -> do
-            writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show (creadOnlyCode cdefaultCode))
-            writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show cextraQueryFile)
+        let cachedQ' = generateCachedQueries defaultImportsFromConfig storageRead t
+        whenJust cachedQ' $ \cachedQ ->
+          case cachedQ of
+            DefaultCachedQueryFile (DefaultCachedQueryCode {..}) -> do
+              writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show creadOnlyCode)
+            WithExtraCachedQueryFile (ExtraCachedQueryCode {..}) -> do
+              writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show (creadOnlyCode cdefaultCode))
+              writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show cextraQueryFile)
     )
     tableDefs
 

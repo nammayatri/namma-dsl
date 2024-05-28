@@ -55,6 +55,7 @@ $( makeAccKeysTH
     keyParams
     dbQuery
     dbQueryParams
+    cacheDataType
     returnType
     paramsOrder
     |]

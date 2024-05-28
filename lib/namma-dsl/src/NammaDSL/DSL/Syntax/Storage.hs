@@ -72,7 +72,7 @@ data CachedQueryDef = CachedQueryDef
   { cQueryName :: String,
     withCrossAppRedis :: Bool,
     ctypeConstraint :: Maybe String,
-    returnType :: CQReturnType,
+    cacheDataType :: CQReturnType,
     keyMaker :: Maybe String, -- will be used in future if required
     keyParams :: [Param],
     dbQuery :: String,
