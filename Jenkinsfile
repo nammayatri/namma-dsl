@@ -12,7 +12,7 @@ pipeline {
                 axes {
                     axis {
                         name 'SYSTEM'
-                        values 'x86_64-linux', 'aarch64-darwin', 'x86_64-darwin'
+                        values 'x86_64-linux'
                     }
                 }
                 stages {
@@ -26,16 +26,16 @@ pipeline {
                             nixCI system: env.SYSTEM
                         }
                     }
-                    stage ('Cachix push') {
-                        when {
-                            anyOf {
-                                branch 'main';
-                            }
-                        }
-                        steps {
-                            cachixPush "nammayatri"
-                        }
-                    }
+                    // stage ('Cachix push') {
+                    //     when {
+                    //         anyOf {
+                    //             branch 'main';
+                    //         }
+                    //     }
+                    //     steps {
+                    //         cachixPush "nammayatri"
+                    //     }
+                    // }
                 }
             }
         }
