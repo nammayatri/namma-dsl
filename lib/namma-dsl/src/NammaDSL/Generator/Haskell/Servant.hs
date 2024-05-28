@@ -1,23 +1,23 @@
 module NammaDSL.Generator.Haskell.Servant (generateServantAPI, handlerSignature, handlerFunctionText) where
 
 import Control.Lens ((^.))
+import Control.Monad (forM_)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import Data.List.Extra (snoc)
-import Data.Maybe (maybeToList, fromMaybe)
+import qualified Data.List.NonEmpty as NE
+import Data.Maybe (fromMaybe, maybeToList)
 import Data.Text (Text)
 import qualified Data.Text as T
 import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperServant, checkForPackageOverrides)
 import NammaDSL.GeneratorCore
-import NammaDSL.Utils
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
+import NammaDSL.Utils
 import Prelude
-import qualified Data.List.NonEmpty as NE
-import Control.Monad (forM_)
 
 type Writer w = TH.Writer Apis w
 
@@ -100,8 +100,9 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
   input <- ask
-  tellM . fromMaybe mempty $ interpreter input $ do
-    generateAPIHandler apiRead
+  tellM . fromMaybe mempty $
+    interpreter input $ do
+      generateAPIHandler apiRead
 
 generateAPIHandler :: ApiRead -> Writer CodeUnit
 generateAPIHandler apiRead = do
@@ -142,10 +143,10 @@ generateAPIHandler apiRead = do
     generateParamsExp _ _ 0 = []
     generateParamsExp isAuth mx n =
       ( if mx == n && isAuth
-          then vE "Control.Lens.over" ~ vE "Control.Lens._1" ~ cE "Kernel.Prelude.Just" ~ vE ("a" <> show n)
+          then vE "Control.Lens.over" ~* vE "Control.Lens._1" ~* cE "Kernel.Prelude.Just" ~* vE ("a" <> show n)
           else vE ("a" <> show n)
-      )
-        : generateParamsExp isAuth mx (n - 1)
+      ) :
+      generateParamsExp isAuth mx (n - 1)
 
     handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
     handlerFunctionDef moduleName' apiT = do
@@ -162,8 +163,9 @@ generateAPIHandler apiRead = do
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (isDashboardAuth apiT) $
-                TH.appendE $ vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                  NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
+                TH.appendE $
+                  vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                    NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
 
 generateWithFlowHandlerAPI :: Bool -> (Q TH.Exp -> Q TH.Exp)
 generateWithFlowHandlerAPI = \case
@@ -172,7 +174,6 @@ generateWithFlowHandlerAPI = \case
 
 apiTTToText :: ApiTT -> Q TH.Type
 apiTTToText apiTT = do
-
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiReqText = apiReqToText <$> _apiReqType apiTT
@@ -198,9 +199,10 @@ apiTTToText apiTT = do
     urlPartToText :: UrlParts -> Q TH.Type
     urlPartToText (UnitPath path) = strT (T.unpack path)
     urlPartToText (Capture path ty) = cT "Capture" ~~ strT (T.unpack path) ~~ TH.appendT (NE.fromList $ cT <$> words (T.unpack ty))
-    urlPartToText (QueryParam path ty isMandatory) = if isMandatory
-      then cT "MandatoryQueryParam"  ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
-      else cT "QueryParam"  ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
+    urlPartToText (QueryParam path ty isMandatory) =
+      if isMandatory
+        then cT "MandatoryQueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
+        else cT "QueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
 
     apiReqToText :: ApiReq -> Q TH.Type
     apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)

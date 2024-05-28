@@ -4,21 +4,22 @@ module NammaDSL.Generator.Haskell.DomainType where
 
 import Control.Monad.Reader (ask)
 import Control.Monad.Writer hiding (Writer)
+--import qualified Data.Text as T
+
+import Data.Bool (bool)
+import Data.Data (Proxy (..))
 import Data.Foldable
 import Data.Functor
 import qualified Data.List as L
 import qualified Data.List.Extra as L
-import NammaDSL.Config (DefaultImports (..))
-import Data.Data (Proxy (..))
+import Data.List.NonEmpty (fromList)
 import Data.Maybe
---import qualified Data.Text as T
+import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
-import Data.List.NonEmpty (fromList)
-import Data.Bool (bool)
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
-import NammaDSL.Lib hiding (Writer, Q)
+import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils (isMaybeType, removeUnusedQualifiedImports)
@@ -28,12 +29,12 @@ type Writer w = TH.Writer TableDef w
 
 type Q w = TH.Q TableDef w
 
-data DomainTypeCode = DomainTypeCode {
-    domainTypeDefaultCode :: Code,
+data DomainTypeCode = DomainTypeCode
+  { domainTypeDefaultCode :: Code,
     domainTypeExtraCode :: Maybe Code
   }
 
-generateDomainType ::  DefaultImports -> StorageRead -> TableDef -> DomainTypeCode
+generateDomainType :: DefaultImports -> StorageRead -> TableDef -> DomainTypeCode
 generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
   DomainTypeCode defaultCode extraDomainCode
   where
@@ -71,8 +72,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
     extraFileGeneratorInput :: GeneratorInput
     extraFileGeneratorInput =
       GeneratorInput
-        {
-          _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
+        { _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = extraFileModuleName,
           _simpleImports = packageOverride $ allSimpleImports,
@@ -98,15 +98,16 @@ removeDefaultImports defaultImports moduleName = filter (moduleName /=) . filter
 mkCodeBody :: StorageM ()
 mkCodeBody = do
   def <- ask
-  tellM . fromMaybe mempty $ interpreter def $ do
-    genTableType
-    when (def.containsEncryptedField) $ generateEncryptionInstance
-    forM_ (types def) generateHaskellTypes
-    domaintableInstances
-    when (isUsageSafetyRequired def.derives) usageSafetyInstance
+  tellM . fromMaybe mempty $
+    interpreter def $ do
+      genTableType
+      when (def.containsEncryptedField) $ generateEncryptionInstance
+      forM_ (types def) generateHaskellTypes
+      domaintableInstances
+      when (isUsageSafetyRequired def.derives) usageSafetyInstance
 
 genTableType :: Writer CodeUnit
-genTableType  = do
+genTableType = do
   def <- ask
   decW . pure $ do
     let derives' = case derives def of
@@ -118,9 +119,10 @@ genTableType  = do
     let (typeName, typeVars) =
           if def.containsEncryptedField
             then (TH.mkName $ tableNameHaskell def <> "E", [TH.PlainTV (TH.mkName "e") ()])
-            else if isUsageSafetyRequired'
-            then (TH.mkName $ tableNameHaskell def <> "D", [TH.KindedTV (TH.mkName "s") () (TH.ConT (TH.mkName "UsageSafety"))])
-            else (TH.mkName $ tableNameHaskell def, [])
+            else
+              if isUsageSafetyRequired'
+                then (TH.mkName $ tableNameHaskell def <> "D", [TH.KindedTV (TH.mkName "s") () (TH.ConT (TH.mkName "UsageSafety"))])
+                else (TH.mkName $ tableNameHaskell def, [])
     TH.DataD [] typeName typeVars Nothing [TH.RecC (TH.mkName $ tableNameHaskell def) (fields def <&> \field -> (TH.mkName field.fieldName, defaultBang, TH.ConT $ TH.mkName field.haskellType))] [derives']
 
 derivingInstances :: Bool -> TH.DerivClause
@@ -141,7 +143,7 @@ usageSafetyInstance = do
 
 -- didn't find how we can use record wild cards for TH, so using simple records
 generateEncryptionInstance :: Writer CodeUnit
-generateEncryptionInstance  = do
+generateEncryptionInstance = do
   tableDef <- ask
 
   let _Table = tableNameHaskell tableDef
@@ -153,7 +155,7 @@ generateEncryptionInstance  = do
       saltE = TH.vE "salt"
 
       mkTHVars f = do
-        let fieldE= TH.vE f.fieldName
+        let fieldE = TH.vE f.fieldName
             fieldUpd = f.fieldName <> "_"
             fieldUpdE = TH.vE fieldUpd
             fieldUpdP = TH.vP fieldUpd
@@ -166,14 +168,15 @@ generateEncryptionInstance  = do
             let (fieldE, _, fieldUpdE) = mkTHVars f
             if f.isEncrypted
               then fieldExpW (TH.mkName f.fieldName) fieldUpdE
-              else fieldExpW (TH.mkName f.fieldName) (fieldE ~ entityE)
+              else fieldExpW (TH.mkName f.fieldName) (fieldE ~* entityE)
 
   TH.tySynDW (TH.mkName _Table) [] $ TH.cT _TableE ~~ TH.cT "'AsEncrypted"
   TH.tySynDW (TH.mkName _DecryptedTable) [] $ TH.cT _TableE ~~ TH.cT "'AsUnencrypted"
 
   TH.instanceDW (pure []) (cT "EncryptedItem" ~~ TH.cT _Table) $ do
-    TH.tySynInstDW $ TH.tySynEqn Nothing (TH.cT "Unencrypted" ~~ TH.cT _Table) $
-      TH.tupleT 2 ~~ cT _DecryptedTable ~~ cT "HashSalt"
+    TH.tySynInstDW $
+      TH.tySynEqn Nothing (TH.cT "Unencrypted" ~~ TH.cT _Table) $
+        TH.tupleT 2 ~~ cT _DecryptedTable ~~ cT "HashSalt"
 
     TH.funDW "encryptItem" $ do
       TH.clauseW [TH.tupP [entityP, saltP]] $
@@ -183,9 +186,9 @@ generateEncryptionInstance  = do
               let (fieldE, fieldUpdP, _) = mkTHVars f
               when f.isEncrypted $
                 if isMaybeType f.haskellType
-                  then fieldUpdP <-- (vE "encryptItem" ~$ TH.tupE [Nothing, Just saltE] ~<$> fieldE ~ entityE)
-                  else fieldUpdP <-- (vE "encryptItem" ~ TH.tupE [Just $ fieldE ~ entityE, Just saltE])
-            TH.noBindSW $ vE "pure" ~ updEntityExp
+                  then fieldUpdP <-- (vE "encryptItem" ~$ TH.tupE [Nothing, Just saltE] ~<$> fieldE ~* entityE)
+                  else fieldUpdP <-- (vE "encryptItem" ~* TH.tupE [Just $ fieldE ~* entityE, Just saltE])
+            TH.noBindSW $ vE "pure" ~* updEntityExp
 
     TH.funDW "decryptItem" $ do
       TH.clauseW [entityP] $ do
@@ -195,10 +198,11 @@ generateEncryptionInstance  = do
               let (fieldE, fieldUpdP, _) = mkTHVars f
               when f.isEncrypted $
                 if isMaybeType f.haskellType
-                  then fieldUpdP <-- (vE "fmap" ~ vE "fst" ~<$> vE "decryptItem" ~ (fieldE ~ entityE))
-                  else fieldUpdP <-- (vE "fst" ~<$> vE "decryptItem" ~ (fieldE ~ entityE))
-            TH.noBindSW $ (vE "pure" ~) $ do
-              TH.tupE [Just updEntityExp, Just $ strE ""]
+                  then fieldUpdP <-- (vE "fmap" ~* vE "fst" ~<$> vE "decryptItem" ~* (fieldE ~* entityE))
+                  else fieldUpdP <-- (vE "fst" ~<$> vE "decryptItem" ~* (fieldE ~* entityE))
+            TH.noBindSW $
+              (vE "pure" ~*) $ do
+                TH.tupE [Just updEntityExp, Just $ strE ""]
 
   TH.instanceDW (pure []) (TH.cT "EncryptedItem'" ~~ TH.cT _Table) $ do
     TH.tySynInstDW $ TH.tySynEqn Nothing (cT "UnencryptedItem" ~~ cT _Table) (TH.cT _DecryptedTable)
@@ -215,7 +219,6 @@ isHttpInstanceDerived' typeObj tpName =
 
 isHttpInstanceImportRequired :: [TypeObject] -> Bool
 isHttpInstanceImportRequired = any (\case TypeObject _ _ _ derive _ -> InstanceToDerive "HttpInstance" `elem` derive)
-
 
 isListInstanceDerived :: [TypeObject] -> TypeName -> Bool
 isListInstanceDerived typeObj tpName =
@@ -256,15 +259,15 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
                     _ -> error "Newtype enum value should have exactly one field"
                   _ -> error "Newtype enum value should have exactly one constructor"
             TH.NewtypeD [] (TH.mkName typeName.getTypeName) [] Nothing (TH.NormalC (TH.mkName newTypeCons) [(defaultBang, TH.ConT $ TH.mkName internalType)]) [derives]
-            --error "Generate haskell domain enum types: expected Data but got NewType"
+          --error "Generate haskell domain enum types: expected Data but got NewType"
           Data -> TH.DataD [] (TH.mkName typeName.getTypeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (TH.mkName enumValue) [])) [derives]
           Type -> TH.TySynD (TH.mkName typeName.getTypeName) [] (foldl1 TH.AppT $ map (TH.VarT . TH.mkName) enumValues)
       unless isOverrideDomainInstance $ do
-        TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ _thTypeName
+        TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~* _thTypeName
         when (isHttpInstanceDerived' typeObj typeName) $
-          TH.spliceW $ vE"mkHttpInstancesForEnum" ~ _thTypeName
+          TH.spliceW $ vE "mkHttpInstancesForEnum" ~* _thTypeName
         when (isJsonInstanceDerived typeObj typeName) $
-          TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ _thTypeName
+          TH.spliceW $ vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~* _thTypeName
     generateEnum _ _ _ _ = error "Invalid enum definition"
 
     addRestDerivations :: [InstanceToDerive] -> [TH.Name]
@@ -295,11 +298,9 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
       unless isOverrideDomainInstance $ do
         let spliceTypeName = pure . TH.VarE . TH.mkName $ "''" <> typeName.getTypeName
         when (isListInstanceDerived typeObj typeName) $
-          TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~ spliceTypeName
+          TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForEnumAndList" ~* spliceTypeName
         when (isJsonInstanceDerived typeObj typeName) $
-          TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~ spliceTypeName
-
-
+          TH.spliceW $ TH.vE "Tools.Beam.UtilsTH.mkBeamInstancesForJSON" ~* spliceTypeName
 
 domaintableInstances :: Writer CodeUnit
 domaintableInstances = do
@@ -315,6 +316,6 @@ domaintableInstances = do
             [ vE instanceName,
               maybe (vE thTableName) (vE . ("''" ++)) dName
             ]
-             <> maybe [] (\prm -> bool [pure $ readExpUnsafe (Proxy @[(String, String)]) prm] (vE <$> (map L.trim (filter (not . null) $ L.splitOn " " prm))) isCustomInstance) extraInstanceParam
+              <> maybe [] (\prm -> bool [pure $ readExpUnsafe (Proxy @[(String, String)]) prm] (vE <$> (map L.trim (filter (not . null) $ L.splitOn " " prm))) isCustomInstance) extraInstanceParam
     )
     (domainTableInstance def)

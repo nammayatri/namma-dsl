@@ -2,19 +2,19 @@
 
 module NammaDSL.Lib.TH (module NammaDSL.Lib.TH, module Reexport) where
 
+import Control.Applicative
 import Control.Monad.Writer hiding (Writer)
 import Data.Data (Typeable, typeRep)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy
 import Data.String
+import qualified Data.Text as T
+import Language.Haskell.Meta.Parse (parseExp)
+import Language.Haskell.TH as Reexport hiding (Code, Q, forallT, listE, listT, normalB, runQ, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixT)
 import qualified Language.Haskell.TH as TH
-import Language.Haskell.TH as Reexport hiding (Q, uInfixT, uInfixE, normalB, forallT, runQ, Code, listT, listE, tupE, tySynEqn, tupleT, tupP)
 import NammaDSL.Lib.Types
 import Text.Read (readEither)
 import Prelude
-import Control.Applicative
-import qualified Data.Text as T
-import Language.Haskell.Meta.Parse (parseExp)
 
 -- TODO to be removed
 instance IsString TH.Name where
@@ -51,8 +51,8 @@ a --> b = uInfixT a (TH.mkName "->") b
 
 infixr 1 -->
 
-(~) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
-(~) = liftA2 TH.AppE
+(~*) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
+(~*) = liftA2 TH.AppE
 
 (~~) :: Q r TH.Type -> Q r TH.Type -> Q r TH.Type
 (~~) = liftA2 TH.AppT
@@ -60,7 +60,7 @@ infixr 1 -->
 infixl 2 ~~
 
 --priority should be higher then for other operators
-infixl 9 ~
+infixl 9 ~*
 
 uInfixT :: Q r TH.Type -> TH.Name -> Q r TH.Type -> Q r TH.Type
 uInfixT a b c = TH.UInfixT <$> a <*> pure b <*> c
@@ -256,7 +256,7 @@ readExpUnsafe proxy str = case readEitherExp @a proxy str of
   Left err -> error $ "Could not read expression: " <> show str <> " of type: " <> show (typeRep proxy) <> "; error :" <> show err
 
 appendE :: NonEmpty (Q r TH.Exp) -> Q r TH.Exp
-appendE = foldl1 (~)
+appendE = foldl1 (~*)
 
 appendInfixE :: Q r TH.Exp -> NonEmpty (Q r TH.Exp) -> Q r TH.Exp
 appendInfixE operator = foldl1 (\acc e -> uInfixE acc operator e)
