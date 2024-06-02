@@ -159,7 +159,9 @@ mkCodeBody storageRead = do
 generatorSelector :: CQueryType -> (StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit)
 generatorSelector = \case
   DeleteCache -> generateDeleteCachedQuery
-  _ -> generateCachedQuery
+  FindAndCache -> generateCachedQuery
+  FindOnly -> generateCachedQuery
+  CacheOnly -> generateCachedQuery
 
 generateDeleteCachedQuery :: StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit
 generateDeleteCachedQuery storageRead tableDef cachedQuery = do
@@ -201,8 +203,13 @@ generateDeleteCachedQuery storageRead tableDef cachedQuery = do
 generateCachedQuery :: StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit
 generateCachedQuery storageRead tableDef cachedQuery = do
   let _funcSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow]) (pure . vT) (cachedQuery.ctypeConstraint)
-      domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
-      dType = cT $ domainTypeModulePrefix ++ tableDef.tableNameHaskell ++ "." ++ tableDef.tableNameHaskell
+      dType =
+        ( \tp -> case cachedQuery.cacheDataType of
+            CArray -> "[" ++ tp ++ "]"
+            COne -> tp
+        )
+          (storageRead.domainTypeModulePrefix ++ "." ++ tableDef.tableNameHaskell ++ "." ++ tableDef.tableNameHaskell)
+      cacheOnlyExtraParam = [Variable "dataToBeCached" dType | cachedQuery.cQueryType == CacheOnly]
       _functionParamFields =
         sortParamsAccordingToOrder $
           filter
@@ -210,7 +217,7 @@ generateCachedQuery storageRead tableDef cachedQuery = do
                 Constant _ _ -> False
                 Variable _ _ -> True
             )
-            (L.nubBy nubByParamComparator $ keyParams cachedQuery <> dbQueryParams cachedQuery)
+            (L.nubBy nubByParamComparator $ keyParams cachedQuery <> dbQueryParams cachedQuery <> cacheOnlyExtraParam)
   TH.decsW $ do
     TH.sigDW (TH.mkName cachedQuery.cQueryName) $ do
       TH.forallT [] _funcSign $ do
@@ -220,8 +227,7 @@ generateCachedQuery storageRead tableDef cachedQuery = do
     TH.funDW (TH.mkName cachedQuery.cQueryName) $ do
       let patParams = vP . getParamName <$> _functionParamFields
       TH.clauseW patParams $
-        TH.normalB $
-          TH.doEW cachedQueryStmts
+        TH.normalB cachedQueryStmts
   where
     keyExpr :: Q TH.Exp
     keyExpr = makeKeyExpr storageRead tableDef cachedQuery
@@ -234,8 +240,10 @@ generateCachedQuery storageRead tableDef cachedQuery = do
       where
         getIndex param = maybe maxBound id $ L.elemIndex (getParamName param) (fromMaybe [] cachedQuery.paramsOrder)
 
-    cachedQueryStmts :: Writer TH.Stmt
-    cachedQueryStmts = noBindSW (hedisCrossAppRedis ~>>= lambdaCaseE hedisMatches)
+    cachedQueryStmts :: Q TH.Exp
+    cachedQueryStmts = case cachedQuery.cQueryType of
+      CacheOnly -> hedisCacheOnlyBody
+      _ -> doEW $ noBindSW (hedisCrossAppRedis ~>>= lambdaCaseE hedisMatches)
 
     findQueryExpr :: Q TH.Exp
     findQueryExpr = do
@@ -243,10 +251,22 @@ generateCachedQuery storageRead tableDef cachedQuery = do
       appendInfixE (vE " ") $ NE.fromList $ [qualifiedQuery] ++ map directPassParamToExpr (dbQueryParams cachedQuery)
 
     hedisMatches :: [Q TH.Match]
-    hedisMatches =
-      [ matchWOD (vP "Just a") (normalB $ hedisCacheHitBody),
-        matchWOD (vP "Nothing") (normalB (hedisCacheMissBody ~/=<< findQueryExpr))
-      ]
+    hedisMatches = case cachedQuery.cQueryType of
+      FindAndCache ->
+        [ matchWOD (vP "Just a") (normalB $ hedisCacheHitBody),
+          matchWOD (vP "Nothing") (normalB (hedisCacheMissBody ~/=<< findQueryExpr))
+        ]
+      FindOnly ->
+        case cachedQuery.cacheDataType of
+          CArray ->
+            [ matchWOD (vP "Just a") (normalB $ hedisCacheHitBody),
+              matchWOD (vP "Nothing") (normalB (vE "pure" ~* vE "[]"))
+            ]
+          COne ->
+            [ matchWOD (vP "Just a") (normalB $ hedisCacheHitBody),
+              matchWOD (vP "Nothing") (normalB (vE "pure" ~* vE "Nothing"))
+            ]
+      _ -> error "This case should not happen"
     hedisCacheHitBody :: Q TH.Exp
     hedisCacheHitBody
       | cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName = vE "pure" ~* vE "a"
@@ -256,6 +276,12 @@ generateCachedQuery storageRead tableDef cachedQuery = do
     hedisCacheMissBody
       | cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName = hedisQueryAndCacheBody
       | otherwise = vE "flip whenJust" ~* hedisQueryAndCacheBody
+
+    hedisCacheOnlyBody :: Q TH.Exp
+    hedisCacheOnlyBody =
+      TH.doEW $ do
+        vP "expTime" <-- vE "fromIntegral" ~<$> (vE "asks" ~* vE ".cacheConfig.configsExpTime")
+        noBindSW $ hedisSetExpr
 
     hedisQueryAndCacheBody :: Q TH.Exp
     hedisQueryAndCacheBody =
@@ -291,9 +317,12 @@ generateCachedQuery storageRead tableDef cachedQuery = do
     generateCachedQueryReturnType = do
       let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
           dType = cT $ domainTypeModulePrefix ++ tableDef.tableNameHaskell ++ "." ++ tableDef.tableNameHaskell
-      if cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName
-        then listT ~~ dType
-        else cT "Kernel.Prelude.Maybe" ~~ dType
+      if cachedQuery.cQueryType == CacheOnly
+        then _UnitType
+        else
+          if cachedQuery.cacheDataType == CArray || "All" `L.isInfixOf` cachedQuery.cQueryName
+            then listT ~~ dType
+            else cT "Kernel.Prelude.Maybe" ~~ dType
 
 keyParamMaker :: Param -> [Q TH.Exp]
 keyParamMaker prm = [keyParamHeader prm, keyParamToTextExpr prm]
