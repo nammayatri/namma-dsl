@@ -178,6 +178,7 @@ This tutorial provides a comprehensive guide to understanding and working with t
         scheduleTryTimes: "'{1800, 900, 300}'"
       ```
   - `queries`: All Beam queries for the table. [See More](#queries)
+  - `cachedQueries:` Cached queries for the table. [See More](#cached-queries)
   - `fromTType`: FromTType of fields, if applicable. [See More](#tottype-and-fromttype)
   - `toTType`: ToTType of fields, if applicable. [See More](#tottype-and-fromttype)
   - `excludedFields`: There are some common fields like merchantId, merchantOperatingCityId, createdAt and updatedAt which are auto added in the data type. To remove them use this.
@@ -595,6 +596,226 @@ import "dashboard-api" Domain.Types.DataType1
       ]
   ```
 ---
+#### Cached Queries
+##### Syntax
+  * **cachedQueries:**
+    * **queryName:**
+      * **withCrossAppRedis:** true|false (Optional param, default: false)
+      * **returnType/cacheDataType:** One|Array (Optional param, default: Auto detected by the query name) [See More](#cached-query-return-type)
+      * **queryType:** FindOnly|FindAndCache|CacheOnly|DeleteCache (Optional param, default: Auto detect using function name or if failed takes FindAndCache as default) [See More](#cached-query-type)
+      * **dbQuery:** The db query name that should be called to find in db (Important for FindAndCache type, not required for other types)
+      * **dbQueryParams:** **[Params]** (See param section below for more info on Params, Important for FindAndCache types) [See More](#cached-query-params)
+      * **keyParams:** **[Params]** (The params used to make keys) [See More on how keys are made](#key-maker)
+      * **keyMaker:** keyMaker function name [See More on how keys are made](#key-maker)
+      * **paramsOrder: [Param names]** , Optional, can be used to specify the function params order.
+
+##### Cached Query Type
+- There are four types of cached queries generations:
+  - **FindAndCache**: Finds in kv and if not present finds in db and caches the result in kv
+  - **FindOnly**: Only finds in kv and returns
+  - **CacheOnly**: Just cache the DataType/[DataType] with a given key
+  - **DeleteCache**: Delete the cache for a given key
+##### Cached Query Return Type
+- Find queries have the return type as either **[DataType]** or **Maybe DataType** denoted by **Array** and **One** respectively.
+
+##### Key Maker
+  - By default without **keyMaker** if params provided are
+      ```
+      DataType:
+        fields:
+          param1: Id DataType
+          param2: Int
+
+    .....
+    cachedQueries:
+        keyParams:
+          - param1
+          - param2
+          - param3: Id Something
+      ```
+    then notice param3 is an external param not in fields [See more about external params](#cached-query-params).
+    By default params with Id's and ShortId's text is extracted, but for others **show** function is used.
+    Default key making:
+    ```
+      "Param1-"
+    <> param1.getId
+    <> ":Param2-"
+    <> show param2
+    <> ":Param3-"
+    <> param3.getId
+    ```
+  - Otherwise of keyMaker is provided. Let's say
+    ```
+    keyMaker: makeKey
+    ```
+    or
+
+    ```
+    keyMaker: Some.Other.Module.makeKey
+    ```
+    then the params will be passed to makeKey function to get keys
+    ```
+    makeKey param1 param2 param3
+    ```
+    and user have to define the makeKey function in the extra Cached Query file if not qualified.
+
+##### Cached Query Params
+- Beam queries lacks extra params or constants but we have both in Cached Queries
+- Param can be 3 types:
+    - Normal param which is present in fields of defined data type
+    - Constant like String,Int,Bool,Double,Other Imported Things
+    - Variable with a type
+- While defining constant user have to give append the constant type at the end.
+  All the constant types and their respective alpha symbol:
+    1. String -> CS
+    2. Bool -> CB
+    3. Integer -> CI
+    4. Double/Float -> CD
+    5. Any Imported type -> CIM or C
+  Examples:
+  ```
+   myname|CS -> "myname"
+   123|CI -> 123
+   123|CS -> "123"
+   0.23|CD -> 0.23
+   "0.34"|CS -> "0.23"
+   true|CB -> True
+   Domain.Something.defaultValue|CIM -> Domain.Something.defaultValue (and Domain.Something is added to imports)
+  ```
+- To define an extra variable param not present in fields we have to also provide the type of the param like this:
+  ```
+  param1: Int
+  param2: Maybe Domain.Something.Thing
+  ```
+- So lets mix them together and make a keyMaker:
+  ```
+  DataType:
+        fields:
+          param1: Id DataType
+          param2: Int
+
+    .....
+    cachedQueries:
+        keyMaker: makeMyAwesomeKey
+        keyParams:
+          - param1
+          - param2
+          - param3: Id Something
+          - true|CB
+          - 0.2231|CD
+          - myName|CS
+          - Domain.Types.Something.defaultValue|CIM
+  ```
+  So, the generated keyParams will be -
+  ```
+  import qualified Domain.Types.Something
+  .....
+  .....
+  let key = makeMyAwesomeKey param1 param2 param3 true 0.2231 "myName" Domain.Types.Something.defaultValue
+  ```
+
+##### Cached Queries Generation Example:
+- DSL code:
+```yaml
+    cachedQueries:
+      deleteQuery:
+          withCrossAppRedis: true
+          keyParams:
+           - id
+           - requestId
+           - 0|CI
+      cacheQuery:
+        withCrossAppRedis: false
+        cacheDataType: One
+        queryType: CacheOnly
+        keyMaker: makeKeyForCaching
+        keyParams:
+          - id
+          - requestId
+          - Kernel.Prelude.True|CIM
+          - createdAt
+          - something: Maybe UTCTime #Any extra param
+      findAndCacheQuery:
+        withCrossAppRedis: true
+        returnType: Array
+        queryType: FindAndCache
+        keyMaker: makeKey1
+        paramsOrder:
+          - id
+          - createdAt
+          - requestId
+          - something
+        keyParams:
+          - id
+          - requestId
+          - Kernel.Prelude.True|CIM
+          - createdAt
+          - something: Maybe UTCTime
+        dbQuery: findAAAAA
+        dbQueryParams:
+          - id
+          - requestId
+          - True|CIM
+          - minFare
+      findOnlyQuery:
+        withCrossAppRedis: true
+        returnType: Array
+        queryType: FindOnly
+        keyMaker: makeKey1
+        paramsOrder:
+          - id
+          - createdAt
+          - requestId
+          - something
+        keyParams:
+          - id
+          - requestId
+          - Kernel.Prelude.True|CIM
+          - createdAt
+          - something: Maybe UTCTime
+    extraOperations:
+      - EXTRA_CACHED_QUERY_FILE
+
+```
+- Generated Code:
+```haskell
+cacheQuery ::
+  (EsqDBFlow m r, MonadFlow m, CacheFlow m r) =>
+  (Kernel.Types.Id.Id Domain.Types.Estimate.Estimate -> Kernel.Types.Id.Id Domain.Types.SearchRequest.SearchRequest -> Kernel.Prelude.UTCTime -> Kernel.Prelude.Maybe Kernel.Prelude.UTCTime -> Domain.Types.Estimate.Estimate -> m ())
+cacheQuery id requestId createdAt something dataToBeCached = do
+  expTime <- fromIntegral <$> asks (.cacheConfig.configsExpTime)
+  Hedis.setExp (makeKeyForCaching id requestId Kernel.Prelude.True createdAt something) dataToBeCached expTime
+
+deleteQuery :: CacheFlow m r => (Kernel.Types.Id.Id Domain.Types.Estimate.Estimate -> Kernel.Types.Id.Id Domain.Types.SearchRequest.SearchRequest -> m ())
+deleteQuery id requestId = do Hedis.withCrossAppRedis (Hedis.del $ "driverOffer:CachedQueries:Estimate:" <> ":Id-" <> Kernel.Types.Id.getId id <> ":RequestId-" <> Kernel.Types.Id.getId requestId <> ":Constant-" <> show (0))
+
+findAndCacheQuery ::
+  (EsqDBFlow m r, MonadFlow m, CacheFlow m r) =>
+  (Kernel.Types.Id.Id Domain.Types.Estimate.Estimate -> Kernel.Prelude.UTCTime -> Kernel.Types.Id.Id Domain.Types.SearchRequest.SearchRequest -> Kernel.Prelude.Maybe Kernel.Prelude.UTCTime -> Kernel.Types.Common.HighPrecMoney -> m ([Domain.Types.Estimate.Estimate]))
+findAndCacheQuery id createdAt requestId something minFare = do
+  Hedis.withCrossAppRedis (Hedis.safeGet $ makeKey1 id requestId Kernel.Prelude.True createdAt something)
+    >>= ( \case
+            Just a -> pure a
+            Nothing ->
+              ( \dataToBeCached -> do
+                  expTime <- fromIntegral <$> asks (.cacheConfig.configsExpTime)
+                  Hedis.withCrossAppRedis $ Hedis.setExp (makeKey1 id requestId Kernel.Prelude.True createdAt something) dataToBeCached expTime
+              )
+                /=<< Queries.findAAAAA id requestId True minFare
+        )
+
+findOnlyQuery ::
+  (EsqDBFlow m r, MonadFlow m, CacheFlow m r) =>
+  (Kernel.Types.Id.Id Domain.Types.Estimate.Estimate -> Kernel.Prelude.UTCTime -> Kernel.Types.Id.Id Domain.Types.SearchRequest.SearchRequest -> Kernel.Prelude.Maybe Kernel.Prelude.UTCTime -> m ([Domain.Types.Estimate.Estimate]))
+findOnlyQuery id createdAt requestId something = do
+  Hedis.withCrossAppRedis (Hedis.safeGet $ makeKey1 id requestId Kernel.Prelude.True createdAt something)
+    >>= ( \case
+            Just a -> pure a
+            Nothing -> pure []
+        )
+
+```
+---
 #### Complex Types
 - These are user defined type apart from the main data type
 - Beam tables are not created for this types.
@@ -646,3 +867,5 @@ import "dashboard-api" Domain.Types.DataType1
     extraOperations:
         - EXTRA_QUERY_FILE
     ```
+  - `EXTRA_DOMAIN_TYPE_FILE`: Used to create extra Domain Type file
+  - `EXTRA_CACHED_QUERY_FILE`: Creates extra Cached Query File
