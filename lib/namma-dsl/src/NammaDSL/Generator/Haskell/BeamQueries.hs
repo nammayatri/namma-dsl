@@ -644,8 +644,12 @@ generateQueryReturnType storageRead kvFunction tableNameHaskell = do
 
 getWhereClauseQueryParam :: WhereClause -> [QueryParam]
 getWhereClauseQueryParam EmptyWhere = []
-getWhereClauseQueryParam (Leaf (qp, _)) = [qp]
+getWhereClauseQueryParam (Leaf (qp, tp)) = if tp == Just In then [qp {qpType = "[" <> qp.qpType <> "]", qpExtParam = qp.qpExtParam <&> makePrmArray}] else [qp]
 getWhereClauseQueryParam (Query (_, clauses)) = concatMap getWhereClauseQueryParam clauses
+
+makePrmArray :: Param -> Param
+makePrmArray (Variable n t) = Variable n ("[" <> t <> "]")
+makePrmArray c@(Constant _ _) = c
 
 getFnParamNameAndType :: QueryParam -> [(String, String)]
 getFnParamNameAndType (QueryParam name tp Nothing _) = [(name, tp)]
