@@ -114,6 +114,7 @@ library
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
+    , regex-compat
     , regex-tdfa
     , safe
     , scientific
@@ -226,6 +227,7 @@ test-suite namma-dsl-tests
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
+    , regex-compat
     , regex-tdfa
     , safe
     , scientific

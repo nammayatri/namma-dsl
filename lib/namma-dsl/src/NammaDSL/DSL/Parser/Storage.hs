@@ -41,7 +41,7 @@ import NammaDSL.AccessorTH
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils hiding (typeDelimiter)
-import Safe (lastMay)
+import Safe (headMay, lastMay)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import qualified Text.Parsec as PS
@@ -304,27 +304,46 @@ parseCachedQueries = do
       "DeleteCache" -> DeleteCache
       _ -> error "Invalid CQueryType"
 
-    parseConstantParam :: String -> Param
-    parseConstantParam prm =
-      case L.splitOn "|" prm of
-        [constant, code] ->
-          Constant constant (parseConstantType code)
-        _ -> error "Invalid input format for constant param"
-    parseConstantType :: String -> ParamConstantType
-    parseConstantType = \case
-      "CS" -> PString
-      "CI" -> PInt
-      "CB" -> PBool
-      "CD" -> PDouble
-      "CIM" -> PImportedData
-      "C" -> PString
-      _ -> error "Invalid Constant Type"
-
     parseReturnType :: String -> CQReturnType
     parseReturnType = \case
       "Array" -> CArray
       "One" -> COne
       _ -> error "Invalid ReturnType"
+
+makeQueryParam :: [FieldDef] -> [BeamField] -> Value -> QueryParam
+makeQueryParam fds bfs val = case val of
+  st@(String _) ->
+    let (fd, extInf) = getValAndExt (valueToString st)
+     in if extInf == "B" -- Beam Case
+          then
+            let bf = fromMaybe (error "Beam Field not found") $ find (\b -> bFieldName b == fd) bfs
+             in QueryParam {qpName = fd, qpType = bFieldType bf, qpExtParam = Just (Variable (fd ++ "Beam") (bFieldType bf)), qpIsBeam = True}
+          else -- Normal Case
+
+            let ((_, fldType), _) = searchForKey fds fd
+             in QueryParam {qpName = fd, qpType = fldType, qpExtParam = Nothing, qpIsBeam = False}
+  rawC@(Object _) ->
+    let (fd, sval) = fromMaybe (error "Invalid Query Param") $ headMay (mkList rawC)
+     in if ("|C" `L.isInfixOf` sval)
+          then QueryParam {qpName = fd, qpType = mempty, qpExtParam = Just (parseConstantParam sval), qpIsBeam = True}
+          else
+            let (fdR, extInf) = getValAndExt sval
+             in if extInf == "B" -- Beam Case
+                  then
+                    let bf = fromMaybe (error "Beam Field not found") $ find (\b -> bFieldName b == fd) bfs
+                     in QueryParam {qpName = fd, qpType = bFieldType bf, qpExtParam = Just (Variable fdR (bFieldType bf)), qpIsBeam = True}
+                  else -- Normal Case
+
+                    let ((_, fldType), _) = searchForKey fds fd
+                     in QueryParam {qpName = fd, qpType = fldType, qpExtParam = Just (Variable fdR fldType), qpIsBeam = False}
+  _ -> error "Not a proper QueryParam Definition"
+  where
+    getValAndExt :: String -> (String, String)
+    getValAndExt prm =
+      case L.splitOn "|" prm of
+        [val_] -> (val_, "")
+        [val_, ext] -> (val_, ext)
+        _ -> error ("Invalid Extension Type Expression " <> show prm)
 
 parseQueries :: StorageParserM ()
 parseQueries = do
@@ -336,15 +355,16 @@ parseQueries = do
   obj <- gets (.extraParseInfo.dataObject)
   defaultImportModule <- asks (.domainTypeModulePrefix)
   defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
-  let makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
+  let bFields = concatMap beamFields fields
+      _makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
       mbQueries = obj ^? ix acc_queries . _Value . to mkListObject
       excludedQueries = fromMaybe [] $ obj ^? ix acc_excludedDefaultQueries . _Array . to V.toList . to (map valueToString)
       parseQuery query =
         let queryName = fst query
             queryDataObj = snd query
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
-            params = addDefaultUpdatedAtToQueryParams kvFunction fields $ map (first (second makeTypeQualified')) $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (searchForKey fields . valueToString)))
-            whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause makeTypeQualified' "eq" fields))
+            params = addDefaultUpdatedAtToQueryParams kvFunction fields $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (makeQueryParam fields bFields)))
+            whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause (makeQueryParam fields bFields) "eq"))
             orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields))
             takeFullObjectAsParam = fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
             typeConstraint = queryDataObj ^? ix acc_typeConstraint . _String
@@ -354,7 +374,7 @@ parseQueries = do
     Nothing -> pure ()
   modify $ \s -> s {tableDef = (tableDef s) {excludedDefaultQueries = excludedQueries}}
   where
-    addDefaultUpdatedAtToQueryParams :: String -> [FieldDef] -> [((String, String), Bool)] -> [((String, String), Bool)]
+    addDefaultUpdatedAtToQueryParams :: String -> [FieldDef] -> [QueryParam] -> [QueryParam]
     addDefaultUpdatedAtToQueryParams kvFunctionName fields params =
       if "update" `L.isPrefixOf` kvFunctionName
         then
@@ -362,9 +382,9 @@ parseQueries = do
            in maybe
                 params
                 ( \hType ->
-                    if any (\((k, _), _) -> k == "updatedAt") params
+                    if any (\(QueryParam k _ _ _) -> k == "updatedAt") params
                       then params
-                      else params <> [(("updatedAt", hType), False)]
+                      else params <> [QueryParam {qpName = "updatedAt", qpType = hType, qpExtParam = Nothing, qpIsBeam = False}]
                 )
                 searchUpdatedAtType
         else params
@@ -860,8 +880,7 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                   params = [],
                   whereClause =
                     Leaf
-                      ( fieldName,
-                        haskellType,
+                      ( QueryParam {qpName = fieldName, qpType = haskellType, qpExtParam = Nothing, qpIsBeam = False},
                         Just Eq
                       ),
                   orderBy = defaultOrderBy,
@@ -874,8 +893,7 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                   params = [],
                   whereClause =
                     Leaf
-                      ( fieldName,
-                        haskellType,
+                      ( QueryParam {qpName = fieldName, qpType = haskellType, qpExtParam = Nothing, qpIsBeam = False},
                         Just Eq
                       ),
                   orderBy = defaultOrderBy,
@@ -925,22 +943,25 @@ extractFieldOrder fields input = do
     castOrder "asc" = Asc
     castOrder _ = error "Order type can be either `desc` or `asc`"
 
-parseWhereClause :: (String -> String) -> String -> [FieldDef] -> Value -> WhereClause
-parseWhereClause mkQTypeFunc operatorStr fields (String st) = do
-  let ((key_, value), _) = searchForKey fields (T.unpack st)
-  Leaf (key_, mkQTypeFunc value, Just $ parseOperator (T.unpack (T.toLower (T.pack operatorStr))))
-parseWhereClause mkQTypeFunc _ fields (Object clauseObj) = do
+-- todo: makeTypeArrayForInOperator
+parseWhereClause :: (Value -> QueryParam) -> String -> Value -> WhereClause
+parseWhereClause mkQueryParam operatorStr val@(String _) = do
+  let op_ = parseOperator (T.unpack (T.toLower (T.pack operatorStr)))
+  Leaf ((mkQueryParam val), Just op_)
+parseWhereClause mkQueryParam lastOp val@(Object clauseObj) = do
   let clauseObj' = KM.toList clauseObj
   case clauseObj' of
     [(operatorStr, value)] -> do
+      let op_ = if parseOperator (T.unpack (T.toLower (T.pack (toString operatorStr)))) `elem` comparisonOperator then toString operatorStr else lastOp
       case value of
         Array arr_ -> do
-          let op_ = if parseOperator (T.unpack (T.toLower (T.pack (toString operatorStr)))) `elem` comparisonOperator then toString operatorStr else "Eq"
-          let clauses = map (parseWhereClause mkQTypeFunc op_ fields) (V.toList arr_)
+          let clauses = map (parseWhereClause mkQueryParam op_) (V.toList arr_)
           Query (parseOperator (toString operatorStr), clauses)
+        String _ -> do
+          Leaf ((mkQueryParam val), Just (parseOperator lastOp))
         _ -> error "Invalid where clause, operator must be followed by an array of clauses"
     _ -> error "Invalid where clause, element of where clause array must be an single key object"
-parseWhereClause _ _ _ val = error $ "Invalid where clause, must be a string or an object: " <> show val
+parseWhereClause _ _ val = error $ "Invalid where clause, must be a string or an object: " <> show val
 
 parseOperator :: String -> Operator
 parseOperator val = case val of
@@ -952,6 +973,7 @@ parseOperator val = case val of
   "lt" -> LessThan
   "gte" -> GreaterThanOrEq
   "lte" -> LessThanOrEq
+  --"not" -> Not
   _ -> error $ "Invalid operator " <> show val
 
 parseTypes :: StorageParserM ()

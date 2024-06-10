@@ -28,7 +28,7 @@ import Language.Haskell.TH hiding (match)
 import NammaDSL.Config
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
 import qualified NammaDSL.DSL.Syntax.API as APISyntax
-import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..))
+import NammaDSL.DSL.Syntax.Storage (ExtraOperations (..), FieldRelation (..), Order (..), Param (..), ParamConstantType (..))
 import qualified NammaDSL.GeneratorCore as GC
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.IO
@@ -266,3 +266,33 @@ removeQuoteWrap str =
       '\"' : remainder -> reverse remainder
       _ -> str
     _ -> str
+
+isParamVariable :: Param -> Bool
+isParamVariable = \case
+  Constant _ _ -> False
+  Variable _ _ -> True
+
+getParamName :: Param -> String
+getParamName (Constant _ _) = error "This is a constant, cant get name"
+getParamName (Variable x _) = x
+
+getVarParamType :: Param -> String
+getVarParamType (Constant _ _) = error "This is a constant, cant get type"
+getVarParamType (Variable _ x) = x
+
+parseConstantParam :: String -> Param
+parseConstantParam prm =
+  case L.splitOn "|" prm of
+    [constant, code] ->
+      Constant constant (parseConstantType code)
+    _ -> error "Invalid input format for constant param"
+
+parseConstantType :: String -> ParamConstantType
+parseConstantType = \case
+  "CS" -> PString
+  "CI" -> PInt
+  "CB" -> PBool
+  "CD" -> PDouble
+  "CIM" -> PImportedData
+  "C" -> PString
+  _ -> error "Invalid Constant Type"
