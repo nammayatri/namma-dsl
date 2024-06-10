@@ -91,6 +91,7 @@ dependencies:
   - data-default
   - pretty
   - haskell-src-meta
+  - regex-compat
 
 ghc-options:
   - -Wall

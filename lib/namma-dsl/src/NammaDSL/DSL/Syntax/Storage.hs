@@ -82,7 +82,7 @@ data CachedQueryDef = CachedQueryDef
   }
   deriving (Show, Generic)
 
-data Param = Constant String ParamConstantType | Variable String String deriving (Show, Generic) -- Variable Name Type -- Constant Value Type
+data Param = Constant String ParamConstantType | Variable String String deriving (Show, Generic, Eq) -- Variable Name Type -- Constant Value Type
 
 --might require later for embedded constants in beam queries ?
 data ParamConstantType = PString | PInt | PBool | PDouble | PImportedData deriving (Show, Generic, Eq)
@@ -90,14 +90,6 @@ data ParamConstantType = PString | PInt | PBool | PDouble | PImportedData derivi
 data CQReturnType = CArray | COne deriving (Show, Eq)
 
 data CQueryType = FindAndCache | FindOnly | CacheOnly | DeleteCache deriving (Show, Eq)
-
-getParamName :: Param -> String
-getParamName (Constant _ _) = error "This is a constant, cant get name"
-getParamName (Variable x _) = x
-
-getVarParamType :: Param -> String
-getVarParamType (Constant _ _) = error "This is a constant, cant get type"
-getVarParamType (Variable _ x) = x
 
 data Instance
   = MakeTableInstances
@@ -126,7 +118,7 @@ data TypeObject = TypeObject RecordType TypeName [(FieldName, FieldType)] [Insta
 data QueryDef = QueryDef
   { queryName :: String,
     kvFunction :: String,
-    params :: [((String, String), Bool)],
+    params :: [QueryParam],
     whereClause :: WhereClause,
     orderBy :: (String, Order),
     takeFullObjectAsInput :: Bool,
@@ -134,9 +126,17 @@ data QueryDef = QueryDef
   }
   deriving (Show)
 
-data WhereClause = EmptyWhere | Leaf (String, String, Maybe Operator) | Query (Operator, [WhereClause]) deriving (Show)
+data QueryParam = QueryParam
+  { qpName :: String,
+    qpType :: String,
+    qpExtParam :: Maybe Param,
+    qpIsBeam :: Bool
+  }
+  deriving (Show, Eq)
 
-data Operator = And | Or | In | Eq | GreaterThan | LessThan | GreaterThanOrEq | LessThanOrEq deriving (Show, Eq)
+data WhereClause = EmptyWhere | Leaf (QueryParam, Maybe Operator) | Query (Operator, [WhereClause]) deriving (Show)
+
+data Operator = And | Or | In | Eq | GreaterThan | LessThan | GreaterThanOrEq | LessThanOrEq | Not deriving (Show, Eq)
 
 data Order = Asc | Desc deriving (Show, Eq)
 

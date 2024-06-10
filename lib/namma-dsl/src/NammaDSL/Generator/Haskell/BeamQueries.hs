@@ -15,6 +15,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
 import qualified Data.Text as Text
+--import qualified Debug.Trace as DT
 import NammaDSL.Config (DefaultImports (..))
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
@@ -23,7 +24,7 @@ import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils
--- import qualified Debug.Trace as DT
+import Text.Regex
 import Prelude
 
 type Writer w = TH.Writer TableDef w
@@ -146,8 +147,24 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
         <> imports tableDef
         <> getAllFunctionImports
         <> getAllTypeConstraintImports
+        <> getAllCIMConstantImports
         <> concatMap getStorageRelationImports tableDef.fields
         <> qualifiedImp
+
+    getAllCIMConstantImports :: [String]
+    getAllCIMConstantImports =
+      tableDef.queries
+        & concatMap (.params)
+        & fmap qpExtParam
+        & catMaybes
+        & concatMap
+          ( \case
+              Constant st tp -> case tp of
+                PImportedData -> [st]
+                _ -> []
+              Variable _ _ -> []
+          )
+        & figureOutImports
 
     getAllTypeConstraintImports :: [String]
     getAllTypeConstraintImports =
@@ -377,24 +394,37 @@ intermediateTransformerCode itfs = do
     )
 
 -- Is it correct? toTType' is not monadic function
-monadicToTTypeTransformerCode :: Maybe [String] -> Writer TH.Stmt
+-- (String,Maybe String) = (Fieldname, )
+monadicToTTypeTransformerCode :: Maybe [(String, Maybe String)] -> Writer TH.Stmt
 monadicToTTypeTransformerCode specificFields = do
   tableDef <- ask
+  -- (fieldDef, Maybe String)
   let fieldsToTransform =
         if isJust specificFields
-          then filter (\f -> fieldName f `elem` fromJust specificFields) (fields tableDef)
-          else fields tableDef
-  forM_ fieldsToTransform \hfield -> do
+          then
+            concatMap
+              ( \f ->
+                  map (\(_, optName) -> (f, optName)) $ filter (\(nm, _) -> fieldName f == nm) (fromJust specificFields)
+              )
+              (fields tableDef)
+          else map (\x -> (x, Nothing)) (fields tableDef)
+  forM_ fieldsToTransform \(hfield, optName) -> do
     forM_ (beamFields hfield) \field -> do
       whenJust (bToTType field) \tf -> do
         case tfType tf of
           MonadicT -> do
             let transformerExp =
                   if tfIsEmbeddedArgs tf
-                    then vE (tfName tf)
-                    else vE (tfName tf) ~* toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor field) (fieldName hfield)
-            vP (bFieldName field <> "'") <-- transformerExp
+                    then vE $ replaceVarsForEmbeddedTFs optName (fieldName hfield) (tfName tf)
+                    else vE (tfName tf) ~* toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor field) (fromMaybe (fieldName hfield) optName)
+            vP (maybe (bFieldName field <> "'") (\opt -> opt <> "_" <> bFieldName field <> "'") optName) <-- transformerExp
           PureT -> pure ()
+  where
+    replaceVarsForEmbeddedTFs :: Maybe String -> String -> String -> String
+    replaceVarsForEmbeddedTFs optionalName mainName inpStr =
+      case optionalName of
+        Just opt -> subRegex (mkRegex ("[[:<:]]" ++ mainName ++ "[[:>:]]" :: String)) inpStr opt
+        Nothing -> inpStr
 
 toTTypeInstance :: StorageRead -> Writer CodeUnit
 toTTypeInstance storageRead = do
@@ -523,13 +553,30 @@ toTTypeExtractorTH extractor field = maybe (vE field) (\x -> x ~* vE field) extr
 
 generateBeamQuery :: StorageRead -> [FieldDef] -> String -> QueryDef -> Writer CodeUnit
 generateBeamQuery storageRead allHaskellFields tableNameHaskell query = do
-  let paramFieldNames = nub $ map (fst . fst) (params query) <> (fst <$> getWhereClauseFieldNamesAndTypes (whereClause query))
+  let paramFieldNames = nub $ concatMap getNormalFields $ (params query) <> getNormalFieldsFromWhereClause (whereClause query)
   withFunctionSignature storageRead query tableNameHaskell $ do
     monadicToTTypeTransformerCode (Just paramFieldNames)
     let queryParams = generateQueryParams allHaskellFields (query.params)
-        isUpdatedAtPresent = any (\((k, _), _) -> k == "updatedAt") (query.params)
+        isUpdatedAtPresent = any (("updatedAt" ==) . fst) paramFieldNames
     generateBeamFunctionCall query.kvFunction isUpdatedAtPresent $ queryParams <> [TH.listE genWhereClause] <> orderAndLimit query
   where
+    getNormalFields :: QueryParam -> [(String, Maybe String)]
+    getNormalFields (QueryParam qpName _ ext isBeam) =
+      [ ( qpName,
+          ( \case
+              Variable n _ -> n
+              Constant n tp -> if tp == PString then "\"" ++ n ++ "\"" else n
+          )
+            <$> ext
+        )
+        | not isBeam
+      ]
+
+    getNormalFieldsFromWhereClause :: WhereClause -> [QueryParam]
+    getNormalFieldsFromWhereClause EmptyWhere = []
+    getNormalFieldsFromWhereClause (Leaf (qp, _)) = [qp]
+    getNormalFieldsFromWhereClause (Query (_, clauses)) = concatMap getNormalFieldsFromWhereClause clauses
+
     genWhereClause = generateClause allHaskellFields query.takeFullObjectAsInput query.whereClause
 
 orderAndLimit :: QueryDef -> [Q TH.Exp]
@@ -540,17 +587,18 @@ orderAndLimit query = do
       [order, vE "limit", vE "offset"]
     else []
 
-ignoreEncryptionFlag :: ((String, String), Bool) -> (String, String)
-ignoreEncryptionFlag ((field, tp), _) = (field, tp)
-
 withFunctionSignature :: StorageRead -> QueryDef -> String -> Writer TH.Stmt -> Writer CodeUnit
 withFunctionSignature storageRead query tableNameHaskell stmts = do
   def <- ask
   let isHasSchemaNameRequired' = isHasSchemaNameRequired def
       qParams =
         filter ((/= "updatedAt") . fst) $
-          map getIdsOut $
-            nub (map ignoreEncryptionFlag (params query) ++ addLimitParams query ++ getWhereClauseFieldNamesAndTypes (whereClause query))
+          nub $
+            ( addLimitParams query
+                ++ concatMap
+                  getFnParamNameAndType
+                  ((params query) ++ getWhereClauseQueryParam (whereClause query))
+            )
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   let defaultFuncSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [(_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) (pure . vT) (def.defaultQueryTypeConstraint)
   let funcSign = maybe defaultFuncSign (pure . vT) (typeConstraint query)
@@ -578,12 +626,6 @@ addLimitParams query =
     then [("limit", "Maybe Int"), ("offset", "Maybe Int")]
     else []
 
-getIdsOut :: (String, String) -> (String, String)
-getIdsOut (k, t)
-  | "Kernel.Types.Id.Id " `isPrefixOf` t = ("(Kernel.Types.Id.Id " ++ k ++ ")", t)
-  | "Kernel.Types.Id.ShortId " `isPrefixOf` t = ("(Kernel.Types.Id.ShortId " ++ k ++ ")", t)
-  | otherwise = (k, t)
-
 generateQueryReturnType :: StorageRead -> String -> String -> Q TH.Type
 generateQueryReturnType storageRead kvFunction tableNameHaskell = do
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
@@ -595,10 +637,20 @@ generateQueryReturnType storageRead kvFunction tableNameHaskell = do
         then TH.listT ~~ dType
         else _UnitType
 
-getWhereClauseFieldNamesAndTypes :: WhereClause -> [(String, String)]
-getWhereClauseFieldNamesAndTypes EmptyWhere = []
-getWhereClauseFieldNamesAndTypes (Leaf (field, _type, op)) = if op == Just In then [(field, "[" <> _type <> "]")] else [(field, _type)]
-getWhereClauseFieldNamesAndTypes (Query (_, clauses)) = concatMap getWhereClauseFieldNamesAndTypes clauses
+-- getWhereClauseFieldNamesAndTypes :: WhereClause -> [(String, String)]
+-- getWhereClauseFieldNamesAndTypes EmptyWhere = []
+-- getWhereClauseFieldNamesAndTypes (Leaf (field, _type, op)) = if op == Just In then [(field, "[" <> _type <> "]")] else [(field, _type)]
+-- getWhereClauseFieldNamesAndTypes (Query (_, clauses)) = concatMap getWhereClauseFieldNamesAndTypes clauses
+
+getWhereClauseQueryParam :: WhereClause -> [QueryParam]
+getWhereClauseQueryParam EmptyWhere = []
+getWhereClauseQueryParam (Leaf (qp, _)) = [qp]
+getWhereClauseQueryParam (Query (_, clauses)) = concatMap getWhereClauseQueryParam clauses
+
+getFnParamNameAndType :: QueryParam -> [(String, String)]
+getFnParamNameAndType (QueryParam name tp Nothing _) = [(name, tp)]
+getFnParamNameAndType (QueryParam _ _ (Just (Variable n t)) _) = [(n, t)]
+getFnParamNameAndType (QueryParam _ _ (Just (Constant _ _)) _) = []
 
 generateBeamFunctionCall :: String -> Bool -> [Q TH.Exp] -> Writer TH.Stmt
 generateBeamFunctionCall kvFunction isUpdatedAtPresent params = do
@@ -606,33 +658,37 @@ generateBeamFunctionCall kvFunction isUpdatedAtPresent params = do
     vP "_now" <-- vE "getCurrentTime"
   noBindSW $ TH.appendE $ vE kvFunction NE.:| params
 
-generateQueryParams :: [FieldDef] -> [((String, String), Bool)] -> [Q TH.Exp]
+generateQueryParams :: [FieldDef] -> [QueryParam] -> [Q TH.Exp]
 generateQueryParams _ [] = []
-generateQueryParams allFields params = pure @[] . TH.listEW $ forM_ params \((field, tp), _encrypted) -> do
-  let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
-  forM_ (fieldDef.beamFields) \bField -> do
-    if isJust fieldDef.relation
-      then case fromJust fieldDef.relation of
-        WithIdStrict _ _ -> TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* correctSetField field tp bField
-        WithId _ _ -> TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* correctSetField field tp bField
-        _ -> pure ()
-      else -- if encrypted
-      --   then do
-      --     let mapOperator = if isMaybeType tp then (~<&>) else (~&)
-      --     if "Encrypted" `isSuffixOf` (bFieldName bField) then
-      --       TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~$ vE field `mapOperator` (vE "unEncrypted" ~. vE "encrypted")
-      --     else
-      --       TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~$ vE field `mapOperator` vE "hash"
-      --  else
-        TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* (if field == "updatedAt" then (if "Kernel.Prelude.Maybe " `isPrefixOf` (bFieldType bField) then vE "Just" ~* vE "_now" else vE "_now") else correctSetField field tp bField)
+generateQueryParams allFields params = pure @[] . TH.listEW $ forM_ params \(QueryParam field tp ext _isBeam) -> do
+  case ext of
+    Nothing -> do
+      let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
+      forM_ (fieldDef.beamFields) \bField -> do
+        if isJust fieldDef.relation
+          then case fromJust fieldDef.relation of
+            WithIdStrict _ _ -> TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* correctSetField Nothing field tp bField
+            WithId _ _ -> TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* correctSetField Nothing field tp bField
+            _ -> pure ()
+          else TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* (if field == "updatedAt" then (if "Kernel.Prelude.Maybe " `isPrefixOf` (bFieldType bField) then vE "Just" ~* vE "_now" else vE "_now") else correctSetField Nothing field tp bField)
+    Just prm -> do
+      if _isBeam
+        then TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> field) ~* directPassParamToExpr prm
+        else do
+          let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
+              getParamVal = case prm of
+                Variable n _ -> n
+                Constant n t -> if t == PString then "\"" <> n <> "\"" else n
+          forM_ (fieldDef.beamFields) \bField -> do
+            TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* (if field == "updatedAt" then (if "Kernel.Prelude.Maybe " `isPrefixOf` (bFieldType bField) then vE "Just" ~* vE "_now" else vE "_now") else correctSetField (Just getParamVal) field tp bField)
 
-correctSetField :: String -> String -> BeamField -> Q TH.Exp
-correctSetField field tp beamField
+correctSetField :: Maybe String -> String -> String -> BeamField -> Q TH.Exp
+correctSetField optionalFieldName field' tp beamField
   | isJust (bToTType beamField) =
     let tf = fromJust (bToTType beamField)
      in TH.ParensE
           <$> if tfType tf == MonadicT
-            then vE $ bFieldName beamField <> "'"
+            then vE $ maybe (bFieldName beamField <> "'") (\optName -> optName <> "_" <> bFieldName beamField <> "'") optionalFieldName
             else
               if (tfIsEmbeddedArgs tf)
                 then vE (tfName tf)
@@ -643,32 +699,62 @@ correctSetField field tp beamField
   | "Kernel.Types.Id.ShortId " `isPrefixOf` tp = _getShortId ~* vE field
   | field == "updatedAt" && isNothing (bToTType beamField) = if "Kernel.Prelude.Maybe " `isPrefixOf` tp then vE "Just" ~* vE "_now" else vE "_now"
   | otherwise = toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+  where
+    field = fromMaybe field' optionalFieldName
 
-correctEqField :: String -> String -> BeamField -> Q TH.Exp
-correctEqField field tp beamField
+correctEqField :: Maybe String -> String -> String -> BeamField -> Q TH.Exp
+correctEqField optionalFieldName field' tp beamField
   | isJust (bToTType beamField) =
     let tf = fromJust (bToTType beamField)
      in TH.ParensE
           <$> if tfType tf == MonadicT
-            then vE $ bFieldName beamField <> "'"
+            then vE $ maybe (bFieldName beamField <> "'") (\optName -> optName <> "_" <> bFieldName beamField <> "'") optionalFieldName
             else
               if tfIsEmbeddedArgs tf
                 then vE (tfName tf)
                 else vE (tfName tf) ~* toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
   | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
   | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
+  | "Kernel.Types.Id.Id " `isPrefixOf` tp = _getId ~* vE field
+  | "Kernel.Types.Id.ShortId " `isPrefixOf` tp = _getShortId ~* vE field
   | otherwise = toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+  where
+    field = fromMaybe field' optionalFieldName
 
 -- Function to process each clause
 generateClause :: [FieldDef] -> Bool -> WhereClause -> [Q TH.Exp]
 generateClause _ _ EmptyWhere = []
-generateClause allFields isFullObjInp (Leaf (field, tp, op)) = do
-  let fieldDef = fromMaybe (error "Param not found in data type") $ find (\f -> fieldName f == field) allFields
-  beamFields fieldDef <&> \bfield ->
-    cE "Se.Is"
-      ~* vE ("Beam." <> bFieldName bfield)
-      ~$ operator (fromMaybe Eq op)
-      ~* (if isFullObjInp then correctSetField field tp bfield else correctEqField field tp bfield)
+generateClause allFields isFullObjInp (Leaf (qp, op)) =
+  let field = qp.qpName
+      tp = qp.qpType
+      ext = qp.qpExtParam
+      isBeam = qp.qpIsBeam
+   in case ext of
+        Nothing -> do
+          let fieldDef = fromMaybe (error $ "Param not found in data type " <> field) $ find (\f -> fieldName f == field) allFields
+          beamFields fieldDef <&> \bfield ->
+            cE "Se.Is"
+              ~* vE ("Beam." <> bFieldName bfield)
+              ~$ operator (fromMaybe Eq op)
+              ~* (if isFullObjInp then correctSetField Nothing field tp bfield else correctEqField Nothing field tp bfield)
+        Just prm ->
+          if isBeam
+            then
+              [ cE "Se.Is"
+                  ~* vE ("Beam." <> field)
+                  ~$ operator (fromMaybe Eq op)
+                  ~* directPassParamToExpr prm
+              ]
+            else
+              let fieldDef = fromMaybe (error $ "Param not found in data type " <> field) $ find (\f -> fieldName f == field) allFields
+                  getParamVal = case prm of
+                    Variable n _ -> n
+                    Constant n t -> if t == PString then "\"" <> n <> "\"" else n
+               in beamFields fieldDef <&> \bfield ->
+                    cE "Se.Is"
+                      ~* vE ("Beam." <> bFieldName bfield)
+                      ~$ operator (fromMaybe Eq op)
+                      ~* (if isFullObjInp then correctSetField (Just getParamVal) field tp bfield else correctEqField (Just getParamVal) field tp bfield)
 generateClause allFields isFullObjInp (Query (op, clauses)) = do
   let expList = concat (generateClause allFields isFullObjInp <$> clauses) -- is it correct concat?
   if op `elem` comparisonOperator
@@ -726,13 +812,13 @@ defaultQueryDefs tableDef =
     QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimaryKeyWhereClause defaultOrderBy True tableDef.defaultQueryTypeConstraint
   ]
   where
-    getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [((String, String), Bool)]
-    getAllFieldNamesWithTypesExcludingPks pks fieldDefs = map (\fieldDef -> ((fieldName fieldDef, haskellType fieldDef), isEncrypted fieldDef)) $ filter (\fieldDef -> fieldName fieldDef `notElem` pks) fieldDefs
+    getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [QueryParam]
+    getAllFieldNamesWithTypesExcludingPks pks fieldDefs = map (\fieldDef -> (QueryParam (fieldName fieldDef) (haskellType fieldDef) Nothing False)) $ filter (\fieldDef -> fieldName fieldDef `notElem` pks) fieldDefs
 
-    getAllPrimaryKeyWithTypes :: [String] -> [FieldDef] -> [(String, String, Maybe Operator)]
-    getAllPrimaryKeyWithTypes pks fieldDefs = map (\fieldDef -> (fieldName fieldDef, haskellType fieldDef, Nothing)) $ filter (\fieldDef -> fieldName fieldDef `elem` pks) fieldDefs
+    getAllPrimaryKeyWithTypes :: [String] -> [FieldDef] -> [(QueryParam, Maybe Operator)]
+    getAllPrimaryKeyWithTypes pks fieldDefs = map (\fieldDef -> (QueryParam {qpName = fieldName fieldDef, qpType = haskellType fieldDef, qpExtParam = Nothing, qpIsBeam = False}, Nothing)) $ filter (\fieldDef -> fieldName fieldDef `elem` pks) fieldDefs
 
-    primaryKeysAndTypes :: [(String, String, Maybe Operator)]
+    primaryKeysAndTypes :: [(QueryParam, Maybe Operator)]
     primaryKeysAndTypes = getAllPrimaryKeyWithTypes (primaryKey tableDef) (fields tableDef)
 
     findByPrimaryKeyWhereClause :: WhereClause
@@ -764,3 +850,14 @@ isHasSchemaNameRequired _def =
         _ -> False
     )
     (beamTableInstance _def)
+
+directPassParamToExpr :: Param -> Q TH.Exp
+directPassParamToExpr = \case
+  Constant vl tp
+    | tp == PString -> strE vl
+    | tp == PInt -> vE vl
+    | tp == PBool -> vE vl
+    | tp == PDouble -> vE vl
+    | tp == PImportedData -> vE vl
+    | otherwise -> vE vl
+  Variable vl _ -> vE vl
