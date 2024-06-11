@@ -6,7 +6,7 @@ module NammaDSL.Utils where
 import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Lens.Combinators
-import Control.Monad.Extra (concatMapM)
+import Control.Monad.Extra (concatMapM, whenJust)
 import Data.Aeson
 import Data.Aeson.Key (fromString, fromText, toString)
 import qualified Data.Aeson.KeyMap as KM
@@ -47,16 +47,24 @@ startsWithLower :: String -> Bool
 startsWithLower (x : _) = isLower x
 startsWithLower _ = False
 
-writeToFile :: FilePath -> FilePath -> String -> IO ()
-writeToFile directoryPath fileName content = do
+writeToFileWithoutSource :: FilePath -> FilePath -> String -> IO ()
+writeToFileWithoutSource = writeToFileWithSource Nothing
+
+writeToFile :: FilePath -> FilePath -> FilePath -> String -> IO ()
+writeToFile yamlPath = writeToFileWithSource (Just yamlPath)
+
+writeToFileWithSource :: Maybe FilePath -> FilePath -> FilePath -> String -> IO ()
+writeToFileWithSource yamlPath directoryPath fileName content = do
   createDirectoryIfMissing True directoryPath
+  let sourcePath = (getRelativePath (directoryPath ++ "/" ++ fileName)) <$> yamlPath
   withFile (directoryPath ++ "/" ++ fileName) WriteMode $ \handle_ -> do
     hPutStr handle_ content
+    whenJust sourcePath $ \sp -> hPutStr handle_ ("\n{-\n\tDSL Source Link: file://" ++ sp ++ " \n-}")
 
-writeToFileIfNotExists :: FilePath -> FilePath -> String -> IO ()
-writeToFileIfNotExists directoryPath fileName content = do
+writeToFileIfNotExists :: FilePath -> FilePath -> FilePath -> String -> IO ()
+writeToFileIfNotExists yamlPath directoryPath fileName content = do
   exists <- doesFileExist filePath
-  bool (writeToFile directoryPath fileName content) (pure ()) exists
+  bool (writeToFile yamlPath directoryPath fileName content) (pure ()) exists
   where
     filePath = directoryPath ++ "/" ++ fileName
 
@@ -296,3 +304,20 @@ parseConstantType = \case
   "CIM" -> PImportedData
   "C" -> PString
   _ -> error "Invalid Constant Type"
+
+getRelativePath :: FilePath -> FilePath -> String
+getRelativePath fromP toP = intercalate "/" $ ["."] ++ backOperations ++ stripedPrefixTo
+  where
+    splitFrom = filter (not . null) (splitOn "/" fromP)
+    splitTo = filter (not . null) (splitOn "/" toP)
+    backOperations = replicate numberOfBackOperations ".."
+    numberOfBackOperations = max (length stripedPrefixFrom - 1) 0
+    stripedPrefixFrom = fromMaybe splitFrom $ L.stripPrefix commonPrefix splitFrom
+    stripedPrefixTo = fromMaybe splitTo $ L.stripPrefix commonPrefix splitTo
+    commonPrefix = checker splitFrom splitTo
+    checker :: [String] -> [String] -> [String]
+    checker [] _ = []
+    checker _ [] = []
+    checker (x : xs) (y : ys)
+      | x == y = x : checker xs ys
+      | otherwise = []
