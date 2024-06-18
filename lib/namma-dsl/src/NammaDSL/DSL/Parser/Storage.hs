@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
@@ -973,7 +974,9 @@ parseOperator val = case val of
   "lt" -> LessThan
   "gte" -> GreaterThanOrEq
   "lte" -> LessThanOrEq
-  --"not" -> Not
+  (L.stripPrefix "not_" -> Just opr) ->
+    let popr = parseOperator opr
+     in if popr `elem` comparisonOperator then Not popr else error $ "Invalid operator " <> show val
   _ -> error $ "Invalid operator " <> show val
 
 parseTypes :: StorageParserM ()
