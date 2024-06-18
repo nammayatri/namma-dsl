@@ -504,7 +504,7 @@ import "dashboard-api" Domain.Types.DataType1
   queries:
     {query function name}:
       kvFunction: {kv function name}
-      params: Array of field to be updated in update queries
+      params: [field1, field2 .. ] Array of field to be updated in update queries
       where:
         {where clause}
       orderby: {field name} (optional)
@@ -521,6 +521,62 @@ import "dashboard-api" Domain.Types.DataType1
             - field4
             - field5
   ```
+- Fields that are used in params and where clause can be of 3 types:
+   - Domain Type Fields: Normal fields in the domain type. On this fields domain to beam convertion function will be applied.
+   - Beam Type Fields: We can directly pass beam type fields to params and where clause by adding a **|B**
+     Example:
+     ```
+      where:
+        not_eq
+      where:
+        not_eq:
+          - id: id2|B
+     ```
+     at the end of the fieldName. On this fields domain to beam convertion will not be applied.
+   - Constants: Constant can be added in place of a field.
+      (Note: This are considered as beam type fields, hence domain to beam convertion will not be applied). All the constant types and their respective alpha symbol:
+        - String -> CS
+        - Bool -> CB
+        - Integer -> CI
+        - Double/Float -> CD
+        - Any Imported type -> CIM or C
+    Examples:
+      ```
+      myname|CS -> "myname"
+      123|CI -> 123
+      123|CS -> "123"
+      0.23|CD -> 0.23
+      "0.34"|CS -> "0.23"
+      true|CB -> True
+      Domain.Something.defaultValue|CIM -> Domain.Something.defaultValue (and Domain.Something is added to imports)
+      ```
+   - Various usage scenerios:
+      - Updating a field named status with value NEW to any other status passed as variable
+          ```
+        kvFunction: updateWithKV
+        params:
+          - status: newStatus
+        where:
+          eq:
+            - status: NEW|CIM
+          ```
+      - Now if we want to hardcode the status value to CONFIRMED
+          ```
+        kvFunction: updateWithKV
+        params:
+          - status: Domain.Types.DataType.CONFIRMED|CIM
+        where:
+          eq:
+            - status: NEW|CIM
+          ```
+      - Now if we want to filter over some id passed as beam type
+          ```
+          where:
+          and:
+            - eq:
+                - status: NEW|CIM
+                - id|B
+          ```
 - List of where operators:
     - and
     - or
@@ -530,6 +586,7 @@ import "dashboard-api" Domain.Types.DataType1
     - lt
     - gte
     - lte
+    - not_\<Any Comparison Operator\> Example: not_eq, not_lt
 
   Example:
   ```yaml

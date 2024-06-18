@@ -644,7 +644,7 @@ generateQueryReturnType storageRead kvFunction tableNameHaskell = do
 
 getWhereClauseQueryParam :: WhereClause -> [QueryParam]
 getWhereClauseQueryParam EmptyWhere = []
-getWhereClauseQueryParam (Leaf (qp, tp)) = if tp == Just In then [qp {qpType = "[" <> qp.qpType <> "]", qpExtParam = qp.qpExtParam <&> makePrmArray}] else [qp]
+getWhereClauseQueryParam (Leaf (qp, tp)) = if tp == Just In || tp == Just (Not In) then [qp {qpType = "[" <> qp.qpType <> "]", qpExtParam = qp.qpExtParam <&> makePrmArray}] else [qp]
 getWhereClauseQueryParam (Query (_, clauses)) = concatMap getWhereClauseQueryParam clauses
 
 makePrmArray :: Param -> Param
@@ -808,7 +808,9 @@ generateFromTypeFuncs = do
               TH.clauseW (vP <$> params) $ TH.normalB $ vE "error" ~* strE "TODO"
 
 operator :: Operator -> Q TH.Exp
-operator = cE . ("Se." <>) . show
+operator = \case
+  Not (op) -> cE "Se.Not" ~. operator op
+  op@_ -> (cE . ("Se." <>) . show) op
 
 defaultQueryDefs :: TableDef -> [QueryDef]
 defaultQueryDefs tableDef =

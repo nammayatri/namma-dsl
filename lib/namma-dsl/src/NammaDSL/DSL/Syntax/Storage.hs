@@ -136,12 +136,15 @@ data QueryParam = QueryParam
 
 data WhereClause = EmptyWhere | Leaf (QueryParam, Maybe Operator) | Query (Operator, [WhereClause]) deriving (Show)
 
-data Operator = And | Or | In | Eq | GreaterThan | LessThan | GreaterThanOrEq | LessThanOrEq | Not deriving (Show, Eq)
+data Operator = And | Or | In | Eq | GreaterThan | LessThan | GreaterThanOrEq | LessThanOrEq | Not Operator deriving (Show, Eq)
 
 data Order = Asc | Desc deriving (Show, Eq)
 
 comparisonOperator :: [Operator]
-comparisonOperator = [In, Eq, GreaterThan, LessThan, GreaterThanOrEq, LessThanOrEq]
+comparisonOperator = simpleComparison <> negatedComparison
+  where
+    negatedComparison = Not <$> simpleComparison
+    simpleComparison = [In, Eq, GreaterThan, LessThan, GreaterThanOrEq, LessThanOrEq]
 
 data FieldDef = FieldDef
   { fieldName :: String,
