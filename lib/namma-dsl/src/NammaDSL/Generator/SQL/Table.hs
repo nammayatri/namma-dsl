@@ -34,8 +34,16 @@ updateStamp :: String
 updateStamp = "\n\n\n------- SQL updates -------\n\n"
 
 generateDeleteSQL :: Database -> String -> [BeamField] -> String
-generateDeleteSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> do
-  ("ALTER TABLE " <> database <> ".") ++ tableName ++ " DROP COLUMN " ++ mkSnake beamField ++ ";"
+generateDeleteSQL database tableName beamFields =
+  if null beamFields
+    then mempty
+    else
+      "\n--- Drop columns section begins. Please be careful while running ---\n"
+        ++ dropStmts
+        ++ "\n--- Drop columns section ends ---\n"
+  where
+    dropStmts = intercalate "\n" . (flip map) beamFields $ \beamField -> do
+      ("ALTER TABLE " <> database <> ".") ++ tableName ++ " DROP COLUMN " ++ mkSnake beamField ++ ";"
 
 generateUpdateSQL :: Database -> String -> [BeamField] -> String
 generateUpdateSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdates -> case fieldUpdates of

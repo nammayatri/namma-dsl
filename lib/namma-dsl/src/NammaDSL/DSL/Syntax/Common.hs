@@ -2,6 +2,7 @@ module NammaDSL.DSL.Syntax.Common where
 
 import Control.Monad.RWS
 import Control.Monad.Trans.Except
+import Data.Default
 import System.Exit
 import Prelude
 
@@ -26,3 +27,39 @@ evalParser p r s = do
 
 throwError :: ParseError -> ParserM r s ()
 throwError err = lift $ throwE err
+
+-- to store pin point error location --
+data Marked a = Marked
+  { val :: a,
+    pos :: Location
+  }
+  deriving (Show)
+
+data Location = Location
+  { line :: Int,
+    column :: Int
+  }
+  deriving (Show, Eq, Ord)
+
+instance Functor Marked where
+  fmap f (Marked a p) = Marked (f a) p
+
+instance Applicative Marked where
+  pure a = Marked a def
+  (Marked f p) <*> (Marked a _) = Marked (f a) p
+
+instance Monad Marked where
+  return = pure
+  (>>=) (Marked v p) f = Marked (val (f v)) p
+
+instance Ord a => Ord (Marked a) where
+  compare (Marked a _) (Marked b _) = compare a b
+
+instance Eq a => Eq (Marked a) where
+  (Marked a _) == (Marked b _) = a == b
+
+instance Default a => Default (Marked a) where
+  def = Marked def def
+
+instance Default Location where
+  def = Location 1 0

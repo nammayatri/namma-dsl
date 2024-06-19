@@ -66,7 +66,7 @@ data TableDef = TableDef
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef "" "" [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
+  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
 
 data CachedQueryDef = CachedQueryDef
   { cQueryName :: String,
@@ -158,7 +158,7 @@ data FieldDef = FieldDef
   deriving (Show)
 
 instance Default FieldDef where
-  def = FieldDef "" "" [] Nothing False Nothing Nothing
+  def = FieldDef mempty mempty [] Nothing False Nothing Nothing
 
 data FieldRelation = OneToOne | MaybeOneToOne | OneToMany | WithId Create FromCached | WithIdStrict Create FromCached deriving (Show, Eq)
 
@@ -213,10 +213,10 @@ data ExtraParseInfo = ExtraParseInfo
   deriving (Show)
 
 instance Default BeamField where
-  def = BeamField "" "" "" [] [] "" Nothing [] Nothing False
+  def = BeamField mempty mempty mempty [] [] mempty Nothing [] Nothing False
 
 instance Default ExtraParseInfo where
-  def = ExtraParseInfo [] [] [] mempty mempty ""
+  def = ExtraParseInfo [] [] [] mempty mempty mempty
 
 data StorageState = StorageState
   { tableDef :: TableDef,
@@ -237,7 +237,7 @@ data StorageRead = StorageRead
   deriving (Show)
 
 instance Default StorageRead where
-  def = StorageRead "" "" "" "" [] [] [] ""
+  def = StorageRead mempty mempty mempty mempty [] [] [] mempty
 
 type StorageParserM = ParserM StorageRead StorageState
 
