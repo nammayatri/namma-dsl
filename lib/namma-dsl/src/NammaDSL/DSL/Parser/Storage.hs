@@ -982,7 +982,7 @@ parseOperator val = case val of
 parseTypes :: StorageParserM ()
 parseTypes = do
   obj <- gets (dataObject . extraParseInfo)
-  let tps = ((map processType) . KM.toList) <$> obj ^? ix acc_types . _Object
+  let tps = (map processType) <$> (obj ^? ix acc_types . _Value . to mkList)
   modify $ \s -> s {tableDef = (tableDef s) {types = tps}}
   where
     extractFields :: KM.KeyMap Value -> [(String, String)]
@@ -1002,26 +1002,25 @@ parseTypes = do
           | (k == "derive" || k == "derive'") = map (InstanceToDerive . T.unpack) (T.split (== ',') (T.pack value))
           | otherwise = extractDerive xs
 
-    extractRecordType :: Object -> RecordType
-    extractRecordType =
-      (fromMaybe Data)
-        . ( preview
-              ( ix acc_recordType . _String
-                  . to
-                    ( \case
-                        "NewType" -> NewType
-                        "Data" -> Data
-                        "Type" -> Type
-                        _ -> error "Not a valid"
-                    )
-              )
-          )
+    extractRecordType :: [(String, String)] -> RecordType
+    extractRecordType flds =
+      find ((== "recordType") . fst) flds
+        & fmap snd
+        & fromMaybe "Data"
+        & \case
+          "NewType" -> NewType
+          "Data" -> Data
+          "Type" -> Type
+          _ -> error "Not a valid record type"
 
     processType :: (Key, Value) -> TypeObject
-    processType (typeName, Object typeDef) = do
-      let (fields, derivations, overrideDerives) = splitTypeAndDerivation $ extractFields typeDef
-      TypeObject (extractRecordType typeDef) (TypeName $ toString typeName) fields derivations overrideDerives
-    processType _ = error "Expected an object in fields"
+    processType (typeName, val) = do
+      let extractedFields = case val of
+            Object typeDef -> extractFields typeDef
+            Array arr -> concatMap mkList $ V.toList arr
+            _ -> error "Expected an object or array in type definition"
+      let (fields, derivations, overrideDerives) = splitTypeAndDerivation $ extractedFields
+      TypeObject (extractRecordType extractedFields) (TypeName $ toString typeName) fields derivations overrideDerives
 
 beamFieldsWithExtractors :: String -> String -> [String] -> StorageParserM [(String, String, [String])]
 beamFieldsWithExtractors fieldName haskellType extractorFuncs = do
