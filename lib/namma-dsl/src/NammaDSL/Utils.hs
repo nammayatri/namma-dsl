@@ -22,6 +22,7 @@ import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.String.Builder (build)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import Dhall (inputFile)
 import Dhall.Marshal.Decode (auto)
 import Language.Haskell.TH hiding (match)
@@ -172,12 +173,21 @@ valueToString = \case
   String a -> T.unpack a
   _ -> ""
 
-mkList :: Value -> [(String, String)]
-mkList (Object obj) =
-  KM.toList obj >>= \(k, v) -> case v of
-    String t -> [(toString k, T.unpack t)]
-    _ -> []
-mkList _ = []
+class MakeList keyType valueType where
+  mkList :: Value -> [(keyType, valueType)]
+
+instance MakeList String String where
+  mkList (Object obj) =
+    KM.toList obj >>= \(k, v) -> case v of
+      String t -> [(toString k, T.unpack t)]
+      _ -> []
+  mkList (Array arr) = (concatMap mkList) $ V.toList arr
+  mkList _ = []
+
+instance MakeList Key Value where
+  mkList (Object obj) = KM.toList obj
+  mkList (Array arr) = (concatMap mkList) $ V.toList arr
+  mkList _ = []
 
 extraOperation :: String -> ExtraOperations
 extraOperation = \case
