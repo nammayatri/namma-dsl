@@ -49,6 +49,7 @@ library
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
       NammaDSL.Lib
+      NammaDSL.Lib.Extractor
       NammaDSL.Lib.Interpreter
       NammaDSL.Lib.TH
       NammaDSL.Lib.Types
@@ -104,7 +105,11 @@ library
     , extra
     , filepath
     , flatparse
+    , ghc
+    , ghc-paths
+    , haskell-src-exts
     , haskell-src-meta
+    , interpolate
     , lens
     , lens-aeson
     , mtl
@@ -161,6 +166,7 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
       NammaDSL.Lib
+      NammaDSL.Lib.Extractor
       NammaDSL.Lib.Interpreter
       NammaDSL.Lib.TH
       NammaDSL.Lib.Types
@@ -216,7 +222,11 @@ test-suite namma-dsl-tests
     , extra
     , filepath
     , flatparse
+    , ghc
+    , ghc-paths
+    , haskell-src-exts
     , haskell-src-meta
+    , interpolate
     , lens
     , lens-aeson
     , mtl

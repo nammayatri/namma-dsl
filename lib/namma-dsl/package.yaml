@@ -92,6 +92,10 @@ dependencies:
   - pretty
   - haskell-src-meta
   - regex-compat
+  - ghc
+  - ghc-paths
+  - haskell-src-exts
+  - interpolate
 
 ghc-options:
   - -Wall
