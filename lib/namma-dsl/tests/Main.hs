@@ -26,15 +26,18 @@ runningTheAnalysis = do
         AnalysisState
           { rootPathPrefix = ["/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src2", "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src"],
             extImports = mempty,
+            rootModule = "NammaDSL.Lib.Extractor",
             haskellImports = mempty,
-            remaining = ["NammaDSL.Lib.Types.CodeTree"],
+            dTypes = [],
+            primitives = mempty,
+            remaining = [("NammaDSL.Lib.Types", "CodeTree")],
             result = []
           }
-  rr <- evalStateT (deepAnalysis "NammaDSL.DSL.Syntax.Storage" "FieldDef") initialState
+  rr <- evalStateT (deepAnalysis ("NammaDSL.DSL.Syntax.Storage", "Spaces")) initialState
   print rr
 
 sql :: String -> SQL_MANIPULATION
 sql = sqlCleanedLineParser
 
 main :: IO ()
-main = pure ()
+main = runningTheAnalysis
