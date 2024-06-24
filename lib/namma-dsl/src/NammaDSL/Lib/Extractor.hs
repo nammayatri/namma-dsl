@@ -42,13 +42,13 @@ type PotentialModules = [ModName]
 
 data AnalysisState = AnalysisState
   { rootPathPrefix :: [FilePath],
-    rootModule :: ModName,
     extImports :: Object,
     haskellImports :: Object,
     dTypes :: [DataName],
     primitives :: Object,
     alreadyNoticedDeepA :: Set (ModName, DataName),
     currentQualifiedImports :: [(String, String)], -- (qualifiedName, mainName)
+    remainingEXT_TO :: [EXT_TO],
     remaining :: [(ModName, DataName)],
     result :: [EXT_TO]
   }
@@ -67,6 +67,13 @@ deepAnalysis :: AnalysisM ()
 deepAnalysis = do
   rootPaths <- gets rootPathPrefix
   remaining_ <- gets remaining
+  remainingEXT_TO_ <- gets remainingEXT_TO
+  unless (null remainingEXT_TO_) $ do
+    let nxtEXT_TO = head remainingEXT_TO_
+    modify $ \s -> s {remainingEXT_TO = tail remainingEXT_TO_}
+    transformedEXT_TO <- mapToExt nxtEXT_TO
+    modify $ \s -> s {result = transformedEXT_TO : result s}
+    deepAnalysis
   unless (null remaining_) $ do
     let (moduleName, dName) = head remaining_
     modify $ \s -> s {remaining = tail remaining_}
@@ -76,7 +83,6 @@ deepAnalysis = do
           ParseOk (Module _ _ _ imports_ decl_) -> (imports_, decl_)
           _ -> error [i|Error parsing hs file of module: #{moduleName}|]
         rawEXT_TO = fromMaybe (error [i|Unable to find data type: #{dName} in module #{moduleName}|]) $ findEXT_TO dName decs
-    --liftIO $ print rawEXT_TO
     parseImportDecls imps
     transformedEXT_TO <- mapToExt rawEXT_TO
     modify $ \s -> s {result = transformedEXT_TO : result s}

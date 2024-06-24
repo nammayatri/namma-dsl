@@ -62,7 +62,9 @@ data Apis = Apis
     _apis :: [ApiTT],
     _imports :: [Text],
     _importPackageOverrides :: Map String String,
-    _apiTypes :: TypesInfo
+    _apiTypes :: TypesInfo,
+    _hsImports :: Object,
+    _extImports :: Object
   }
   deriving (Show)
 
@@ -104,11 +106,11 @@ instance Default ApiRead where
   def = ApiRead "" "" "" []
 
 instance Default Apis where
-  def = Apis "" [] [] mempty def
+  def = Apis "" [] [] mempty def mempty mempty
 
 type ApiParserM = ParserM ApiRead ApiState
 
--- For testing purposes please ignore, will remove soon --
+-- For testing--
 -- data API_OBJ = API_OBJ {
 --   aaa :: String,
 --   bbb :: String} deriving (Show)

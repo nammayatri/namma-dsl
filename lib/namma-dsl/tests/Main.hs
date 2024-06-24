@@ -28,13 +28,13 @@ runningTheAnalysis = do
         AnalysisState
           { rootPathPrefix = ["/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src2", "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src"],
             extImports = KM.fromList [("A.B.BLA", "Kernel.Prelude.BBB2")],
-            rootModule = "NammaDSL.Lib.Extractor",
             haskellImports = KM.fromList [("BLA", "Kernel.Prelude.Bla2")],
             dTypes = [],
             alreadyNoticedDeepA = mempty,
             currentQualifiedImports = [],
             primitives = KM.fromList [("Int", "Purs.Int"), ("String", "Purs.String"), ("Maybe", "Purs.Maybe")],
             remaining = [("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE_2"), ("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE")],
+            remainingEXT_TO = [],
             result = []
           }
   rr <- execStateT deepAnalysis initialState
@@ -44,4 +44,4 @@ sql :: String -> SQL_MANIPULATION
 sql = sqlCleanedLineParser
 
 main :: IO ()
-main = runningTheAnalysis
+main = pure ()

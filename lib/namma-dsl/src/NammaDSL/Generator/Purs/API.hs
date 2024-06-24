@@ -1,9 +1,16 @@
 module NammaDSL.Generator.Purs.API where
 
+import Control.Lens ((^.))
+import Control.Monad.State
+import Data.Aeson (Object)
+import qualified Data.List.Extra as L
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Tuple.Extra (both)
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.DSL.Syntax.Common (RecordType (..))
+import NammaDSL.Lib.Extractor
 import NammaDSL.Utils (apiTypeToText, capitalize, checkArray)
 import Prelude
 
@@ -143,12 +150,72 @@ determineType rawType = do
     removeQualifiedImports :: Text -> Text
     removeQualifiedImports str = last $ T.splitOn (T.pack ".") str
 
-generateAPIIntegrationCode :: Apis -> String
-generateAPIIntegrationCode input = do
+generateAPIIntegrationCode :: Apis -> [EXT_TO] -> String
+generateAPIIntegrationCode input _exts = do
   mkModuleName (_moduleName input)
     <> T.unpack mkImports
     <> "\n\n"
+    <> L.intercalate "\n" (map makeEXTPursTypes _exts)
+    <> "\n\n"
     <> T.unpack (T.intercalate "\n------------------------\n" (map mkApiTypeInstances (_apis input)))
+
+-- 1. For enum put the whole thing
+-- 2. For others put the fields
+-- 3. If enum then the type should be data
+-- 4. If many fields then the type should be newtype
+
+makeEXTPursTypes :: EXT_TO -> String
+makeEXTPursTypes (EXT_TO _ name fields) = do
+  let requiredRecordType = if isEnumStyle then EXT_D else EXT_NT
+  let recordType' = case requiredRecordType of
+        EXT_NT -> "newtype"
+        EXT_D -> "data"
+        EXT_T -> "type"
+  case isEnumStyle of
+    True -> recordType' <> " " <> name <> " = " <> name <> " " <> (L.intercalate " | " $ map L.trim $ L.splitOn "," $ snd $ head fields) <> "\n"
+    False ->
+      recordType' <> " " <> name <> " = " <> name <> " {\n"
+        <> L.intercalate ",\n" (map makeField fields)
+        <> "\n }\n"
+  where
+    isEnumStyle :: Bool
+    isEnumStyle = length fields == 1 && (fst $ head fields) == "enum"
+
+    makeField :: (String, String) -> String
+    makeField (fieldName, fieldType) = "  " <> fieldName <> " :: " <> fieldType
+
+getAllEXTType :: [FilePath] -> Object -> Apis -> IO [EXT_TO]
+getAllEXTType rootPathPrefixes primitives input = do
+  let _extImports' = _extImports input
+      _hsImports' = _hsImports input
+      _typesObjs = input ^. apiTypes . types
+      _dnames = map (\(TypeObject _ (name, _)) -> T.unpack name) _typesObjs
+      _extTOs = map tObjToExt _typesObjs
+      initialAnalysisState =
+        AnalysisState
+          { rootPathPrefix = rootPathPrefixes,
+            extImports = _extImports',
+            haskellImports = _hsImports',
+            dTypes = _dnames,
+            primitives = primitives,
+            alreadyNoticedDeepA = mempty,
+            currentQualifiedImports = mempty,
+            remainingEXT_TO = _extTOs,
+            remaining = mempty,
+            result = mempty
+          }
+  analysedState <- execStateT deepAnalysis initialAnalysisState
+  pure $ result analysedState
+
+tObjToExt :: TypeObject -> EXT_TO
+tObjToExt (TypeObject rt (name, (fields, _))) = do
+  let fields' = map (both T.unpack) fields
+      name' = T.unpack name
+      recordType' = case rt of
+        NewType -> EXT_NT
+        Data -> EXT_D
+        Type -> EXT_T
+  EXT_TO recordType' name' fields'
 
 mkModuleName :: Text -> String
 mkModuleName name = "module API.Instances." <> T.unpack name <> " where\n\n"

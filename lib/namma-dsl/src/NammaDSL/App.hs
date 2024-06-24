@@ -5,9 +5,13 @@ module NammaDSL.App where
 import Control.Lens ((^.))
 import Control.Monad (unless, when)
 import Control.Monad.Extra (whenJust)
+import qualified Data.Aeson as A
+import Data.Aeson.Key
+import qualified Data.Aeson.KeyMap as KM
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.Text as T
+import Data.Tuple.Extra (first, second)
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
@@ -211,4 +215,7 @@ mkDomainHandler appConfigs apiRead apiDef = do
 mkFrontendAPIIntegration :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkFrontendAPIIntegration appConfigs _apiRead apiDef = do
   let filePath = appConfigs ^. output . purescriptFrontend
-  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".purs") (generateAPIIntegrationCode apiDef)
+      rootPaths' = appConfigs ^. rootPaths
+      primitives = KM.fromList $ map (first fromString . second (A.String . T.pack)) (appConfigs ^. apiConfig . pursPrimitives)
+  extTypes <- getAllEXTType rootPaths' primitives apiDef
+  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".purs") (generateAPIIntegrationCode apiDef extTypes)
