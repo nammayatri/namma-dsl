@@ -107,3 +107,8 @@ instance Default Apis where
   def = Apis "" [] [] mempty def
 
 type ApiParserM = ParserM ApiRead ApiState
+
+-- For testing purposes please ignore, will remove soon --
+-- data API_OBJ = API_OBJ {
+--   aaa :: String,
+--   bbb :: String} deriving (Show)

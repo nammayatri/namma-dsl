@@ -76,7 +76,7 @@ deepAnalysis = do
           ParseOk (Module _ _ _ imports_ decl_) -> (imports_, decl_)
           _ -> error [i|Error parsing hs file of module: #{moduleName}|]
         rawEXT_TO = fromMaybe (error [i|Unable to find data type: #{dName} in module #{moduleName}|]) $ findEXT_TO dName decs
-    liftIO $ print rawEXT_TO
+    --liftIO $ print rawEXT_TO
     parseImportDecls imps
     transformedEXT_TO <- mapToExt rawEXT_TO
     modify $ \s -> s {result = transformedEXT_TO : result s}
@@ -250,7 +250,7 @@ typeDelimiter :: String
 typeDelimiter = "() [],"
 
 -- TODOs:
--- 1. If while deep analysis we encounter a used defned qualified type,
---   we need to figure out the main qualified name
--- Done 2. If an haskell imporr type is use twice, we should not generate it twice.
--- 3. Add logic for TypeObject to EXT_TO in the Api section
+-- Done 1. If while deep analysis we encounter a used defned qualified type,
+-- Done 2. we need to figure out the main qualified name
+-- Done 3. If an haskell imporr type is use twice, we should not generate it twice.
+-- 4. Add logic for TypeObject to EXT_TO in the Api section

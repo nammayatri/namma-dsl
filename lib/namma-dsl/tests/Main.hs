@@ -4,6 +4,8 @@
 module Main where
 
 import Control.Monad.State
+import Data.Aeson ()
+import qualified Data.Aeson.KeyMap as KM
 import NammaDSL.App
 import NammaDSL.DSL.Parser.Storage (SQL_MANIPULATION, sqlCleanedLineParser)
 import NammaDSL.Lib.Extractor
@@ -25,16 +27,18 @@ runningTheAnalysis = do
   let initialState =
         AnalysisState
           { rootPathPrefix = ["/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src2", "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src"],
-            extImports = mempty,
+            extImports = KM.fromList [("A.B.BLA", "Kernel.Prelude.BBB2")],
             rootModule = "NammaDSL.Lib.Extractor",
-            haskellImports = mempty,
+            haskellImports = KM.fromList [("BLA", "Kernel.Prelude.Bla2")],
             dTypes = [],
-            primitives = mempty,
-            remaining = [("NammaDSL.Lib.Types", "CodeTree")],
+            alreadyNoticedDeepA = mempty,
+            currentQualifiedImports = [],
+            primitives = KM.fromList [("Int", "Purs.Int"), ("String", "Purs.String"), ("Maybe", "Purs.Maybe")],
+            remaining = [("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE_2"), ("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE")],
             result = []
           }
-  rr <- evalStateT (deepAnalysis ("NammaDSL.DSL.Syntax.Storage", "Spaces")) initialState
-  print rr
+  rr <- execStateT deepAnalysis initialState
+  print (result rr)
 
 sql :: String -> SQL_MANIPULATION
 sql = sqlCleanedLineParser

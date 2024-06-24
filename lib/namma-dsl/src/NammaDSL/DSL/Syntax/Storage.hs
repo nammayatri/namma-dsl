@@ -1,10 +1,15 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module NammaDSL.DSL.Syntax.Storage where
 
 import Data.Aeson (Object)
 import Data.Default
 import Data.Map (Map)
 import GHC.Generics (Generic)
+import qualified NammaDSL.DSL.Syntax.API as TK
 import NammaDSL.DSL.Syntax.Common
+import qualified NammaDSL.DSL.Syntax.Common
+import qualified NammaDSL.DSL.Syntax.Common as CCC
 import NammaDSL.GeneratorCore
 import Prelude
 
@@ -250,3 +255,19 @@ data SQL_MANIPULATION = SQL_CREATE | SQL_ALTER SQL_ALTER deriving (Show)
 data SQL_ALTER = ADD_COLUMN String String [ALTER_COLUMN_ACTION] | DROP_COLUMN String | ALTER_COLUMN String ALTER_COLUMN_ACTION | DROP_CONSTRAINT_PKS | ADD_PRIMARY_KEYS [String] deriving (Show)
 
 data ALTER_COLUMN_ACTION = CHANGE_TYPE String | DROP_DEFAULT | SET_DEFAULT String | DROP_NOT_NULL | SET_NOT_NULL deriving (Show)
+
+-- For testing purposes please ignore, will remove soon --
+-- data PROXY_API_TYPE = PROXY_API_TYPE {
+--    a :: Maybe [A.B.BLA] (A.B.BLA,A.B.BLA),
+--    b :: Maybe TK.API_OBJ,
+--    c :: TK.API_OBJ,
+--    d :: Maybe NammaDSL.DSL.Syntax.Common.RecordType
+--  } deriving (Show)
+
+-- data PROXY_API_TYPE_2 = PROXY_API_TYPE_2 {
+--     aa_ :: Maybe String,
+--     bb_ :: Maybe TK.API_OBJ,
+--     cc_ :: CCC.RecordType
+--  } deriving (Show)
+
+-- data BLA = BLA deriving (Show)
