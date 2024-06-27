@@ -1,0 +1,152 @@
+imports:
+  FareParameters: Domain.Types.FareParameters
+  FarePolicy: Domain.Types.FarePolicy
+  TripCategory: Domain.Types.Common
+  ServiceTierType: Domain.Types.ServiceTierType
+  SearchRequest: Domain.Types.SearchRequest
+  Money: Kernel.Types.Common
+  Currency: Kernel.Types.Common
+
+
+Estimate:
+    tableName: estimate_1
+
+    derives: "Generic,Show"
+
+    beamInstance: MakeTableInstancesWithTModifier []
+    types:
+      MyType:
+        enum1: "Text"
+        bla: Text
+        derive: "Generic2,Show2"
+        recordType: Data
+    fields:
+      id: Id Estimate
+      requestId: Id SearchRequest
+      vehicleServiceTier: ServiceTierType|NoRelation
+      vehicleServiceTierName: Maybe Text
+      tripCategory: TripCategory
+      minFare: HighPrecMoney
+      maxFare: HighPrecMoney
+      currency: Currency
+      estimatedDistance: Maybe Meters
+      fareParams: FareParameters|WithIdCreate
+      farePolicy: Maybe FarePolicy|NoRelation
+      specialLocationTag: Maybe Text
+      isScheduled: Bool
+      isCustomerPrefferedSearchRoute: Maybe Bool
+      isBlockedRoute: Maybe Bool
+      tollNames: Maybe [Text]
+      createdAt: UTCTime
+      updatedAt: UTCTime
+
+    excludedFields:
+      - merchantId
+      - merchantOperatingCityId
+
+    beamFields:
+      farePolicy:
+        farePolicyId: Maybe Text
+      vehicleServiceTier: "vehicleVariant"
+      minFare:
+        minFare: Money
+        minFareAmount: Maybe HighPrecMoney
+      maxFare:
+        maxFare: Money
+        maxFareAmount: Maybe HighPrecMoney
+      currency:
+        currency: Maybe Currency
+
+    sqlType:
+      farePolicyId: character varying(36)
+    beamType:
+      updatedAt: Maybe UTCTime
+      isScheduled: Maybe Bool
+      tripCategory: Maybe TripCategory
+
+    fromTType:
+      updatedAt: Kernel.Prelude.fromMaybe createdAt|I
+      isScheduled: Kernel.Prelude.fromMaybe Kernel.Prelude.False|I
+      tripCategory: Kernel.Prelude.fromMaybe (Domain.Types.Common.OneWay Domain.Types.Common.OneWayOnDemandDynamicOffer)|I
+      farePolicy: maybe (pure Nothing) ((Storage.Cac.FarePolicy.findById Nothing) . Kernel.Types.Id.Id)|IM
+      minFare: Kernel.Types.Common.mkAmountWithDefault minFareAmount minFare|E
+      maxFare: Kernel.Types.Common.mkAmountWithDefault maxFareAmount maxFare|E
+      currency: Kernel.Prelude.fromMaybe Kernel.Types.Common.INR|I
+
+    toTType:
+      updatedAt: Kernel.Prelude.Just|I
+      isScheduled: Kernel.Prelude.Just|I
+      tripCategory: Kernel.Prelude.Just|I
+      farePolicyId: (Kernel.Types.Id.getId . (.id) <$>)
+      minFare:  Kernel.Prelude.roundToIntegral minFare|EM
+      minFareAmount: Kernel.Prelude.Just|IM
+      currency: Kernel.Prelude.Just|I
+      maxFare:  Kernel.Prelude.roundToIntegral|I
+      maxFareAmount: Kernel.Prelude.Just|I
+    excludedDefaultQueries: [findByPrimaryKey,updateByPrimaryKey,create,createMany]
+    queries:
+      updateQuery:
+        kvFunction: updateWithKV
+        params:
+          - id: id2
+        where:
+          eq:
+            - id: NEW|CIM
+    cachedQueries:
+      deleteQuery:
+          withCrossAppRedis: true
+          keyParams:
+           - id
+           - requestId
+           - 0|CI
+      cacheQuery:
+        withCrossAppRedis: false
+        cacheDataType: One
+        queryType: CacheOnly
+        keyMaker: makeKeyForCaching
+        keyParams:
+          - id
+          - requestId
+          - Kernel.Prelude.True|CIM
+          - createdAt
+          - something: Maybe UTCTime #Any extra param
+      findAndCacheQuery:
+        withCrossAppRedis: true
+        returnType: Array
+        queryType: FindAndCache
+        keyMaker: makeKey1
+        paramsOrder:
+          - id
+          - createdAt
+          - requestId
+          - something
+        keyParams:
+          - id
+          - requestId
+          - Kernel.Prelude.True|CIM
+          - createdAt
+          - something: Maybe UTCTime
+        dbQuery: findAAAAA
+        dbQueryParams:
+          - id
+          - requestId
+          - True|CIM
+          - minFare
+      findOnlyQuery:
+        withCrossAppRedis: true
+        returnType: Array
+        queryType: FindOnly
+        keyMaker: makeKey1
+        paramsOrder:
+          - id
+          - createdAt
+          - requestId
+          - something
+        keyParams:
+          - id
+          - requestId
+          - Kernel.Prelude.True|CIM
+          - createdAt
+          - something: Maybe UTCTime
+    extraOperations:
+      - EXTRA_CACHED_QUERY_FILE

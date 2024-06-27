@@ -59,5 +59,6 @@ $( makeAccKeysTH
     returnType
     paramsOrder
     queryType
+    extImports
     |]
  )

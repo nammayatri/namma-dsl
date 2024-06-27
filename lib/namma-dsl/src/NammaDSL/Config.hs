@@ -65,7 +65,8 @@ data DefaultImports = DefaultImports
   deriving (Generic, Show, FromDhall)
 
 data AppConfigs = AppConfigs
-  { _output :: OutputPath,
+  { _rootPaths :: [FilePath],
+    _output :: OutputPath,
     _defaultTypeImportMapper :: [(String, String)],
     _defaultImports :: [DefaultImports],
     _storageConfig :: StorageConfig,

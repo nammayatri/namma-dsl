@@ -1,0 +1,37 @@
+imports:
+  MerchantOperatingCity: Domain.Types.Merchant.MerchantOperatingCity
+  Merchant: Domain.Types.Merchant
+  ReelsData: Domain.Types.ReelsData
+  Language: Kernel.External.Types
+
+extImports:
+   Domain.Types.ReelsData.ReelsData: A.Bls
+
+module: Reels
+
+types:
+  ReelsResp:
+    reels: "[ReelsData]"
+    rrr: NammaDSL.DSL.Syntax.Storage.Something
+    ggg: "[[(Maybe Kernel.Prelude.Double, Int)]]"
+
+apis:
+  - GET:
+      endpoint: /reels/getAllReelVideos
+      auth: TokenAuth PROVIDER_TYPE
+      mandatoryQuery:
+        reelsKey: Text
+      query:
+        language: Language
+      response:
+        type: API.Types.UI.Reels.ReelsResp
+  - GET:
+      endpoint: /reels/getAllReelVideosForMerchant
+      auth: TokenAuth PROVIDER_TYPE
+      mandatoryQuery:
+        reelsKey: Text
+      query:
+        language: Language
+        merchantId: Id Merchant
+      response:
+        type: API.Types.UI.Reels.ReelsResp

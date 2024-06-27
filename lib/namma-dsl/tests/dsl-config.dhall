@@ -17,7 +17,7 @@ let outputPath =
       , _domainType = outputPrefix ++ "Domain/Types"
       , _servantApi = outputPrefix ++ "UI/Api"
       , _sql = sqlOutputPaths
-      , _purescriptFrontend = ""
+      , _purescriptFrontend = outputPrefix ++ "UI/Frontend"
       }
 
 let GeneratorType =
@@ -158,6 +158,8 @@ let defaultImports =
       ]
 
 in  { _output = outputPath
+    , _rootPaths =
+      [ "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src/" ]
     , _storageConfig =
       { _sqlTypeMapper = sqlMapper
       , _extraDefaultFields = extraDefaultFields
@@ -174,5 +176,6 @@ in  { _output = outputPath
       , GeneratorType.API_TYPES
       , GeneratorType.SERVANT_API
       , GeneratorType.CACHED_QUERIES
+      , GeneratorType.PURE_SCRIPT_FRONTEND
       ]
     }

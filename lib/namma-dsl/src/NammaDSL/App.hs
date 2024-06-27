@@ -211,4 +211,6 @@ mkDomainHandler appConfigs apiRead apiDef = do
 mkFrontendAPIIntegration :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkFrontendAPIIntegration appConfigs _apiRead apiDef = do
   let filePath = appConfigs ^. output . purescriptFrontend
-  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".purs") (generateAPIIntegrationCode apiDef)
+      rootPaths' = appConfigs ^. rootPaths
+  extTypes <- getAllEXTType rootPaths' apiDef
+  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".purs") (generateAPIIntegrationCode apiDef extTypes)

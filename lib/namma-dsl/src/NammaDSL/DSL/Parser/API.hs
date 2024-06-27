@@ -36,6 +36,17 @@ parseApis' = do
   parseAllApis'
   makeApiTTPartsQualified'
   parseImports'
+  parseExtImports'
+
+parseExtImports' :: ApiParserM ()
+parseExtImports' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let hsImports' = fromMaybe mempty $ obj ^? ix acc_imports . _Object
+      extImports' = fromMaybe mempty $ obj ^? ix acc_extImports . _Object
+  modify $ \s ->
+    s
+      & apisRes . extImports .~ extImports'
+      & apisRes . hsImports .~ hsImports'
 
 parseModule' :: ApiParserM ()
 parseModule' = do
