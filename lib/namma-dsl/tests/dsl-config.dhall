@@ -17,7 +17,7 @@ let outputPath =
       , _domainType = outputPrefix ++ "Domain/Types"
       , _servantApi = outputPrefix ++ "UI/Api"
       , _sql = sqlOutputPaths
-      , _purescriptFrontend = outputPrefix ++ "UI/Api222"
+      , _purescriptFrontend = outputPrefix ++ "UI/Frontend"
       }
 
 let GeneratorType =

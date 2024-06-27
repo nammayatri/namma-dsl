@@ -114,6 +114,7 @@ library
     , lens-aeson
     , mtl
     , parsec
+    , pcre-heavy
     , pretty
     , process
     , raw-strings-qq
@@ -232,6 +233,7 @@ test-suite namma-dsl-tests
     , mtl
     , namma-dsl
     , parsec
+    , pcre-heavy
     , pretty
     , process
     , raw-strings-qq

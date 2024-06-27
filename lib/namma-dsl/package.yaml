@@ -96,6 +96,7 @@ dependencies:
   - ghc-paths
   - haskell-src-exts
   - interpolate
+  - pcre-heavy
 
 ghc-options:
   - -Wall

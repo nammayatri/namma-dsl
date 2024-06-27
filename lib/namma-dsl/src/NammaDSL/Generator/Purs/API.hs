@@ -217,13 +217,20 @@ getAllEXTType rootPathPrefixes input = do
 
 tObjToExt :: TypeObject -> EXT_TO
 tObjToExt (TypeObject rt (name, (fields, _))) = do
-  let fields' = map (both T.unpack) fields
+  let fields' = map ((second (parseTypeAndTinker forPursHaskell)) . (both T.unpack)) fields
       name' = T.unpack name
       recordType' = case rt of
         NewType -> EXT_NT
         Data -> EXT_D
         Type -> EXT_T
   EXT_TO recordType' name' fields'
+
+parseTypeAndTinker :: (HSE.Type HSE.SrcSpanInfo -> HSE.Type HSE.SrcSpanInfo) -> String -> String
+parseTypeAndTinker tinkerer tpAsStr =
+  let parsedType = HSE.parse tpAsStr
+   in case parsedType of
+        HSE.ParseOk tp -> removeExtraSpace $ HSE.prettyPrint $ tinkerer tp
+        HSE.ParseFailed _ _ -> tpAsStr
 
 mkModuleName :: Text -> String
 mkModuleName name = "module API.Instances." <> T.unpack name <> " where\n\n"
@@ -294,6 +301,7 @@ handlerFunctionName apiTT =
     urlPartToName (UnitPath name) = (T.toUpper . T.singleton . T.head) name <> T.tail name
     urlPartToName _ = ""
 
+-- not used anymore will remove use tinkerer --
 covertHSToPSArray :: FieldType -> FieldType
 covertHSToPSArray s = go 0 (length s - 1) s
   where

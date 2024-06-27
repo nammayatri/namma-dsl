@@ -3,12 +3,7 @@
 
 module Main where
 
-import Control.Monad.State
-import Data.Aeson ()
-import qualified Data.Aeson.KeyMap as KM
 import NammaDSL.App
-import NammaDSL.DSL.Parser.Storage (SQL_MANIPULATION, sqlCleanedLineParser)
-import NammaDSL.Lib.Extractor
 import Prelude
 
 storageYamlFilePath :: FilePath
@@ -22,26 +17,27 @@ generateAllExample = do
   runStorageGenerator "./tests/dsl-config.dhall" storageYamlFilePath
   runApiGenerator "./tests/dsl-config.dhall" apiYamlFilePath
 
-runningTheAnalysis :: IO ()
-runningTheAnalysis = do
-  let initialState =
-        AnalysisState
-          { rootPathPrefix = ["/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src2", "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src"],
-            extImports = KM.fromList [("A.B.BLA", "Kernel.Prelude.BBB2")],
-            haskellImports = KM.fromList [("BLA", "Kernel.Prelude.Bla2")],
-            dTypes = [],
-            alreadyNoticedDeepA = mempty,
-            currentQualifiedImports = [],
-            primitives = KM.fromList [("Int", "Purs.Int"), ("String", "Purs.String"), ("Maybe", "Purs.Maybe")],
-            remaining = [("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE_2"), ("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE")],
-            remainingEXT_TO = [],
-            result = []
-          }
-  rr <- execStateT deepAnalysis initialState
-  print (result rr)
+-- runningTheAnalysis :: IO ()
+-- runningTheAnalysis = do
+--   let initialState =
+--         AnalysisState
+--           { rootPathPrefix = ["/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src"],
+--             extImports = KM.fromList [("A.B.BLA", "Kernel.Prelude.BBB2")],
+--             haskellImports = KM.fromList [("BLA", "Kernel.Prelude.Bla2")],
+--             dTypes = [],
+--             alreadyNoticedDeepA = mempty,
+--             currentQualifiedImports = [],
+--             primitives = pursTypePrimitive,
+--             tpTinkerer = id,
+--             remaining = [("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE_2"), ("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE")],
+--             remainingEXT_TO = [],
+--             result = []
+--           }
+--   rr <- execStateT deepAnalysis initialState
+--   print (result rr)
 
-sql :: String -> SQL_MANIPULATION
-sql = sqlCleanedLineParser
+-- sql :: String -> SQL_MANIPULATION
+-- sql = sqlCleanedLineParser
 
 main :: IO ()
-main = pure ()
+main = generateAllExample

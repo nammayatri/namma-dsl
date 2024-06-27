@@ -256,18 +256,9 @@ data SQL_ALTER = ADD_COLUMN String String [ALTER_COLUMN_ACTION] | DROP_COLUMN St
 
 data ALTER_COLUMN_ACTION = CHANGE_TYPE String | DROP_DEFAULT | SET_DEFAULT String | DROP_NOT_NULL | SET_NOT_NULL deriving (Show)
 
--- For testing purposes please ignore, will remove soon --
--- data PROXY_API_TYPE = PROXY_API_TYPE {
---    a :: Maybe [A.B.BLA] (A.B.BLA,A.B.BLA),
---    b :: Maybe TK.API_OBJ,
---    c :: TK.API_OBJ,
---    d :: Maybe NammaDSL.DSL.Syntax.Common.RecordType
---  } deriving (Show)
-
--- data PROXY_API_TYPE_2 = PROXY_API_TYPE_2 {
---     aa_ :: Maybe String,
---     bb_ :: Maybe TK.API_OBJ,
---     cc_ :: CCC.RecordType
---  } deriving (Show)
-
--- data BLA = BLA deriving (Show)
+-- For testing purposes --
+data Something = Something
+  { somethingA :: (String, Int),
+    somethingB :: Maybe [String]
+  }
+  deriving (Show)

@@ -18,7 +18,7 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set (Set, insert, member)
 import Data.String.Interpolate (i)
 import Data.Text (unpack)
-import qualified Debug.Trace as DT
+--import qualified Debug.Trace as DT
 import Language.Haskell.Exts
 import NammaDSL.Utils ()
 import Safe (headMay)
@@ -210,6 +210,9 @@ extractModuleAndTypeName qualifiedType =
       typeName = last parts'
    in (moduleName, typeName)
 
+removeExtraSpace :: String -> String
+removeExtraSpace = unwords . words
+
 findEXT_TO :: (Type SrcSpanInfo -> Type SrcSpanInfo) -> DataName -> [Decl SrcSpanInfo] -> Maybe EXT_TO
 findEXT_TO tinkerer dName decls =
   find (isTargetDataDecl dName) decls >>= \case
@@ -221,9 +224,6 @@ findEXT_TO tinkerer dName decls =
       pure $ EXT_TO (dataOrNewToRecordType dataOrNew) (declHeadToString declHead) (extractCondlInfos constructors)
     _ -> Nothing
   where
-    removeExtraSpace :: String -> String
-    removeExtraSpace = unwords . words
-
     dataOrNewToRecordType :: DataOrNew SrcSpanInfo -> EXT_RT
     dataOrNewToRecordType = \case
       DataType _ -> EXT_D
@@ -242,7 +242,7 @@ findEXT_TO tinkerer dName decls =
       | [(QualConDecl _ _ _ (RecDecl _ _ fields))] <- qCondDecs = map extractField $ fields
       | otherwise = [] -- TODO: Its not the right way to handle this case.
     extractField :: FieldDecl SrcSpanInfo -> (FieldName, FieldType) -- TODO: Later check for _, might not be required but some corner cases might break
-    extractField (FieldDecl _ names tp) = (intercalate "_" (map nameToString names), removeExtraSpace $ prettyPrint $ tinkerer $ DT.traceShowId tp)
+    extractField (FieldDecl _ names tp) = (intercalate "_" (map nameToString names), removeExtraSpace $ prettyPrint $ tinkerer tp)
 
     tinkerQualConDecl :: QualConDecl SrcSpanInfo -> QualConDecl SrcSpanInfo
     tinkerQualConDecl (QualConDecl l m ctx conDecl) = QualConDecl l m ctx (tinkerConDecl conDecl)
