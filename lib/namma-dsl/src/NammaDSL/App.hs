@@ -21,11 +21,10 @@ import NammaDSL.Utils
 import System.Directory
 import System.FilePath
 import System.Process (readProcess)
---import qualified Debug.Trace as DT
 import Prelude
 
 version :: String
-version = "1.0.57"
+version = "1.0.58"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -60,15 +59,20 @@ runApiGenerator configPath yamlPath = do
   let apiRead =
         ApiRead
           { apiTypesImportPrefix = modulePrefix apiRelatedTypes,
+            extraApiTypesImportPrefix = modulePrefix extraApiRelatedTypes,
             apiServantImportPrefix = modulePrefix servantApi,
+            apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
-            apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper
+            apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
+            apiClientMapper = config ^. clientMapper,
+            apiReadKind = config ^. apiKind
           }
   apiDef <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead apiDef
   mapM_
     when'
     [ (SERVANT_API, mkServantAPI),
+      (SERVANT_API_DASHBOARD, mkServantAPIDashboard),
       (API_TYPES, mkApiTypes),
       (DOMAIN_HANDLER, mkDomainHandler),
       (PURE_SCRIPT_FRONTEND, mkFrontendAPIIntegration)
@@ -191,6 +195,13 @@ mkServantAPI appConfigs apiRead apiDef = do
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API
       generateServantAPI' = generateServantAPI defaultImportsFromConfig apiRead
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPI' apiDef)
+
+mkServantAPIDashboard :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkServantAPIDashboard appConfigs apiRead apiDef = do
+  let filePath = appConfigs ^. output . servantApiDashboard
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API_DASHBOARD
+      generateServantAPIDashboard' = generateServantAPIDashboard defaultImportsFromConfig apiRead
+  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPIDashboard' apiDef)
 
 mkApiTypes :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiTypes appConfigs apiRead apiDef = do
