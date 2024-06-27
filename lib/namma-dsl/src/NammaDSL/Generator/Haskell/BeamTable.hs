@@ -26,7 +26,7 @@ type Writer w = TH.Writer TableDef w
 type Q w = TH.Q TableDef w
 
 generateBeamTable :: DefaultImports -> StorageRead -> TableDef -> Code
-generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
+generateBeamTable (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
   generateCode generatorInput
   where
     codeBody' = generateCodeBody mkCodeBody tableDef
@@ -40,8 +40,10 @@ generateBeamTable (DefaultImports qualifiedImp simpleImp _) storageRead tableDef
         { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
           _moduleNm = beamTypeModulePrefix <> capitalize (tableNameHaskell tableDef),
+          _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' (imports tableDef <> qualifiedImp),
+          _packageImports,
           _codeBody = codeBody'
         }
 

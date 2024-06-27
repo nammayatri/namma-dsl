@@ -1,5 +1,5 @@
 let outputPrefix =
-      "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/tests/src-read-only/"
+      "/media/roman/7dcc2e37-dcb7-456e-aa74-1d22a5dd3f46/home/roman/Projects/nammayatri/namma-dsl/lib/namma-dsl/tests/"
 
 let sqlOutputPaths =
       [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" }
@@ -7,21 +7,23 @@ let sqlOutputPaths =
       ]
 
 let outputPath =
-      { _apiRelatedTypes = outputPrefix ++ "UI/Api/Types"
+      { _apiRelatedTypes = outputPrefix ++ "dashboard/Types"
       , _beamQueries = outputPrefix ++ "Storage/Queries"
       , _extraBeamQueries = outputPrefix ++ "Storage/Queries/Extra"
       , _cachedQueries = outputPrefix ++ "Storage/CachedQueries"
       , _extraCachedQueries = outputPrefix ++ "Storage/CachedQueries/Extra"
       , _beamTable = outputPrefix ++ "Storage/Beam"
-      , _domainHandler = outputPrefix ++ "UI/Api/Action"
+      , _domainHandler = outputPrefix ++ "dashboard/Domain"
       , _domainType = outputPrefix ++ "Domain/Types"
-      , _servantApi = outputPrefix ++ "UI/Api"
+      , _servantApi = outputPrefix ++ "dashboard/API"
+      , _servantApiDashboard = outputPrefix ++ "dashboard/Dashboard"
       , _sql = sqlOutputPaths
       , _purescriptFrontend = ""
       }
 
 let GeneratorType =
       < SERVANT_API
+      | SERVANT_API_DASHBOARD
       | API_TYPES
       | DOMAIN_HANDLER
       | BEAM_QUERIES
@@ -32,9 +34,18 @@ let GeneratorType =
       | PURE_SCRIPT_FRONTEND
       >
 
+let ImportType = < SIMPLE | QUALIFIED >
+
+let PackageImport =
+      { _importType : ImportType
+      , _importPackageName : Text
+      , _importModuleName : Text
+      }
+
 let DefaultImports =
       { _qualifiedImports : List Text
       , _simpleImports : List Text
+      , _packageImports : List PackageImport
       , _generationType : GeneratorType
       }
 
@@ -97,12 +108,29 @@ let defaultImports =
           , "Environment"
           , "Kernel.Types.Id"
           ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.SERVANT_API
+        }
+      , { _simpleImports =
+          [ "EulerHS.Prelude", "Servant", "Tools.Auth", "Kernel.Utils.Common" ]
+        , _qualifiedImports =
+          [ "Domain.Types.Person"
+          , "Kernel.Prelude"
+          , "Control.Lens"
+          , "Environment"
+          , "Kernel.Types.Id"
+          ]
+        , _packageImports =
+          [ { _importType = ImportType.QUALIFIED
+            , _importPackageName = "lib-dashboard"
+            , _importModuleName = "Domain.Types.Merchant"
+            }
+          ]
+        , _generationType = GeneratorType.SERVANT_API_DASHBOARD
         }
       , { _simpleImports =
           [ "EulerHS.Prelude hiding (id)"
           , "Servant"
-          , "Tools.Auth"
           , "Data.OpenApi (ToSchema)"
           ]
         , _qualifiedImports =
@@ -112,6 +140,7 @@ let defaultImports =
           , "Environment"
           , "Kernel.Types.Id"
           ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.API_TYPES
         }
       , { _simpleImports =
@@ -127,10 +156,12 @@ let defaultImports =
           , "Environment"
           , "Kernel.Types.Id"
           ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.DOMAIN_HANDLER
         }
       , { _simpleImports = [] : List Text
         , _qualifiedImports = [ "Tools.Beam.UtilsTH" ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.DOMAIN_TYPE
         }
       , { _simpleImports =
@@ -139,6 +170,7 @@ let defaultImports =
           , "Kernel.External.Encryption"
           ]
         , _qualifiedImports = [ "Database.Beam as B" ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.BEAM_TABLE
         }
       , { _simpleImports =
@@ -149,13 +181,17 @@ let defaultImports =
           , "Kernel.Types.Error"
           ]
         , _qualifiedImports = [ "Sequelize as Se" ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.BEAM_QUERIES
         }
       , { _simpleImports = [ "Kernel.Prelude", "Kernel.Utils.Common" ]
         , _qualifiedImports = [ "Kernel.Storage.Hedis as Hedis" ]
+        , _packageImports = [] : List PackageImport
         , _generationType = GeneratorType.CACHED_QUERIES
         }
       ]
+
+let ApiKind = < UI | DASHBOARD >
 
 in  { _output = outputPath
     , _storageConfig =
@@ -166,13 +202,10 @@ in  { _output = outputPath
     , _defaultImports = defaultImports
     , _defaultTypeImportMapper = defaultTypeImportMapper
     , _generate =
-      [ GeneratorType.DOMAIN_TYPE
-      , GeneratorType.SQL
-      , GeneratorType.BEAM_TABLE
-      , GeneratorType.BEAM_QUERIES
-      , GeneratorType.DOMAIN_HANDLER
+      [ GeneratorType.DOMAIN_HANDLER
       , GeneratorType.API_TYPES
       , GeneratorType.SERVANT_API
-      , GeneratorType.CACHED_QUERIES
+      , GeneratorType.SERVANT_API_DASHBOARD
       ]
+    , _apiKind = ApiKind.DASHBOARD
     }

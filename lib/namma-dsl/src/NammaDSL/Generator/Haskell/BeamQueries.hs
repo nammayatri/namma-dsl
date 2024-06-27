@@ -46,7 +46,7 @@ data ExtraQueryCode = ExtraQueryCode
   deriving (Show)
 
 generateBeamQueries :: DefaultImports -> StorageRead -> TableDef -> BeamQueryCode
-generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
+generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
   if EXTRA_QUERY_FILE `elem` extraOperations tableDef
     then
       WithExtraQueryFile $
@@ -130,8 +130,10 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableD
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = mempty,
+          _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = allQualifiedImports,
+          _packageImports,
           _codeBody = mempty
         }
 
@@ -308,10 +310,6 @@ generateDefaultCreateManyQuery storageRead = do
       TH.clauseW [] $
         TH.normalB $
           vE "traverse_" ~* vE "create"
-
--- hack for record wild cards
-wildRecordsP :: String -> Q TH.Pat
-wildRecordsP name = vP $ name <> " {..}"
 
 fromTTypeInstance :: StorageRead -> Writer CodeUnit
 fromTTypeInstance storageRead = do

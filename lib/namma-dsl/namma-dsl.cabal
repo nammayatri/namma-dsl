@@ -40,6 +40,7 @@ library
       NammaDSL.Generator.Haskell.BeamTable
       NammaDSL.Generator.Haskell.CachedQueries
       NammaDSL.Generator.Haskell.Common
+      NammaDSL.Generator.Haskell.Dashboard.Servant
       NammaDSL.Generator.Haskell.DomainHandler
       NammaDSL.Generator.Haskell.DomainType
       NammaDSL.Generator.Haskell.Servant
@@ -151,6 +152,7 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Haskell.BeamTable
       NammaDSL.Generator.Haskell.CachedQueries
       NammaDSL.Generator.Haskell.Common
+      NammaDSL.Generator.Haskell.Dashboard.Servant
       NammaDSL.Generator.Haskell.DomainHandler
       NammaDSL.Generator.Haskell.DomainType
       NammaDSL.Generator.Haskell.Servant

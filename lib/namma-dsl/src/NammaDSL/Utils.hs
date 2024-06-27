@@ -145,6 +145,13 @@ figureOutImports fieldTypes =
                 then ""
                 else str
 
+-- do not use with record dot syntax
+figureOutImport :: String -> Maybe String
+figureOutImport str = do
+  case splitOn "." str of
+    (w : ws) -> Just $ intercalate "." $ init (w : ws)
+    [] -> Nothing
+
 -- Helper function to capitalize a string
 capitalize :: String -> String
 capitalize "" = ""
@@ -237,7 +244,7 @@ makeAccKeysTH inputs = do
   concatMapM mkKey (nub . filter (not . null) . map trim . lines $ inputs)
 
 getGeneratorDefaultImports :: AppConfigs -> GenerationType -> DefaultImports
-getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] generatorTp) $ find ((== generatorTp) . _generationType) (config ^. defaultImports)
+getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] [] generatorTp) $ find ((== generatorTp) . _generationType) (config ^. defaultImports)
 
 (<||>) :: PS.ParsecT s u m a -> PS.ParsecT s u m a -> PS.ParsecT s u m a
 (<||>) = (PS.<|>)
@@ -266,3 +273,13 @@ removeQuoteWrap str =
       '\"' : remainder -> reverse remainder
       _ -> str
     _ -> str
+
+headToUpper :: Text -> Text
+headToUpper txt = case T.uncons txt of
+  Just (x, xs) -> T.cons (toUpper x) xs
+  Nothing -> ""
+
+headToLower :: Text -> Text
+headToLower txt = case T.uncons txt of
+  Just (x, xs) -> T.cons (toLower x) xs
+  Nothing -> ""

@@ -24,24 +24,40 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import NammaDSL.AccessorTH
+import NammaDSL.Config (ApiKind, parseClientName)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
+import NammaDSL.Utils (valueToString)
 import qualified NammaDSL.Utils as U
 import Prelude
 
 parseApis' :: ApiParserM ()
 parseApis' = do
   parseModule'
+  parseClientName'
   parseTypes'
   parseAllApis'
   makeApiTTPartsQualified'
   parseImports'
+  parseExtraOperations'
 
 parseModule' :: ApiParserM ()
 parseModule' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   let parsedModuleName = fromMaybe (error "Required module name") $ obj ^? ix acc_module . _String
   modify $ \s -> s & apisRes . moduleName .~ parsedModuleName
+
+parseClientName' :: ApiParserM ()
+parseClientName' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let parsedClientName = obj ^? ix acc_clientName . _String . to (parseClientName . T.unpack)
+  modify $ \s -> s & apisRes . clientName .~ parsedClientName
+
+parseExtraOperations' :: ApiParserM ()
+parseExtraOperations' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let parsedExtraOperations = fromMaybe [] $ obj ^? ix acc_extraOperations . _Array . to V.toList . to (map (extraOperation . valueToString))
+  modify $ \s -> s & apisRes . extraOperations .~ parsedExtraOperations
 
 parseTypes' :: ApiParserM ()
 parseTypes' = do
@@ -60,11 +76,13 @@ parseTypes' = do
 parseAllApis' :: ApiParserM ()
 parseAllApis' = do
   obj <- gets (^. extraParseInfo . yamlObj)
-  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM parseSingleApi
+  moduleName <- gets (^. apisRes . moduleName)
+  apiKind <- asks apiReadKind
+  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM (parseSingleApi moduleName apiKind)
   modify $ \s -> s & apisRes . apis .~ allApis
   where
-    parseSingleApi :: Value -> Maybe ApiTT
-    parseSingleApi (Object ob) = do
+    parseSingleApi :: Text -> ApiKind -> Value -> Maybe ApiTT
+    parseSingleApi moduleName apiKind (Object ob) = do
       let (key, val) = head $ KM.toList ob
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
@@ -87,8 +105,10 @@ parseAllApis' = do
           allApiParts = endpoint <> query <> mQuery
 
           headers = fromMaybe [] (preview (ix acc_headers ._Array . to (mkHeaderList . V.toList)) obj)
-      return $ ApiTT allApiParts apiTp auth headers req res
-    parseSingleApi _ = error "Api specs missing"
+
+          requestValidation = preview (ix acc_validation . _String) obj
+      return $ ApiTT allApiParts apiTp auth headers req res apiKind moduleName requestValidation
+    parseSingleApi _ _ _ = error "Api specs missing"
 
 parseImports' :: ApiParserM ()
 parseImports' = do
@@ -252,7 +272,10 @@ getAuthType = \case
   "DashboardAuth MERCHANT_CHECKER" -> DashboardAuth MERCHANT_CHECKER
   "DashboardAuth MERCHANT_SERVER" -> DashboardAuth MERCHANT_SERVER
   "DashboardAuth MERCHANT_USER" -> DashboardAuth MERCHANT_USER
-  _ -> error "Not a valid auth type"
+  authType -> do
+    case T.words authType of
+      ["ApiAuth", sn, ae, uat] -> ApiAuth (ServerName $ T.unpack sn) (ApiEntity $ T.unpack ae) (UserActionType $ T.unpack uat)
+      _ -> error "Not a valid auth type"
 
 getApiType :: Text -> ApiType
 getApiType = \case
