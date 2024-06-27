@@ -57,13 +57,6 @@ data StorageConfig = StorageConfig
 
 $(makeLenses ''StorageConfig)
 
-data ApiConfig = ApiConfig
-  { _pursPrimitives :: [(String, String)]
-  }
-  deriving (Generic, Show, FromDhall)
-
-$(makeLenses ''ApiConfig)
-
 data DefaultImports = DefaultImports
   { _qualifiedImports :: [String],
     _simpleImports :: [String],
@@ -77,7 +70,6 @@ data AppConfigs = AppConfigs
     _defaultTypeImportMapper :: [(String, String)],
     _defaultImports :: [DefaultImports],
     _storageConfig :: StorageConfig,
-    _apiConfig :: ApiConfig,
     _generate :: [GenerationType]
   }
   deriving (Generic, Show, FromDhall)

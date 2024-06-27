@@ -165,14 +165,6 @@ in  { _output = outputPath
       , _extraDefaultFields = extraDefaultFields
       , _defaultCachedQueryKeyPrefix = "driverOffer:"
       }
-    , _apiConfig._pursPrimitives
-      =
-      [ { _1 = "String", _2 = "String" }
-      , { _1 = "Int", _2 = "Int" }
-      , { _1 = "Double", _2 = "Number" }
-      , { _1 = "Bool", _2 = "Boolean" }
-      , { _1 = "Maybe", _2 = "Maybe" }
-      ]
     , _defaultImports = defaultImports
     , _defaultTypeImportMapper = defaultTypeImportMapper
     , _generate =

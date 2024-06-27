@@ -1,17 +1,22 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module NammaDSL.Generator.Purs.API where
 
 import Control.Lens ((^.))
 import Control.Monad.State
-import Data.Aeson (Object)
+import Data.Bifunctor (second)
 import qualified Data.List.Extra as L
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Tuple.Extra (both)
+import qualified Language.Haskell.Exts as HSE
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common (RecordType (..))
 import NammaDSL.Lib.Extractor
 import NammaDSL.Utils (apiTypeToText, capitalize, checkArray)
+import Text.Regex.PCRE.Heavy (Regex)
+import qualified Text.Regex.PCRE.Heavy as RE
 import Prelude
 
 mkRestEndpointInstance :: ApiTT -> Text -> Text -> Maybe (Text, Text, Text) -> Text
@@ -165,27 +170,29 @@ generateAPIIntegrationCode input _exts = do
 -- 4. If many fields then the type should be newtype
 
 makeEXTPursTypes :: EXT_TO -> String
-makeEXTPursTypes (EXT_TO _ name fields) = do
+makeEXTPursTypes (EXT_TO _ name fields') = do
   let requiredRecordType = if isEnumStyle then EXT_D else EXT_NT
   let recordType' = case requiredRecordType of
         EXT_NT -> "newtype"
         EXT_D -> "data"
         EXT_T -> "type"
   case isEnumStyle of
-    True -> recordType' <> " " <> name <> " = " <> name <> " " <> (L.intercalate " | " $ map L.trim $ L.splitOn "," $ snd $ head fields) <> "\n"
+    True -> recordType' <> " " <> name <> " = " <> (L.intercalate " | " $ map L.trim $ L.splitOn "," $ snd $ head fields) <> "\n"
     False ->
       recordType' <> " " <> name <> " = " <> name <> " {\n"
         <> L.intercalate ",\n" (map makeField fields)
         <> "\n }\n"
   where
+    fields = map (second id) fields'
+
     isEnumStyle :: Bool
     isEnumStyle = length fields == 1 && (fst $ head fields) == "enum"
 
     makeField :: (String, String) -> String
     makeField (fieldName, fieldType) = "  " <> fieldName <> " :: " <> fieldType
 
-getAllEXTType :: [FilePath] -> Object -> Apis -> IO [EXT_TO]
-getAllEXTType rootPathPrefixes primitives input = do
+getAllEXTType :: [FilePath] -> Apis -> IO [EXT_TO]
+getAllEXTType rootPathPrefixes input = do
   let _extImports' = _extImports input
       _hsImports' = _hsImports input
       _typesObjs = input ^. apiTypes . types
@@ -197,7 +204,8 @@ getAllEXTType rootPathPrefixes primitives input = do
             extImports = _extImports',
             haskellImports = _hsImports',
             dTypes = _dnames,
-            primitives = primitives,
+            primitives = pursTypePrimitive,
+            tpTinkerer = forPursHaskell,
             alreadyNoticedDeepA = mempty,
             currentQualifiedImports = mempty,
             remainingEXT_TO = _extTOs,
@@ -285,3 +293,48 @@ handlerFunctionName apiTT =
     urlPartToName :: UrlParts -> Text
     urlPartToName (UnitPath name) = (T.toUpper . T.singleton . T.head) name <> T.tail name
     urlPartToName _ = ""
+
+covertHSToPSArray :: FieldType -> FieldType
+covertHSToPSArray s = go 0 (length s - 1) s
+  where
+    go :: Int -> Int -> FieldType -> FieldType
+    go l r str
+      | l >= r = str
+      | str !! l == '[' && str !! r == ']' =
+        let innerStr = take (r - l - 1) $ drop (l + 1) str
+         in "Array (" ++ covertHSToPSArray innerStr ++ ")"
+      | str !! l == '[' && str !! r /= ']' = go l (r - 1) str
+      | str !! l /= '[' && str !! r == ']' = go (l + 1) r str
+      | otherwise = go (l + 1) (r - 1) str
+
+pursTypePrimitive :: [(Regex, String)]
+pursTypePrimitive =
+  [ ([RE.re|(.*\.String$|^String$)|], "String"),
+    ([RE.re|(.*\.Int$|^Int$)|], "Int"),
+    ([RE.re|(.*\.Double$|^Double$)|], "Number"),
+    ([RE.re|(.*\.Maybe$|^Maybe$)|], "Maybe"),
+    ([RE.re|(.*\.Bool$|^Bool$)|], "Boolean"),
+    ([RE.re|(.*Prim\.Array$)|], "Prim.Array"),
+    ([RE.re|(.*Prim\.Tuple$)|], "Prim.Tuple")
+  ]
+
+forPursHaskell :: HSE.Type HSE.SrcSpanInfo -> HSE.Type HSE.SrcSpanInfo
+forPursHaskell typee = case typee of
+  HSE.TyList l t -> HSE.TyApp l (HSE.TyVar l (HSE.Ident l "Prim.Array")) (forPursHaskell t)
+  HSE.TyTuple l HSE.Boxed ts -> convertTuple l (map forPursHaskell ts)
+  HSE.TyForall l varB cxt t -> HSE.TyForall l varB cxt (forPursHaskell t)
+  HSE.TyFun l tp1 tp2 -> HSE.TyFun l (forPursHaskell tp1) (forPursHaskell tp2)
+  HSE.TyUnboxedSum l ts -> HSE.TyUnboxedSum l (map forPursHaskell ts)
+  HSE.TyParArray l t -> HSE.TyParArray l (forPursHaskell t)
+  HSE.TyApp l t1 t2 -> HSE.TyApp l (forPursHaskell t1) (forPursHaskell t2)
+  HSE.TyParen l t1 -> HSE.TyParen l (forPursHaskell t1)
+  HSE.TyInfix l t1 pn t2 -> HSE.TyInfix l (forPursHaskell t1) pn (forPursHaskell t2)
+  HSE.TyKind l t1 k -> HSE.TyKind l (forPursHaskell t1) k
+  HSE.TyEquals l t1 t2 -> HSE.TyEquals l (forPursHaskell t1) (forPursHaskell t2)
+  HSE.TyBang l bg uness t -> HSE.TyBang l bg uness (forPursHaskell t)
+  t@(_) -> t
+
+convertTuple :: HSE.SrcSpanInfo -> [HSE.Type HSE.SrcSpanInfo] -> HSE.Type HSE.SrcSpanInfo
+convertTuple l [a, b] = HSE.TyApp l (HSE.TyApp l (HSE.TyCon l (HSE.UnQual l (HSE.Ident l "Prim.Tuple"))) (forPursHaskell a)) (forPursHaskell b)
+convertTuple l (a : as) = HSE.TyApp l (HSE.TyApp l (HSE.TyCon l (HSE.UnQual l (HSE.Ident l "Prim.Tuple"))) (forPursHaskell a)) (convertTuple l as)
+convertTuple _ [] = error "Tuple with no elements"

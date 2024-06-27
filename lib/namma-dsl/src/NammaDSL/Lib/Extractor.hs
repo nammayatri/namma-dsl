@@ -18,10 +18,13 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Set (Set, insert, member)
 import Data.String.Interpolate (i)
 import Data.Text (unpack)
+import qualified Debug.Trace as DT
 import Language.Haskell.Exts
 import NammaDSL.Utils ()
 import Safe (headMay)
 import System.Directory
+import Text.Regex.PCRE.Heavy (Regex)
+import qualified Text.Regex.PCRE.Heavy as RE
 import Prelude
 
 data EXT_TO = EXT_TO EXT_RT DataName [(FieldName, FieldType)] deriving (Show, Eq, Ord)
@@ -45,14 +48,16 @@ data AnalysisState = AnalysisState
     extImports :: Object,
     haskellImports :: Object,
     dTypes :: [DataName],
-    primitives :: Object,
+    primitives :: [(Regex, String)],
     alreadyNoticedDeepA :: Set (ModName, DataName),
     currentQualifiedImports :: [(String, String)], -- (qualifiedName, mainName)
     remainingEXT_TO :: [EXT_TO],
+    tpTinkerer :: (Type SrcSpanInfo -> Type SrcSpanInfo),
     remaining :: [(ModName, DataName)],
     result :: [EXT_TO]
   }
-  deriving (Show, Eq, Ord)
+
+--deriving (Show, Eq, Ord)
 
 type AnalysisM a = StateT AnalysisState IO a
 
@@ -68,6 +73,7 @@ deepAnalysis = do
   rootPaths <- gets rootPathPrefix
   remaining_ <- gets remaining
   remainingEXT_TO_ <- gets remainingEXT_TO
+  tinkerer <- gets tpTinkerer
   unless (null remainingEXT_TO_) $ do
     let nxtEXT_TO = head remainingEXT_TO_
     modify $ \s -> s {remainingEXT_TO = tail remainingEXT_TO_}
@@ -82,7 +88,7 @@ deepAnalysis = do
     let (imps, decs) = case parsedHaskellFile of
           ParseOk (Module _ _ _ imports_ decl_) -> (imports_, decl_)
           _ -> error [i|Error parsing hs file of module: #{moduleName}|]
-        rawEXT_TO = fromMaybe (error [i|Unable to find data type: #{dName} in module #{moduleName}|]) $ findEXT_TO dName decs
+        rawEXT_TO = fromMaybe (error [i|Unable to find data type: #{dName} in module #{moduleName}|]) $ findEXT_TO tinkerer dName decs
     parseImportDecls imps
     transformedEXT_TO <- mapToExt rawEXT_TO
     modify $ \s -> s {result = transformedEXT_TO : result s}
@@ -148,8 +154,8 @@ mapUnitFieldType tp = do
     Just x -> pure x
     Nothing -> findInHaskellImports haskellImports_
   where
-    findInPrimitives :: Object -> Maybe FieldType
-    findInPrimitives obj = obj ^? ix (fromString tp) . _String . to unpack
+    findInPrimitives :: [(Regex, FieldType)] -> Maybe FieldType
+    findInPrimitives rgs = snd <$> find ((\rg -> tp RE.=~ rg) . fst) rgs
 
     findInDTypes :: [DataName] -> Maybe FieldType
     findInDTypes dnms = if tp `elem` dnms then Just tp else Nothing
@@ -204,18 +210,21 @@ extractModuleAndTypeName qualifiedType =
       typeName = last parts'
    in (moduleName, typeName)
 
-findEXT_TO :: DataName -> [Decl SrcSpanInfo] -> Maybe EXT_TO
-findEXT_TO dName decls =
+findEXT_TO :: (Type SrcSpanInfo -> Type SrcSpanInfo) -> DataName -> [Decl SrcSpanInfo] -> Maybe EXT_TO
+findEXT_TO tinkerer dName decls =
   find (isTargetDataDecl dName) decls >>= \case
     -- TODO: Check the other possible types. I dont think we need Gadts for now .. might required later.
     TypeDecl _ declHead tp -> do
-      let pTp = prettyPrint tp
+      let pTp = removeExtraSpace (prettyPrint $ tinkerer tp)
       pure $ EXT_TO EXT_T (declHeadToString declHead) [("enum", pTp)]
     DataDecl _ dataOrNew _ declHead constructors _ ->
       pure $ EXT_TO (dataOrNewToRecordType dataOrNew) (declHeadToString declHead) (extractCondlInfos constructors)
     _ -> Nothing
   where
-    dataOrNewToRecordType :: DataOrNew l -> EXT_RT
+    removeExtraSpace :: String -> String
+    removeExtraSpace = unwords . words
+
+    dataOrNewToRecordType :: DataOrNew SrcSpanInfo -> EXT_RT
     dataOrNewToRecordType = \case
       DataType _ -> EXT_D
       NewType _ -> EXT_NT
@@ -227,15 +236,24 @@ findEXT_TO dName decls =
       DHParen _ declHead -> declHeadToString declHead
       DHApp _ declHead _ -> declHeadToString declHead
 
-    extractCondlInfos :: [QualConDecl l] -> [(FieldName, FieldType)]
+    extractCondlInfos :: [QualConDecl SrcSpanInfo] -> [(FieldName, FieldType)]
     extractCondlInfos qCondDecs
-      | all isEnumStyleConDecl qCondDecs = [("enum", (intercalate ",") $ map (L.trim . prettyPrint) qCondDecs)]
-      | [(QualConDecl _ _ _ (RecDecl _ _ fields))] <- qCondDecs = map extractField fields
+      | all isEnumStyleConDecl qCondDecs = [("enum", (intercalate ",") $ map (removeExtraSpace . L.trim . prettyPrint . tinkerQualConDecl) qCondDecs)]
+      | [(QualConDecl _ _ _ (RecDecl _ _ fields))] <- qCondDecs = map extractField $ fields
       | otherwise = [] -- TODO: Its not the right way to handle this case.
-    extractField :: FieldDecl l -> (FieldName, FieldType) -- TODO: Later check for _, might not be required but some corner cases might break
-    extractField (FieldDecl _ names tp) = (intercalate "_" (map nameToString names), prettyPrint tp)
+    extractField :: FieldDecl SrcSpanInfo -> (FieldName, FieldType) -- TODO: Later check for _, might not be required but some corner cases might break
+    extractField (FieldDecl _ names tp) = (intercalate "_" (map nameToString names), removeExtraSpace $ prettyPrint $ tinkerer $ DT.traceShowId tp)
 
-    isEnumStyleConDecl :: QualConDecl l -> Bool
+    tinkerQualConDecl :: QualConDecl SrcSpanInfo -> QualConDecl SrcSpanInfo
+    tinkerQualConDecl (QualConDecl l m ctx conDecl) = QualConDecl l m ctx (tinkerConDecl conDecl)
+
+    tinkerConDecl :: ConDecl SrcSpanInfo -> ConDecl SrcSpanInfo
+    tinkerConDecl = \case
+      ConDecl l nm tps -> ConDecl l nm (map tinkerer tps)
+      a@(RecDecl _ _ _) -> a
+      InfixConDecl l t1 nm t2 -> InfixConDecl l (tinkerer t1) nm (tinkerer t2)
+
+    isEnumStyleConDecl :: QualConDecl SrcSpanInfo -> Bool
     isEnumStyleConDecl (QualConDecl _ _ _ conDecl) = case conDecl of
       ConDecl _ _ _ -> True
       RecDecl _ _ _ -> False
@@ -247,7 +265,7 @@ isTargetDataDecl dName = \case
   (TypeDecl _ (DHead _ tclName) _) -> nameToString tclName == dName
   _ -> False
 
-nameToString :: Name l -> String
+nameToString :: Name SrcSpanInfo -> String
 nameToString = \case
   Ident _ s -> s
   Symbol _ s -> s
