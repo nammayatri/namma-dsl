@@ -8,11 +8,12 @@ import Control.Lens
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
---import Data.Text (Text)
+import Text.Read (readEither)
 import Prelude
 
 data GenerationType
   = SERVANT_API
+  | SERVANT_API_DASHBOARD
   | API_TYPES
   | DOMAIN_HANDLER
   | BEAM_QUERIES
@@ -33,6 +34,7 @@ $(makeLenses ''InputPath)
 
 data OutputPath = OutputPath
   { _apiRelatedTypes :: FilePath,
+    _extraApiRelatedTypes :: FilePath,
     _beamQueries :: FilePath,
     _extraBeamQueries :: FilePath,
     _cachedQueries :: FilePath,
@@ -41,6 +43,7 @@ data OutputPath = OutputPath
     _domainHandler :: FilePath,
     _domainType :: FilePath,
     _servantApi :: FilePath,
+    _servantApiDashboard :: FilePath,
     _sql :: [(FilePath, String)],
     _purescriptFrontend :: FilePath
   }
@@ -60,17 +63,41 @@ $(makeLenses ''StorageConfig)
 data DefaultImports = DefaultImports
   { _qualifiedImports :: [String],
     _simpleImports :: [String],
+    _packageImports :: [PackageImport],
     _generationType :: GenerationType
   }
   deriving (Generic, Show, FromDhall)
+
+data PackageImport = PackageImport
+  { _importType :: ImportType,
+    _importPackageName :: String,
+    _importModuleName :: String
+  }
+  deriving (Generic, Show, FromDhall, Eq)
+
+data ImportType = SIMPLE | QUALIFIED
+  deriving (Generic, Show, FromDhall, Eq)
 
 data AppConfigs = AppConfigs
   { _output :: OutputPath,
     _defaultTypeImportMapper :: [(String, String)],
     _defaultImports :: [DefaultImports],
     _storageConfig :: StorageConfig,
-    _generate :: [GenerationType]
+    _generate :: [GenerationType],
+    _apiKind :: ApiKind,
+    _clientMapper :: [(ClientName, String)]
   }
   deriving (Generic, Show, FromDhall)
+
+data ClientName = OPERATIONS | FLEET | RIDE_BOOKING
+  deriving (Generic, Show, Read, Eq, FromDhall)
+
+parseClientName :: String -> ClientName
+parseClientName str = case readEither str of
+  Right clientName -> clientName
+  Left _ -> error "Invalid client name"
+
+data ApiKind = UI | DASHBOARD
+  deriving (Generic, Show, FromDhall, Eq)
 
 $(makeLenses ''AppConfigs)

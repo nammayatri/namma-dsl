@@ -59,5 +59,7 @@ $( makeAccKeysTH
     returnType
     paramsOrder
     queryType
+    validation
+    clientName
     |]
  )

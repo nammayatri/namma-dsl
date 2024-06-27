@@ -4,8 +4,6 @@ module NammaDSL.Generator.Haskell.DomainType where
 
 import Control.Monad.Reader (ask)
 import Control.Monad.Writer hiding (Writer)
---import qualified Data.Text as T
-
 import Data.Bool (bool)
 import Data.Data (Proxy (..))
 import Data.Foldable
@@ -35,7 +33,7 @@ data DomainTypeCode = DomainTypeCode
   }
 
 generateDomainType :: DefaultImports -> StorageRead -> TableDef -> DomainTypeCode
-generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
+generateDomainType (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
   DomainTypeCode defaultCode extraDomainCode
   where
     isExtraCode = EXTRA_DOMAIN_TYPE_FILE `elem` (extraOperations tableDef)
@@ -65,8 +63,10 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
         { _ghcOptions = ["-Wno-unused-imports"] <> ["-Wno-dodgy-exports" | isExtraCode],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = moduleName',
+          _moduleExports = Nothing,
           _simpleImports = packageOverride $ preventSameModuleImports $ allSimpleImports <> [(extraFileModuleName ++ " as ReExport") | isExtraCode],
           _qualifiedImports = packageOverride $ preventSameModuleImports $ (removeUnusedQualifiedImports codeBody' allQualifiedImports),
+          _packageImports,
           _codeBody = codeBody'
         }
     extraFileGeneratorInput :: GeneratorInput
@@ -75,8 +75,10 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _) storageRead tableDe
         { _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
           _extensions = ["ApplicativeDo", "TemplateHaskell"],
           _moduleNm = extraFileModuleName,
+          _moduleExports = Nothing,
           _simpleImports = packageOverride $ allSimpleImports,
           _qualifiedImports = [],
+          _packageImports = [],
           _codeBody = generateCodeBody extraFileCodeBody tableDef
         }
 
