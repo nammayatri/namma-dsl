@@ -4,11 +4,11 @@ import Control.Lens ((^.))
 import Control.Monad (forM_)
 import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
-import Data.List (nub)
+import Data.List (find, nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust, maybeToList)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (SERVANT_API_DASHBOARD))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (API_TYPES, DOMAIN_HANDLER, SERVANT_API_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
@@ -29,8 +29,6 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
     generationType = SERVANT_API_DASHBOARD
     clientFuncName = getClientFunctionName apiRead input
     codeBody' = generateCodeBody (mkCodeBody generationType apiRead clientFuncName) input
-    servantApiDashboardModulePrefix = apiServantDashboardImportPrefix apiRead ++ "."
-    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -39,7 +37,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = servantApiDashboardModulePrefix <> T.unpack (_moduleName input),
+          _moduleNm = mkGeneratedModuleName apiRead input SERVANT_API_DASHBOARD,
           _moduleExports = Just ["API", "handler"],
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
@@ -49,11 +47,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
-          <> " as "
-          <> domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
+      [ mkGeneratedModuleName apiRead input DOMAIN_HANDLER
       ]
         <> nub (qualifiedImp <> figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)))
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
@@ -111,9 +105,9 @@ when_ True as = as
 
 getClientFunctionName :: ApiRead -> Apis -> String
 getClientFunctionName apiRead input = do
-  let apisClientName = fromMaybe (error "clientName should be provided for dashboard api") $ input ^. clientName
-  fromMaybe (error "clientName should be present in clientMapper") $
-    lookup apisClientName $ apiClientMapper apiRead
+  let apiTreeName = fromMaybe (error "apiTree should be provided for dashboard api") $ input ^. apisApiTree
+  fromMaybe (error "apiTree should be present in apiTreeMapper") $ do
+    apiReadTreeMapperClientName <$> find (\mapper -> apiReadTreeMapperApiTree mapper == apiTreeName) (apiReadTreeMapper apiRead)
 
 getClientModuleName :: String -> String
 getClientModuleName = fromMaybe (error "Client function name should contain module name") . figureOutImport
@@ -158,11 +152,10 @@ generateAPIHandler apiRead = do
 generateServantApiType :: GenerationType -> ApiRead -> ApiTT -> Writer CodeUnit
 generateServantApiType generationType apiRead apiTT = do
   input <- ask
-  let moduleName' = input ^. moduleName
   tySynDW (TH.mkNameT $ mkApiName apiTT) [] $ do
     TH.appendInfixT ":>" . NE.fromList $
       maybeToList (addAuthToApi generationType $ _authType apiTT)
-        <> [cT (((apiTypesImportPrefix apiRead <> "." <> T.unpack moduleName' <> ".") <>) . T.unpack . mkApiName $ apiTT)]
+        <> [cT (((mkGeneratedModuleName apiRead input API_TYPES <> ".") <>) . T.unpack . mkApiName $ apiTT)]
 
 handlerFunctionDef :: GenerationType -> String -> ApiTT -> Writer CodeUnit
 handlerFunctionDef generationType clientFuncName apiT = do

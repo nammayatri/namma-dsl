@@ -60,6 +60,6 @@ $( makeAccKeysTH
     paramsOrder
     queryType
     validation
-    clientName
+    apiTree
     |]
  )

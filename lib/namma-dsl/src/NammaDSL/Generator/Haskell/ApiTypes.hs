@@ -13,7 +13,7 @@ import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (DASHBOARD), DefaultImports (..), GenerationType (API_TYPES))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
-import NammaDSL.Generator.Haskell.Common (apiTTToText, checkForPackageOverrides, generateAPIType, handlerFunctionText, handlerSignature, mkApiName)
+import NammaDSL.Generator.Haskell.Common (apiTTToText, checkForPackageOverrides, generateAPIType, handlerFunctionText, handlerSignature, mkApiName, mkGeneratedModuleName)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -28,7 +28,6 @@ type Writer w = TH.Writer Apis w
 generateApiTypes :: DefaultImports -> ApiRead -> Apis -> Code
 generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input = generateCode generatorInput
   where
-    apiTypesModulePrefix = apiTypesImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -37,7 +36,7 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = apiTypesModulePrefix <> T.unpack (_moduleName input),
+          _moduleNm = mkGeneratedModuleName apiRead input API_TYPES,
           _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
@@ -45,7 +44,7 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
           _codeBody = codeBody'
         }
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
-    qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
+    qualifiedModuleName = mkGeneratedModuleName apiRead input API_TYPES
 
     allQualifiedImports :: [String]
     allQualifiedImports =

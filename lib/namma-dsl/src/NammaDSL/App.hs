@@ -1,5 +1,3 @@
-{-# LANGUAGE QuasiQuotes #-}
-
 module NammaDSL.App where
 
 import Control.Lens ((^.))
@@ -15,6 +13,7 @@ import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell
 import NammaDSL.Generator.Haskell.ApiTypes
+import NammaDSL.Generator.Haskell.Common (mkFilePath)
 import NammaDSL.Generator.Purs
 import NammaDSL.Generator.SQL
 import NammaDSL.Utils
@@ -64,7 +63,7 @@ runApiGenerator configPath yamlPath = do
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
-            apiClientMapper = config ^. clientMapper,
+            apiReadTreeMapper = mkApiReadTreeMapper <$> (config ^. apiTreeMapper),
             apiReadKind = config ^. apiKind
           }
   apiDef <- apiParser' apiRead yamlPath
@@ -77,6 +76,18 @@ runApiGenerator configPath yamlPath = do
       (DOMAIN_HANDLER, mkDomainHandler),
       (PURE_SCRIPT_FRONTEND, mkFrontendAPIIntegration)
     ]
+
+mkApiReadTreeMapper :: ApiTreeMapper -> ApiReadTreeMapper
+mkApiReadTreeMapper apiTreeMapper' = do
+  let modulePrefix tp = haskellModuleNameFromFilePath <$> (apiTreeMapper' ^. tp)
+  ApiReadTreeMapper
+    { apiReadTreeMapperApiTree = apiTreeMapper' ^. apiTree,
+      apiReadTreeMapperClientName = apiTreeMapper' ^. apiTreeClientName,
+      apiReadTreeMapperApiTypesImportPrefix = modulePrefix apiTreeApiRelatedTypes,
+      apiReadTreeMapperServantImportPrefix = modulePrefix apiTreeServantApi,
+      apiReadTreeMapperServantDashboardImportPrefix = modulePrefix apiTreeServantApiDashboard,
+      apiReadTreeMapperDomainHandlerImportPrefix = modulePrefix apiTreeDomainHandler
+    }
 
 data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
 
@@ -191,21 +202,21 @@ mkSQLFile appConfigs _storageRead tableDefs = do
 
 mkServantAPI :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkServantAPI appConfigs apiRead apiDef = do
-  let filePath = appConfigs ^. output . servantApi
+  let filePath = mkFilePath appConfigs apiDef SERVANT_API
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API
       generateServantAPI' = generateServantAPI defaultImportsFromConfig apiRead
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPI' apiDef)
 
 mkServantAPIDashboard :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkServantAPIDashboard appConfigs apiRead apiDef = do
-  let filePath = appConfigs ^. output . servantApiDashboard
+  let filePath = mkFilePath appConfigs apiDef SERVANT_API_DASHBOARD
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API_DASHBOARD
       generateServantAPIDashboard' = generateServantAPIDashboard defaultImportsFromConfig apiRead
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPIDashboard' apiDef)
 
 mkApiTypes :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiTypes appConfigs apiRead apiDef = do
-  let filePath = appConfigs ^. output . apiRelatedTypes
+  let filePath = mkFilePath appConfigs apiDef API_TYPES
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TYPES
       generateApiTypes' = generateApiTypes defaultImportsFromConfig apiRead
   when (isApiExtraTypesPresent apiDef) $ writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateApiTypes' apiDef)
@@ -213,7 +224,7 @@ mkApiTypes appConfigs apiRead apiDef = do
 mkDomainHandler :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkDomainHandler appConfigs apiRead apiDef = do
   let fileName = T.unpack (_moduleName apiDef) ++ ".hs"
-      filePath = appConfigs ^. output . domainHandler
+      filePath = mkFilePath appConfigs apiDef DOMAIN_HANDLER
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs DOMAIN_HANDLER
       generateDomainHandler' = generateDomainHandler defaultImportsFromConfig apiRead
   fileExists <- doesFileExist (filePath </> fileName)

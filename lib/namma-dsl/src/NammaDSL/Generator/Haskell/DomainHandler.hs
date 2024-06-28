@@ -8,7 +8,7 @@ import Data.List (isInfixOf, nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (..), DefaultImports (..))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (DOMAIN_HANDLER))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
@@ -27,7 +27,6 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _) 
   generateCode generatorInput
   where
     codeBody' = generateCodeBody (mkCodeBody $ apiReadKind apiRead) input
-    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -36,14 +35,14 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _) 
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = domainHandlerModulePrefix <> T.unpack (_moduleName input),
+          _moduleNm = mkGeneratedModuleName apiRead input DOMAIN_HANDLER,
           _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
         }
-    qualifiedModuleName = T.unpack ((T.pack domainHandlerModulePrefix) <> _moduleName input)
+    qualifiedModuleName = mkGeneratedModuleName apiRead input DOMAIN_HANDLER
 
     allQualifiedImports :: [String]
     allQualifiedImports =

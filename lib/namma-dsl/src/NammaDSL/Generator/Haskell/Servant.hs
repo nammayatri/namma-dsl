@@ -6,9 +6,8 @@ import Control.Monad.Reader (ask)
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (SERVANT_API))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (API_TYPES, DOMAIN_HANDLER, SERVANT_API))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common hiding (generateParamsExp, generateParamsPat)
 import NammaDSL.GeneratorCore
@@ -27,8 +26,6 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
   generateCode generatorInput
   where
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
-    servantApiModulePrefix = apiServantImportPrefix apiRead ++ "."
-    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -37,7 +34,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
-          _moduleNm = servantApiModulePrefix <> T.unpack (_moduleName input),
+          _moduleNm = mkGeneratedModuleName apiRead input SERVANT_API,
           _moduleExports = allModuleExports,
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
@@ -47,11 +44,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
-          <> " as "
-          <> domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
+      [ mkGeneratedModuleName apiRead input DOMAIN_HANDLER
       ]
         <> ( nub $
                qualifiedImp
@@ -100,10 +93,9 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         (map _authType $ _apis input)
 
     allModuleExports = do
-      let moduleName' = _moduleName input
       let apiTypeName = case apiReadKind apiRead of
             UI -> "API"
-            DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
+            DASHBOARD -> mkGeneratedModuleName apiRead input API_TYPES #. "API"
       Just [apiTypeName, "handler"]
 
 mkCodeBody :: ApiRead -> ApisM ()
@@ -119,22 +111,19 @@ generateAPIHandler :: ApiRead -> Writer CodeUnit
 generateAPIHandler apiRead = do
   input <- ask
   let allApis = _apis input
-      moduleName' = _moduleName input
 
   TH.decsW $ do
-    sigDW "handler" $ mkSign moduleName'
+    sigDW "handler" $ mkSign input
     funDW "handler" $
       TH.clauseW mkPat $
         TH.normalB $
           appendInfixE (vE ":<|>") (NE.fromList $ mkExp <$> allApis)
-  forM_ allApis $ handlerFunctionDef moduleName'
+  forM_ allApis $ handlerFunctionDef input
   where
-    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
-
-    mkSign moduleName' = do
+    mkSign input = do
       let apiTypeName = case apiReadKind apiRead of
             UI -> "API"
-            DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
+            DASHBOARD -> mkGeneratedModuleName apiRead input API_TYPES #. "API"
       let defSignature = cT "Environment.FlowServer" ~~ cT apiTypeName
       case apiReadKind apiRead of
         UI -> defSignature
@@ -172,8 +161,8 @@ generateAPIHandler apiRead = do
       ) :
       generateParamsExp False (n - 1)
 
-    handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
-    handlerFunctionDef moduleName' apiT = do
+    handlerFunctionDef :: Apis -> ApiTT -> Writer CodeUnit
+    handlerFunctionDef input apiT = do
       let functionName = handlerFunctionText apiT
           allTypes = handlerSignature apiT
           showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
@@ -192,5 +181,5 @@ generateAPIHandler apiRead = do
             TH.normalB $
               generateWithFlowHandlerAPI (isDashboardAuth apiT) $
                 TH.appendE $
-                  vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                  vE (mkGeneratedModuleName apiRead input DOMAIN_HANDLER #. T.unpack functionName)
                     NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber

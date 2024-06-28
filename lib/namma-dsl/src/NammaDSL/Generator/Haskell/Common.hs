@@ -2,14 +2,15 @@ module NammaDSL.Generator.Haskell.Common where
 
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
+import Data.List (find)
 import Data.List.Extra (snoc)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map, lookup)
-import Data.Maybe (catMaybes, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (..), GenerationType (..))
+import NammaDSL.Config --(ApiKind (..), GenerationType (..), ApiTree, AppConfigs, cachedQueries, ApiTreeMapper)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Lib
@@ -230,3 +231,48 @@ generateWithFlowHandlerAPI :: Bool -> (Q r TH.Exp -> Q r TH.Exp)
 generateWithFlowHandlerAPI = \case
   True -> (vE "withFlowHandlerAPI'" ~$)
   False -> (vE "withFlowHandlerAPI" ~$)
+
+mkImportPrefix :: ApiRead -> Maybe ApiTree -> GenerationType -> String
+mkImportPrefix apiRead mbApiTreeName = \case
+  SERVANT_API -> mkImportPrefixWithDefault apiServantImportPrefix apiReadTreeMapperServantImportPrefix
+  SERVANT_API_DASHBOARD -> mkImportPrefixWithDefault apiServantDashboardImportPrefix apiReadTreeMapperServantDashboardImportPrefix
+  API_TYPES -> mkImportPrefixWithDefault apiTypesImportPrefix apiReadTreeMapperApiTypesImportPrefix
+  DOMAIN_HANDLER -> mkImportPrefixWithDefault apiDomainHandlerImportPrefix apiReadTreeMapperDomainHandlerImportPrefix
+  _ -> error "mkQualifiedImport implemented only for apis generation"
+  where
+    mkImportPrefixWithDefault apiReadField mapperField = do
+      let defaultImportPrefix = apiReadField apiRead
+      case mbApiTreeName of
+        Nothing -> defaultImportPrefix
+        Just apiTreeName ->
+          fromMaybe defaultImportPrefix $
+            findApiReadTreeMapper apiTreeName (apiReadTreeMapper apiRead) >>= mapperField
+
+    findApiReadTreeMapper :: ApiTree -> [ApiReadTreeMapper] -> Maybe ApiReadTreeMapper
+    findApiReadTreeMapper apiTreeName = find (\mapper -> apiReadTreeMapperApiTree mapper == apiTreeName)
+
+mkGeneratedModuleName :: ApiRead -> Apis -> GenerationType -> String
+mkGeneratedModuleName apiRead apiDef generationType = mkImportPrefix apiRead (apiDef ^. apisApiTree) generationType <> "." <> T.unpack (apiDef ^. moduleName)
+
+mkFilePath :: AppConfigs -> Apis -> GenerationType -> String
+mkFilePath appConfigs apiDef = \case
+  SERVANT_API -> mkFilePathWithDefault servantApi apiTreeServantApi
+  SERVANT_API_DASHBOARD -> mkFilePathWithDefault servantApiDashboard apiTreeServantApiDashboard
+  API_TYPES -> mkFilePathWithDefault apiRelatedTypes apiTreeApiRelatedTypes
+  DOMAIN_HANDLER -> mkFilePathWithDefault domainHandler apiTreeDomainHandler
+  BEAM_QUERIES -> mkFilePath' beamQueries
+  CACHED_QUERIES -> mkFilePath' NammaDSL.Config.cachedQueries
+  BEAM_TABLE -> mkFilePath' beamTable
+  DOMAIN_TYPE -> mkFilePath' domainType
+  SQL -> error "mkFilePath should not be used for sql migration path"
+  PURE_SCRIPT_FRONTEND -> mkFilePath' purescriptFrontend
+  where
+    mkFilePathWithDefault configField mapperField = do
+      let defaultFilePath = appConfigs ^. output . configField
+      case apiDef ^. apisApiTree of
+        Nothing -> defaultFilePath
+        Just apiTreeName -> fromMaybe defaultFilePath $ findApiTreeMapper apiTreeName (appConfigs ^. apiTreeMapper) >>= (^. mapperField)
+    mkFilePath' configField = appConfigs ^. output . configField
+
+    findApiTreeMapper :: ApiTree -> [ApiTreeMapper] -> Maybe ApiTreeMapper
+    findApiTreeMapper apiTreeName = find (\mapper -> (mapper ^. apiTree) == apiTreeName)

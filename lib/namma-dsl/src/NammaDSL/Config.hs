@@ -85,19 +85,32 @@ data AppConfigs = AppConfigs
     _storageConfig :: StorageConfig,
     _generate :: [GenerationType],
     _apiKind :: ApiKind,
-    _clientMapper :: [(ClientName, String)]
+    _apiTreeMapper :: [ApiTreeMapper]
   }
   deriving (Generic, Show, FromDhall)
 
-data ClientName = OPERATIONS | FLEET | RIDE_BOOKING
+data ApiTree = MANAGEMENT | FLEET | RIDE_BOOKING
   deriving (Generic, Show, Read, Eq, FromDhall)
 
-parseClientName :: String -> ClientName
-parseClientName str = case readEither str of
-  Right clientName -> clientName
+-- if FilePath did not specified then used default value from OutputPath
+data ApiTreeMapper = ApiTreeMapper
+  { _apiTree :: ApiTree,
+    _apiTreeClientName :: String,
+    _apiTreeApiRelatedTypes :: Maybe FilePath,
+    _apiTreeDomainHandler :: Maybe FilePath,
+    _apiTreeServantApi :: Maybe FilePath,
+    _apiTreeServantApiDashboard :: Maybe FilePath
+  }
+  deriving (Generic, Show, FromDhall)
+
+parseApiTree :: String -> ApiTree
+parseApiTree str = case readEither str of
+  Right tree -> tree
   Left _ -> error "Invalid client name"
 
 data ApiKind = UI | DASHBOARD
   deriving (Generic, Show, FromDhall, Eq)
+
+$(makeLenses ''ApiTreeMapper)
 
 $(makeLenses ''AppConfigs)

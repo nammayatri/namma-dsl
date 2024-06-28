@@ -24,9 +24,10 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import NammaDSL.AccessorTH
-import NammaDSL.Config (ApiKind, parseClientName)
+import NammaDSL.Config (ApiKind, GenerationType (API_TYPES), parseApiTree)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
+import NammaDSL.Generator.Haskell.Common (mkImportPrefix)
 import NammaDSL.Utils (valueToString)
 import qualified NammaDSL.Utils as U
 import Prelude
@@ -34,7 +35,7 @@ import Prelude
 parseApis' :: ApiParserM ()
 parseApis' = do
   parseModule'
-  parseClientName'
+  parseApiTree'
   parseTypes'
   parseAllApis'
   makeApiTTPartsQualified'
@@ -47,11 +48,11 @@ parseModule' = do
   let parsedModuleName = fromMaybe (error "Required module name") $ obj ^? ix acc_module . _String
   modify $ \s -> s & apisRes . moduleName .~ parsedModuleName
 
-parseClientName' :: ApiParserM ()
-parseClientName' = do
+parseApiTree' :: ApiParserM ()
+parseApiTree' = do
   obj <- gets (^. extraParseInfo . yamlObj)
-  let parsedClientName = obj ^? ix acc_clientName . _String . to (parseClientName . T.unpack)
-  modify $ \s -> s & apisRes . clientName .~ parsedClientName
+  let parsedApiTree = obj ^? ix acc_apiTree . _String . to (parseApiTree . T.unpack)
+  modify $ \s -> s & apisRes . apisApiTree .~ parsedApiTree
 
 parseExtraOperations' :: ApiParserM ()
 parseExtraOperations' = do
@@ -63,7 +64,9 @@ parseTypes' :: ApiParserM ()
 parseTypes' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   moduleName <- gets (^. apisRes . moduleName)
-  defaultImportModule <- asks apiTypesImportPrefix
+  mbApiTreeName <- gets (^. apisRes . apisApiTree)
+  apiRead <- ask
+  let defaultImportModule = mkImportPrefix apiRead mbApiTreeName API_TYPES
   defaultTypeImportMap <- asks apiDefaultTypeImportMapper
   let parsedTypeObjects = typesToTypeObject (obj ^? ix acc_types . _Value)
       parsedTypesDataNames' = map (\(TypeObject _ (nm, _)) -> T.unpack nm) parsedTypeObjects
@@ -173,7 +176,9 @@ apiParser' apiRead filepath = do
 makeApiTTPartsQualified' :: ApiParserM ()
 makeApiTTPartsQualified' = do
   obj <- gets (^. extraParseInfo . yamlObj)
-  defaultImportModule <- asks apiTypesImportPrefix
+  mbApiTreeName <- gets (^. apisRes . apisApiTree)
+  apiRead <- ask
+  let defaultImportModule = mkImportPrefix apiRead mbApiTreeName API_TYPES
   defaultTypeImportMap <- asks apiDefaultTypeImportMapper
   moduleName <- gets (^. apisRes . moduleName)
   parsedTypeDataNames <- gets (^. extraParseInfo . parsedTypesDataNames)
