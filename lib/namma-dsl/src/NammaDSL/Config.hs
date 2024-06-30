@@ -8,7 +8,6 @@ import Control.Lens
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
-import Text.Read (readEither)
 import Prelude
 
 data GenerationType
@@ -85,17 +84,9 @@ data AppConfigs = AppConfigs
     _storageConfig :: StorageConfig,
     _generate :: [GenerationType],
     _apiKind :: ApiKind,
-    _clientMapper :: [(ClientName, String)]
+    _clientFunction :: Maybe String
   }
   deriving (Generic, Show, FromDhall)
-
-data ClientName = OPERATIONS | FLEET | RIDE_BOOKING
-  deriving (Generic, Show, Read, Eq, FromDhall)
-
-parseClientName :: String -> ClientName
-parseClientName str = case readEither str of
-  Right clientName -> clientName
-  Left _ -> error "Invalid client name"
 
 data ApiKind = UI | DASHBOARD
   deriving (Generic, Show, FromDhall, Eq)

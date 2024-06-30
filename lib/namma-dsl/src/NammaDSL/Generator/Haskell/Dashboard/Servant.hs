@@ -27,7 +27,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
   generateCode generatorInput
   where
     generationType = SERVANT_API_DASHBOARD
-    clientFuncName = getClientFunctionName apiRead input
+    clientFuncName = getClientFunctionName apiRead
     codeBody' = generateCodeBody (mkCodeBody generationType apiRead clientFuncName) input
     servantApiDashboardModulePrefix = apiServantDashboardImportPrefix apiRead ++ "."
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
@@ -109,11 +109,9 @@ when_ :: Bool -> [a] -> [a]
 when_ False _ = []
 when_ True as = as
 
-getClientFunctionName :: ApiRead -> Apis -> String
-getClientFunctionName apiRead input = do
-  let apisClientName = fromMaybe (error "clientName should be provided for dashboard api") $ input ^. clientName
-  fromMaybe (error "clientName should be present in clientMapper") $
-    lookup apisClientName $ apiClientMapper apiRead
+getClientFunctionName :: ApiRead -> String
+getClientFunctionName apiRead = do
+  fromMaybe (error "clientFunction should be provided for dashboard api") $ apiClientFunction apiRead
 
 getClientModuleName :: String -> String
 getClientModuleName = fromMaybe (error "Client function name should contain module name") . figureOutImport

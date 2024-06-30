@@ -64,7 +64,7 @@ runApiGenerator configPath yamlPath = do
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
-            apiClientMapper = config ^. clientMapper,
+            apiClientFunction = config ^. clientFunction,
             apiReadKind = config ^. apiKind
           }
   apiDef <- apiParser' apiRead yamlPath
