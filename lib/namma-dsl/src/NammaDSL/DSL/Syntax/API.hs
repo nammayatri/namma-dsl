@@ -10,7 +10,7 @@ import Data.Aeson (Object)
 import Data.Default
 import Data.Map (Map)
 import Data.Text (Text)
-import NammaDSL.Config (ApiKind (..), ClientName)
+import NammaDSL.Config (ApiKind (..))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 import Text.Read (readEither)
@@ -94,7 +94,6 @@ $(makeLenses ''TypesInfo)
 
 data Apis = Apis
   { _moduleName :: Text,
-    _clientName :: Maybe ClientName, -- required for dashboard, because we have few different client calls
     _apis :: [ApiTT],
     _imports :: [Text],
     _importPackageOverrides :: Map String String,
@@ -121,7 +120,7 @@ data ApiRead = ApiRead
     apiServantDashboardImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,
     apiDefaultTypeImportMapper :: [(String, String)],
-    apiClientMapper :: [(ClientName, String)],
+    apiClientFunction :: Maybe String,
     apiReadKind :: ApiKind
   }
 
@@ -151,9 +150,9 @@ instance Default TypesInfo where
   def = TypesInfo [] []
 
 instance Default ApiRead where
-  def = ApiRead "" "" "" "" "" [] [] UI
+  def = ApiRead "" "" "" "" "" [] Nothing UI
 
 instance Default Apis where
-  def = Apis "" Nothing [] [] mempty def []
+  def = Apis "" [] [] mempty def []
 
 type ApiParserM = ParserM ApiRead ApiState

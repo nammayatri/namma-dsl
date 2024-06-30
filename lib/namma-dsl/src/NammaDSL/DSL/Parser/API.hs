@@ -24,7 +24,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import NammaDSL.AccessorTH
-import NammaDSL.Config (ApiKind, parseClientName)
+import NammaDSL.Config (ApiKind)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Utils (valueToString)
@@ -34,7 +34,6 @@ import Prelude
 parseApis' :: ApiParserM ()
 parseApis' = do
   parseModule'
-  parseClientName'
   parseTypes'
   parseAllApis'
   makeApiTTPartsQualified'
@@ -46,12 +45,6 @@ parseModule' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   let parsedModuleName = fromMaybe (error "Required module name") $ obj ^? ix acc_module . _String
   modify $ \s -> s & apisRes . moduleName .~ parsedModuleName
-
-parseClientName' :: ApiParserM ()
-parseClientName' = do
-  obj <- gets (^. extraParseInfo . yamlObj)
-  let parsedClientName = obj ^? ix acc_clientName . _String . to (parseClientName . T.unpack)
-  modify $ \s -> s & apisRes . clientName .~ parsedClientName
 
 parseExtraOperations' :: ApiParserM ()
 parseExtraOperations' = do
