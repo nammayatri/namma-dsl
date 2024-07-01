@@ -119,6 +119,7 @@ data ApiRead = ApiRead
     apiServantImportPrefix :: String,
     apiServantDashboardImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,
+    apiDomainHandlerDashboardImportPrefix :: String,
     apiDefaultTypeImportMapper :: [(String, String)],
     apiClientFunction :: Maybe String,
     apiReadKind :: ApiKind
@@ -150,7 +151,7 @@ instance Default TypesInfo where
   def = TypesInfo [] []
 
 instance Default ApiRead where
-  def = ApiRead "" "" "" "" "" [] Nothing UI
+  def = ApiRead "" "" "" "" "" "" [] Nothing UI
 
 instance Default Apis where
   def = Apis "" [] [] mempty def []

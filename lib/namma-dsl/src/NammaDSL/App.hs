@@ -66,6 +66,7 @@ runApiGenerator configPath yamlPath = do
             apiServantImportPrefix = modulePrefix servantApi,
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
+            apiDomainHandlerDashboardImportPrefix = modulePrefix domainHandler,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
             apiClientFunction = config ^. clientFunction,
             apiReadKind = config ^. apiKind
