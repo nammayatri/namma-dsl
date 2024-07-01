@@ -2,7 +2,6 @@ module NammaDSL.Generator.Haskell.Dashboard.Servant (generateServantAPIDashboard
 
 import Control.Lens ((^.))
 import Control.Monad (forM_)
-import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
@@ -20,17 +19,14 @@ import Prelude
 
 type Writer w = TH.Writer Apis w
 
-type Q w = TH.Q Apis w
-
 generateServantAPIDashboard :: DefaultImports -> ApiRead -> Apis -> Code
 generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
   where
     generationType = SERVANT_API_DASHBOARD
-    clientFuncName = getClientFunctionName apiRead
-    codeBody' = generateCodeBody (mkCodeBody generationType apiRead clientFuncName) input
+    codeBody' = generateCodeBody (mkCodeBody generationType apiRead) input
     servantApiDashboardModulePrefix = apiServantDashboardImportPrefix apiRead ++ "."
-    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
+    domainHandlerDashboardModulePrefix = apiDomainHandlerDashboardImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
@@ -49,10 +45,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
-          <> " as "
-          <> domainHandlerModulePrefix
+      [ domainHandlerDashboardModulePrefix
           <> T.unpack (_moduleName input)
       ]
         <> nub (qualifiedImp <> figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)))
@@ -60,7 +53,6 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
         <> when_ ifTransactionStore ["Dashboard.Common" #. T.unpack (input ^. moduleName), "Domain.Types.Transaction"]
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
         <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
-        <> [getClientModuleName clientFuncName]
     allSimpleImports :: [String]
     allSimpleImports =
       ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
@@ -109,15 +101,8 @@ when_ :: Bool -> [a] -> [a]
 when_ False _ = []
 when_ True as = as
 
-getClientFunctionName :: ApiRead -> String
-getClientFunctionName apiRead = do
-  fromMaybe (error "clientFunction should be provided for dashboard api") $ apiClientFunction apiRead
-
-getClientModuleName :: String -> String
-getClientModuleName = fromMaybe (error "Client function name should contain module name") . figureOutImport
-
-mkCodeBody :: GenerationType -> ApiRead -> String -> ApisM ()
-mkCodeBody generationType apiRead clientFuncName = do
+mkCodeBody :: GenerationType -> ApiRead -> ApisM ()
+mkCodeBody generationType apiRead = do
   input <- ask
   let allApis = input ^. apis
   tellM . fromMaybe mempty $
@@ -125,7 +110,7 @@ mkCodeBody generationType apiRead clientFuncName = do
       generateAPIType SERVANT_API_DASHBOARD apiRead
       generateAPIHandler apiRead
       forM_ allApis $ generateServantApiType generationType apiRead
-      forM_ allApis $ handlerFunctionDef generationType clientFuncName
+      forM_ allApis $ handlerFunctionDef generationType apiRead
 
 generateAPIHandler :: ApiRead -> Writer CodeUnit
 generateAPIHandler apiRead = do
@@ -162,8 +147,8 @@ generateServantApiType generationType apiRead apiTT = do
       maybeToList (addAuthToApi generationType $ _authType apiTT)
         <> [cT (((apiTypesImportPrefix apiRead <> "." <> T.unpack moduleName' <> ".") <>) . T.unpack . mkApiName $ apiTT)]
 
-handlerFunctionDef :: GenerationType -> String -> ApiTT -> Writer CodeUnit
-handlerFunctionDef generationType clientFuncName apiT = do
+handlerFunctionDef :: GenerationType -> ApiRead -> ApiTT -> Writer CodeUnit
+handlerFunctionDef generationType apiRead apiT = do
   input <- ask
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
@@ -180,49 +165,6 @@ handlerFunctionDef generationType clientFuncName apiT = do
       let pats = vP "merchantShortId" : vP "opCity" : vP "apiTokenInfo" : generateParamsPat apiUnits
       TH.clauseW pats $
         TH.normalB $
-          generateWithFlowHandlerAPI isDashboardAuth $
-            TH.doEW $ do
-              whenJust (apiT ^. requestValidation) $ \validationFunc -> do
-                let reqParam = case findHandlerParam apiUnits ReqParam of
-                      Just paramText -> vE paramText
-                      Nothing -> error "Did not found request for validation"
-                TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
-              vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
-              let transactionWrapper clientCall = case apiT ^. apiType of
-                    GET -> clientCall
-                    _ -> do
-                      let apiName = "Domain.Types.Transaction" #. T.unpack moduleName' <> "API"
-                      let endpointName = "Dashboard.Common" #. T.unpack moduleName' #. (T.unpack (mkApiName apiT) <> "Endpoint")
-                      vP "transaction"
-                        <-- vE "SharedLogic.Transaction.buildTransaction"
-                        ~* (cE apiName ~* cE endpointName)
-                        ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
-                        ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
-                        ~* generateHandlerParam apiUnits DriverIdParam
-                        ~* generateHandlerParam apiUnits RideIdParam
-                        ~* generateHandlerParam apiUnits ReqParam
-                      TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
-              transactionWrapper $
-                TH.noBindSW $
-                  TH.appendE $
-                    vE clientFuncName
-                      NE.:| vE "checkedMerchantId" :
-                    vE "opCity" :
-                    vE ("." <> T.unpack (headToLower moduleName') <> "DSL" #. T.unpack functionName) :
-                    generateParamsExp apiUnits
-  where
-    isDashboardAuth :: Bool
-    isDashboardAuth = case _authType apiT of
-      Just (DashboardAuth _) -> True
-      Just (SafetyWebhookAuth _) -> True
-      Just (ApiAuth {}) -> True
-      _ -> False
-
-    mkServerName :: Maybe AuthType -> Q TH.Exp
-    mkServerName (Just (ApiAuth serverName _ _)) = cE serverName.getServerName
-    mkServerName _ = error "ApiAuth expected for dashboard api"
-
-    generateHandlerParam :: [ApiUnit] -> HandlerParam -> Q TH.Exp
-    generateHandlerParam apiUnits param = case findHandlerParam apiUnits param of
-      Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
-      Nothing -> cE "Kernel.Prelude.Nothing"
+          generateWithFlowHandlerAPI True $ do
+            let defExp = apiDomainHandlerDashboardImportPrefix apiRead #. T.unpack moduleName' #. T.unpack (handlerFunctionText apiT)
+            TH.appendE $ vE defExp NE.:| vE "merchantShortId" : vE "opCity" : vE "apiTokenInfo" : generateParamsExp apiUnits
