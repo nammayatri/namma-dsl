@@ -78,6 +78,7 @@ runApiGenerator configPath yamlPath = do
       (SERVANT_API_DASHBOARD, mkServantAPIDashboard),
       (API_TYPES, mkApiTypes),
       (DOMAIN_HANDLER, mkDomainHandler),
+      (DOMAIN_HANDLER_DASHBOARD, mkDomainHandlerDashboard),
       (PURE_SCRIPT_FRONTEND, mkFrontendAPIIntegration)
     ]
 
@@ -222,6 +223,15 @@ mkDomainHandler appConfigs apiRead apiDef = do
       generateDomainHandler' = generateDomainHandler defaultImportsFromConfig apiRead
   fileExists <- doesFileExist (filePath </> fileName)
   unless fileExists $ writeToFile filePath fileName (show $ generateDomainHandler' apiDef)
+
+mkDomainHandlerDashboard :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkDomainHandlerDashboard appConfigs apiRead apiDef = do
+  let fileName = T.unpack (_moduleName apiDef) ++ ".hs"
+      filePath = appConfigs ^. output . domainHandlerDashboard
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs DOMAIN_HANDLER_DASHBOARD
+      generateDomainHandlerDashboard' = generateDomainHandlerDashboard defaultImportsFromConfig apiRead
+  fileExists <- doesFileExist (filePath </> fileName)
+  unless fileExists $ writeToFile filePath fileName (show $ generateDomainHandlerDashboard' apiDef)
 
 mkFrontendAPIIntegration :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkFrontendAPIIntegration appConfigs _apiRead apiDef = do
