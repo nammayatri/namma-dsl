@@ -37,7 +37,7 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _) 
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = domainHandlerModulePrefix <> T.unpack (_moduleName input),
-          _moduleExports = Nothing,
+          _moduleExports = Just $ T.unpack . handlerFunctionText <$> input ^. apis,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
