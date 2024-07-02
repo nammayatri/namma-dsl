@@ -8,7 +8,7 @@ import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
-import NammaDSL.Config (DefaultImports (..), GenerationType (SERVANT_API_DASHBOARD))
+import NammaDSL.Config (DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
@@ -26,9 +26,8 @@ generateDomainHandlerDashboard :: DefaultImports -> ApiRead -> Apis -> Code
 generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
   where
-    generationType = SERVANT_API_DASHBOARD
     clientFuncName = getClientFunctionName apiRead
-    codeBody' = generateCodeBody (mkCodeBody generationType apiRead) input
+    codeBody' = generateCodeBody (mkCodeBody apiRead) input
     domainHandlerDashboardModulePrefix = apiDomainHandlerDashboardImportPrefix apiRead ++ "."
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
@@ -116,21 +115,21 @@ getClientFunctionName apiRead = do
 getClientModuleName :: String -> String
 getClientModuleName = fromMaybe (error "Client function name should contain module name") . figureOutImport
 
-mkCodeBody :: GenerationType -> ApiRead -> ApisM ()
-mkCodeBody generationType apiRead = do
+mkCodeBody :: ApiRead -> ApisM ()
+mkCodeBody apiRead = do
   input <- ask
   tellM . fromMaybe mempty $
-    mkCodeBodyDomainHandlerDashboard generationType apiRead input
+    mkCodeBodyDomainHandlerDashboard apiRead input
 
-mkCodeBodyDomainHandlerDashboard :: GenerationType -> ApiRead -> Apis -> Maybe String
-mkCodeBodyDomainHandlerDashboard generationType input apiRead = do
+mkCodeBodyDomainHandlerDashboard :: ApiRead -> Apis -> Maybe String
+mkCodeBodyDomainHandlerDashboard apiRead input = do
   let clientFuncName = getClientFunctionName apiRead
   let allApis = input ^. apis
   interpreter input $ do
-    forM_ allApis $ handlerFunctionDef generationType clientFuncName
+    forM_ allApis $ handlerFunctionDef clientFuncName
 
-handlerFunctionDef :: GenerationType -> String -> ApiTT -> Writer CodeUnit
-handlerFunctionDef generationType clientFuncName apiT = do
+handlerFunctionDef :: String -> ApiTT -> Writer CodeUnit
+handlerFunctionDef clientFuncName apiT = do
   input <- ask
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
@@ -138,7 +137,7 @@ handlerFunctionDef generationType clientFuncName apiT = do
       allTypes = map apiSignatureType signatureUnits
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
-      handlerTypes = apiAuthTypeMapperServant generationType apiT <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
+      handlerTypes = apiAuthTypeMapperServant DOMAIN_HANDLER_DASHBOARD apiT <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
   TH.decsW $ do
     TH.sigDW (TH.mkNameT functionName) $ do
       TH.forallT [] [] $
