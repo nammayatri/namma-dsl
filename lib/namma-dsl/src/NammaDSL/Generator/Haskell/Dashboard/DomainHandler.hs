@@ -1,4 +1,4 @@
-module NammaDSL.Generator.Haskell.Dashboard.DomainHandler (generateDomainHandlerDashboard) where
+module NammaDSL.Generator.Haskell.Dashboard.DomainHandler (mkCodeBodyDomainHandlerDashboard, generateDomainHandlerDashboard) where
 
 import Control.Lens ((^.))
 import Control.Monad (forM_)
@@ -28,7 +28,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
   where
     generationType = SERVANT_API_DASHBOARD
     clientFuncName = getClientFunctionName apiRead
-    codeBody' = generateCodeBody (mkCodeBody generationType clientFuncName) input
+    codeBody' = generateCodeBody (mkCodeBody generationType apiRead) input
     domainHandlerDashboardModulePrefix = apiDomainHandlerDashboardImportPrefix apiRead ++ "."
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
@@ -116,13 +116,18 @@ getClientFunctionName apiRead = do
 getClientModuleName :: String -> String
 getClientModuleName = fromMaybe (error "Client function name should contain module name") . figureOutImport
 
-mkCodeBody :: GenerationType -> String -> ApisM ()
-mkCodeBody generationType clientFuncName = do
+mkCodeBody :: GenerationType -> ApiRead -> ApisM ()
+mkCodeBody generationType apiRead = do
   input <- ask
-  let allApis = input ^. apis
   tellM . fromMaybe mempty $
-    interpreter input $ do
-      forM_ allApis $ handlerFunctionDef generationType clientFuncName
+    mkCodeBodyDomainHandlerDashboard generationType apiRead input
+
+mkCodeBodyDomainHandlerDashboard :: GenerationType -> ApiRead -> Apis -> Maybe String
+mkCodeBodyDomainHandlerDashboard generationType input apiRead = do
+  let clientFuncName = getClientFunctionName apiRead
+  let allApis = input ^. apis
+  interpreter input $ do
+    forM_ allApis $ handlerFunctionDef generationType clientFuncName
 
 handlerFunctionDef :: GenerationType -> String -> ApiTT -> Writer CodeUnit
 handlerFunctionDef generationType clientFuncName apiT = do
