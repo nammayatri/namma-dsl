@@ -1,15 +1,14 @@
 let outputPrefix =
-      "/media/roman/7dcc2e37-dcb7-456e-aa74-1d22a5dd3f46/home/roman/Projects/nammayatri/namma-dsl/lib/namma-dsl/tests/"
+      "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/tests/src-read-only/"
 
 let sqlOutputPaths =
-      [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" }
-      , { _1 = outputPrefix ++ "/migrations2", _2 = "atlas_driver" }
-      ]
+      [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" } ]
 
 let outputPath =
       { _apiRelatedTypes = outputPrefix ++ "dashboard/Types"
       , _beamQueries = outputPrefix ++ "Storage/Queries"
       , _extraBeamQueries = outputPrefix ++ "Storage/Queries/Extra"
+      , _extraApiRelatedTypes = outputPrefix ++ "Dashboard/Types/Extra"
       , _cachedQueries = outputPrefix ++ "Storage/CachedQueries"
       , _extraCachedQueries = outputPrefix ++ "Storage/CachedQueries/Extra"
       , _beamTable = outputPrefix ++ "Storage/Beam"
@@ -202,10 +201,15 @@ in  { _output = outputPath
     , _defaultImports = defaultImports
     , _defaultTypeImportMapper = defaultTypeImportMapper
     , _generate =
-      [ GeneratorType.DOMAIN_HANDLER
+      [ GeneratorType.SQL
+      , GeneratorType.DOMAIN_TYPE
+      , GeneratorType.BEAM_TABLE
+      , GeneratorType.BEAM_QUERIES
+      , GeneratorType.DOMAIN_HANDLER
       , GeneratorType.API_TYPES
       , GeneratorType.SERVANT_API
       , GeneratorType.SERVANT_API_DASHBOARD
       ]
     , _apiKind = ApiKind.DASHBOARD
+    , _clientFunction = None Text
     }

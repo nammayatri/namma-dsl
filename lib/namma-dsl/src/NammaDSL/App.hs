@@ -24,7 +24,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.58"
+version = "1.0.59"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -45,11 +45,11 @@ runStorageGenerator configPath yamlPath = do
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
   mapM_
     when'
-    [ (DOMAIN_TYPE, mkDomainType),
+    [ (SQL, mkSQLFile),
+      (DOMAIN_TYPE, mkDomainType),
       (BEAM_TABLE, mkBeamTable),
       (BEAM_QUERIES, mkBeamQueries),
-      (CACHED_QUERIES, mkCachedQueries),
-      (SQL, mkSQLFile)
+      (CACHED_QUERIES, mkCachedQueries)
     ]
 
 runApiGenerator :: FilePath -> FilePath -> IO ()
@@ -183,7 +183,10 @@ mkSQLFile appConfigs _storageRead tableDefs = do
         mapM_
           ( \(filePath', database') -> do
               mbOldMigrationFile <- getOldSqlFile sqlMapper database' $ filePath' </> filename
-              writeToFile filePath' filename (generateSQL database' mbOldMigrationFile t)
+              let contents = generateSQL database' mbOldMigrationFile t
+              case contents of
+                Right content -> unless (null content) $ writeToFile filePath' filename content
+                Left err -> error err
           )
           filePathAndDatabase
     )
