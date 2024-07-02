@@ -1,17 +1,16 @@
-module NammaDSL.Generator.Haskell.Servant (generateServantAPI, handlerSignature, handlerFunctionText) where
+module NammaDSL.Generator.Haskell.Servant (handlerFunctionText, generateServantAPI, handlerSignature, apiTTToText) where
 
 import Control.Lens ((^.))
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
-import Data.List.Extra (snoc)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
-import NammaDSL.Config (DefaultImports (..))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (SERVANT_API))
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common (apiAuthTypeMapperServant, checkForPackageOverrides)
+import NammaDSL.Generator.Haskell.Common hiding (generateParamsExp, generateParamsPat)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -24,7 +23,7 @@ type Writer w = TH.Writer Apis w
 type Q w = TH.Q Apis w
 
 generateServantAPI :: DefaultImports -> ApiRead -> Apis -> Code
-generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
+generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
   where
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
@@ -39,8 +38,10 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = servantApiModulePrefix <> T.unpack (_moduleName input),
+          _moduleExports = allModuleExports,
           _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _packageImports,
           _codeBody = codeBody'
         }
 
@@ -73,6 +74,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
             case authType' of
               Just (DashboardAuth _) -> False
               Just (SafetyWebhookAuth _) -> False
+              Just (ApiAuth {}) -> False
               _ -> True
         )
         (map _authType $ _apis input)
@@ -97,11 +99,20 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _) apiRead input =
         )
         (map _authType $ _apis input)
 
+    allModuleExports = do
+      let moduleName' = _moduleName input
+      let apiTypeName = case apiReadKind apiRead of
+            UI -> "API"
+            DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
+      Just [apiTypeName, "handler"]
+
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
   input <- ask
   tellM . fromMaybe mempty $
     interpreter input $ do
+      when (apiReadKind apiRead == UI) $
+        generateAPIType SERVANT_API apiRead
       generateAPIHandler apiRead
 
 generateAPIHandler :: ApiRead -> Writer CodeUnit
@@ -110,19 +121,32 @@ generateAPIHandler apiRead = do
   let allApis = _apis input
       moduleName' = _moduleName input
 
-  tySynDW "API" [] $ do
-    appendInfixT ":<|>" . NE.fromList $ apiTTToText <$> allApis
-
   TH.decsW $ do
-    sigDW "handler" $ do
-      cT "Environment.FlowServer" ~~ cT "API"
-    funDW "handler" $ do
-      TH.clauseW [] $
+    sigDW "handler" $ mkSign moduleName'
+    funDW "handler" $
+      TH.clauseW mkPat $
         TH.normalB $
-          appendInfixE (vE ":<|>") (NE.fromList $ vE . T.unpack . handlerFunctionText <$> allApis)
+          appendInfixE (vE ":<|>") (NE.fromList $ mkExp <$> allApis)
   forM_ allApis $ handlerFunctionDef moduleName'
   where
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
+
+    mkSign moduleName' = do
+      let apiTypeName = case apiReadKind apiRead of
+            UI -> "API"
+            DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
+      let defSignature = cT "Environment.FlowServer" ~~ cT apiTypeName
+      case apiReadKind apiRead of
+        UI -> defSignature
+        DASHBOARD -> _ShortId ~~ _Merchant --> cT "Kernel.Types.Beckn.Context.City" --> defSignature
+    mkPat = case apiReadKind apiRead of
+      UI -> []
+      DASHBOARD -> [vP "merchantId", vP "city"]
+    mkExp api = do
+      let defExp = vE (T.unpack $ handlerFunctionText api)
+      case apiReadKind apiRead of
+        UI -> defExp
+        DASHBOARD -> defExp ~* vE "merchantId" ~* vE "city"
 
     isAuthPresent :: ApiTT -> Bool
     isAuthPresent apiT = case _authType apiT of
@@ -135,110 +159,38 @@ generateAPIHandler apiRead = do
       Just (SafetyWebhookAuth _) -> True
       _ -> False
 
-    generateParamsPat :: Bool -> Int -> Int -> [Q TH.Pat]
-    generateParamsPat _ _ 0 = []
-    generateParamsPat isAuth mx n = vP ("a" <> show n) : generateParamsPat isAuth mx (n - 1)
+    generateParamsPat :: Int -> [Q TH.Pat]
+    generateParamsPat 0 = []
+    generateParamsPat n = vP ("a" <> show n) : generateParamsPat (n - 1)
 
-    generateParamsExp :: Bool -> Int -> Int -> [Q TH.Exp]
-    generateParamsExp _ _ 0 = []
-    generateParamsExp isAuth mx n =
-      ( if mx == n && isAuth
+    generateParamsExp :: Bool -> Int -> [Q TH.Exp]
+    generateParamsExp _ 0 = []
+    generateParamsExp useAuthWithTuple n =
+      ( if useAuthWithTuple
           then vE "Control.Lens.over" ~* vE "Control.Lens._1" ~* cE "Kernel.Prelude.Just" ~* vE ("a" <> show n)
           else vE ("a" <> show n)
       ) :
-      generateParamsExp isAuth mx (n - 1)
+      generateParamsExp False (n - 1)
 
     handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
     handlerFunctionDef moduleName' apiT = do
       let functionName = handlerFunctionText apiT
           allTypes = handlerSignature apiT
           showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
-          handlerTypes = maybeToList (apiAuthTypeMapperServant apiT) <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
+          handlerTypes = apiAuthTypeMapperServant SERVANT_API apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
       TH.decsW $ do
         TH.sigDW (TH.mkNameT functionName) $ do
           TH.forallT [] [] $
             TH.appendArrow $ NE.fromList handlerTypes
         TH.funDW (TH.mkNameT functionName) $ do
-          let pats = generateParamsPat (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
+          let paramsNumber = case apiReadKind apiRead of
+                DASHBOARD -> length allTypes + 1
+                UI | isAuthPresent apiT -> length allTypes
+                UI -> length allTypes - 1
+          let pats = generateParamsPat paramsNumber
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (isDashboardAuth apiT) $
                 TH.appendE $
                   vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT)) (length allTypes) (if isAuthPresent apiT then length allTypes else length allTypes - 1)
-
-generateWithFlowHandlerAPI :: Bool -> (Q TH.Exp -> Q TH.Exp)
-generateWithFlowHandlerAPI = \case
-  True -> (vE "withFlowHandlerAPI'" ~$)
-  False -> (vE "withFlowHandlerAPI" ~$)
-
-apiTTToText :: ApiTT -> Q TH.Type
-apiTTToText apiTT = do
-  let urlPartsText = map urlPartToText (_urlParts apiTT)
-      apiTypeText = apiTypeToText (_apiType apiTT)
-      apiReqText = apiReqToText <$> _apiReqType apiTT
-      apiResText = apiResToText apiTypeText (_apiResType apiTT)
-      headerText = map headerToText (_header apiTT)
-
-  TH.appendInfixT ":>" . NE.fromList $
-    maybeToList (addAuthToApi $ _authType apiTT)
-      <> urlPartsText
-      <> headerText
-      <> maybeToList apiReqText
-      <> [apiResText]
-  where
-    addAuthToApi :: Maybe AuthType -> Maybe (Q TH.Type)
-    addAuthToApi authtype = case authtype of
-      Just AdminTokenAuth -> Just $ cT "AdminTokenAuth"
-      Just (TokenAuth _) -> Just $ cT "TokenAuth"
-      Just (SafetyWebhookAuth dashboardAuthType) -> Just $ cT "SafetyWebhookAuth" ~~ cT ("'" <> show dashboardAuthType)
-      Just (DashboardAuth dashboardAuthType) -> Just $ cT "DashboardAuth" ~~ cT ("'" <> show dashboardAuthType)
-      Just NoAuth -> Nothing
-      Nothing -> Just $ cT "TokenAuth"
-
-    urlPartToText :: UrlParts -> Q TH.Type
-    urlPartToText (UnitPath path) = strT (T.unpack path)
-    urlPartToText (Capture path ty) = cT "Capture" ~~ strT (T.unpack path) ~~ TH.appendT (NE.fromList $ cT <$> words (T.unpack ty))
-    urlPartToText (QueryParam path ty isMandatory) =
-      if isMandatory
-        then cT "MandatoryQueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
-        else cT "QueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
-
-    apiReqToText :: ApiReq -> Q TH.Type
-    apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)
-
-    apiResToText :: Text -> ApiRes -> Q TH.Type
-    apiResToText apiTypeText (ApiRes name ty) = cT (T.unpack apiTypeText) ~~ promotedList1T (T.unpack ty) ~~ cT (T.unpack name)
-
-    headerToText :: HeaderType -> Q TH.Type
-    headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ cT (T.unpack ty)
-
-handlerFunctionText :: ApiTT -> Text
-handlerFunctionText apiTT =
-  let apiTypeText = T.toLower $ apiTypeToText (_apiType apiTT)
-      urlPartsText = map urlPartToName (_urlParts apiTT)
-   in apiTypeText <> T.intercalate "" (filter (/= T.empty) urlPartsText)
-  where
-    urlPartToName :: UrlParts -> Text
-    urlPartToName (UnitPath name) = (T.toUpper . T.singleton . T.head) name <> T.tail name
-    urlPartToName _ = ""
-
-handlerSignature :: ApiTT -> [Text]
-handlerSignature input =
-  let urlTypeText = map urlToText (_urlParts input)
-      headerTypeText = map (\(Header _ ty) -> ty) (_header input)
-      reqTypeText = reqTypeToText $ _apiReqType input
-      resTypeText = (\(ApiRes ty _) -> ty) $ _apiResType input
-   in filter (/= T.empty) (snoc (snoc (urlTypeText ++ headerTypeText) reqTypeText) resTypeText)
-  where
-    urlToText :: UrlParts -> Text
-    urlToText (Capture _ ty) = ty
-    urlToText (QueryParam _ ty isMandatory) = do
-      if isMandatory
-        then ty
-        else "Kernel.Prelude.Maybe (" <> ty <> ")"
-    urlToText _ = ""
-
-    reqTypeToText :: Maybe ApiReq -> Text
-    reqTypeToText Nothing = ""
-    reqTypeToText (Just (ApiReq ty _)) = ty
+                    NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber

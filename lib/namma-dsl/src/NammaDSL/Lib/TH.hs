@@ -10,7 +10,7 @@ import Data.Proxy
 import Data.String
 import qualified Data.Text as T
 import Language.Haskell.Meta.Parse (parseExp)
-import Language.Haskell.TH as Reexport hiding (Code, Q, forallT, listE, listT, normalB, runQ, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixT)
+import Language.Haskell.TH as Reexport hiding (Code, Q, forallT, listE, listT, normalB, parensT, runQ, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT)
 import qualified Language.Haskell.TH as TH
 import NammaDSL.Lib.Types
 import Text.Read (readEither)
@@ -31,14 +31,25 @@ vE = pure . TH.VarE . TH.mkName
 cE :: String -> Q r TH.Exp
 cE = pure . TH.ConE . TH.mkName
 
+-- hack for record wild cards
+wildRecordsE :: String -> Q r TH.Exp
+wildRecordsE name = vE $ name <> " {..}"
+
 vP :: String -> Q r TH.Pat
 vP = pure . TH.VarP . TH.mkName
+
+-- hack for record wild cards
+wildRecordsP :: String -> Q r TH.Pat
+wildRecordsP name = vP $ name <> " {..}"
 
 vT :: String -> Q r TH.Type
 vT = pure . TH.VarT . TH.mkName
 
 cT :: String -> Q r TH.Type
 cT = pure . TH.ConT . TH.mkName
+
+cT' :: String -> Q r TH.Type
+cT' = pure . TH.ConT . TH.mkName . ("'" <>)
 
 strE :: String -> Q r TH.Exp
 strE = pure . TH.LitE . TH.StringL
@@ -62,11 +73,17 @@ infixl 2 ~~
 --priority should be higher then for other operators
 infixl 9 ~*
 
+parensT :: Q r TH.Type -> Q r TH.Type
+parensT = fmap TH.ParensT
+
 uInfixT :: Q r TH.Type -> TH.Name -> Q r TH.Type -> Q r TH.Type
 uInfixT a b c = TH.UInfixT <$> a <*> pure b <*> c
 
 uInfixE :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
 uInfixE = liftA3 TH.UInfixE
+
+uInfixP :: Q r TH.Pat -> TH.Name -> Q r TH.Pat -> Q r TH.Pat
+uInfixP a b c = TH.UInfixP <$> a <*> pure b <*> c
 
 (~$) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
 (~$) e1 = uInfixE e1 (vE "$")
@@ -131,6 +148,12 @@ funDW n cW = do
   cs <- lift $ execWriterT cW
   tell [TH.FunD n cs]
 
+valDW :: Q r TH.Pat -> Q r TH.Body -> Writer r TH.Dec
+valDW pQ bQ = do
+  p <- lift pQ
+  b <- lift bQ
+  tell [TH.ValD p b []]
+
 itemW :: Q r a -> Writer r a
 itemW aQ = do
   a <- lift aQ
@@ -141,6 +164,13 @@ clauseW patsQ bodyQ = do
   pats <- lift $ sequenceA patsQ
   body <- lift bodyQ
   tell [TH.Clause pats body []]
+
+clauseWhereW :: [Q r TH.Pat] -> Q r TH.Body -> Writer r TH.Dec -> Writer r TH.Clause
+clauseWhereW patsQ bodyQ whereW = do
+  where_ <- lift $ execWriterT whereW
+  pats <- lift $ sequenceA patsQ
+  body <- lift bodyQ
+  tell [TH.Clause pats body where_]
 
 doEW :: Writer r TH.Stmt -> Q r TH.Exp
 doEW stmtW = do
@@ -211,6 +241,23 @@ dataDW name vars conW deriveW = do
   derives <- lift $ execWriterT deriveW
   tell [CodeDec [TH.DataD [] name vars Nothing cons derives]]
 
+newtypeDW :: TH.Name -> [TH.TyVarBndr ()] -> Q r TH.Con -> Writer r TH.DerivClause -> Writer r CodeUnit
+newtypeDW name vars conQ deriveW = do
+  con <- lift conQ
+  derives <- lift $ execWriterT deriveW
+  tell [CodeDec [TH.NewtypeD [] name vars Nothing con derives]]
+
+dataOrNewtypeDW :: TH.Name -> [TH.TyVarBndr ()] -> Writer r TH.Con -> Writer r TH.DerivClause -> Writer r CodeUnit
+dataOrNewtypeDW name vars conW deriveW = do
+  cons <- lift $ execWriterT conW
+  derives <- lift $ execWriterT deriveW
+  case cons of
+    [con] -> case con of
+      NormalC _name [_bangType] -> tell [CodeDec [TH.NewtypeD [] name vars Nothing con derives]]
+      RecC _name [_varBangType] -> tell [CodeDec [TH.NewtypeD [] name vars Nothing con derives]]
+      _ -> tell [CodeDec [TH.DataD [] name vars Nothing cons derives]]
+    _ -> tell [CodeDec [TH.DataD [] name vars Nothing cons derives]]
+
 derivClauseW :: Maybe TH.DerivStrategy -> [TH.Pred] -> Writer r TH.DerivClause
 derivClauseW str preds = tell [TH.DerivClause str preds]
 
@@ -263,6 +310,9 @@ appendInfixE operator = foldl1 (\acc e -> uInfixE acc operator e)
 
 appendInfixT :: TH.Name -> NonEmpty (Q r TH.Type) -> Q r TH.Type
 appendInfixT operator = foldr1 (\acc e -> uInfixT acc operator e)
+
+appendInfixP :: TH.Name -> NonEmpty (Q r TH.Pat) -> Q r TH.Pat
+appendInfixP operator = foldr1 (\acc e -> uInfixP acc operator e)
 
 appendArrow :: NonEmpty (Q r TH.Type) -> Q r TH.Type
 appendArrow = appendInfixT "->"

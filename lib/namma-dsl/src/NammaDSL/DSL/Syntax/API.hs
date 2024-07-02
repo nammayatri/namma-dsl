@@ -1,4 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module NammaDSL.DSL.Syntax.API where
@@ -8,8 +10,10 @@ import Data.Aeson (Object)
 import Data.Default
 import Data.Map (Map)
 import Data.Text (Text)
+import NammaDSL.Config (ApiKind (..))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
+import Text.Read (readEither)
 import Prelude
 
 data UrlParts
@@ -18,9 +22,31 @@ data UrlParts
   | QueryParam Text Text Bool
   deriving (Show)
 
-data ApiType = GET | POST | PUT | DELETE deriving (Show)
+data ApiType = GET | POST | PUT | DELETE deriving (Show, Eq)
 
-data AuthType = AdminTokenAuth | TokenAuth TokenAuthType | NoAuth | SafetyWebhookAuth DashboardAuthType | DashboardAuth DashboardAuthType deriving (Show)
+data AuthType
+  = AdminTokenAuth
+  | TokenAuth TokenAuthType
+  | NoAuth
+  | SafetyWebhookAuth DashboardAuthType
+  | DashboardAuth DashboardAuthType
+  | ApiAuth ServerName ApiEntity UserActionType
+  deriving (Show)
+
+newtype ServerName = ServerName {getServerName :: String}
+
+instance Show ServerName where
+  show = (.getServerName)
+
+newtype ApiEntity = ApiEntity {getApiEntity :: String}
+
+instance Show ApiEntity where
+  show = (.getApiEntity)
+
+newtype UserActionType = UserActionType {getUserActionType :: String}
+
+instance Show UserActionType where
+  show = (.getUserActionType)
 
 data TokenAuthType = RIDER_TYPE | PROVIDER_TYPE deriving (Show)
 
@@ -31,7 +57,13 @@ data HeaderType = Header Text Text deriving (Show)
 
 data ApiReq = ApiReq Text Text deriving (Show)
 
-data ApiRes = ApiRes Text Text deriving (Show)
+data ApiRes = ApiRes
+  { _apiResTypeName :: Text,
+    _apiResApiType :: Text -- FIXME String
+  }
+  deriving (Show)
+
+$(makeLenses ''ApiRes)
 
 data ApiParts = ApiTU ApiType [UrlParts] | HeaderT HeaderType | Auth (Maybe AuthType) | Req Text Text | Res Text Text | ModuleName Text deriving (Show)
 
@@ -41,7 +73,10 @@ data ApiTT = ApiTT
     _authType :: Maybe AuthType,
     _header :: [HeaderType],
     _apiReqType :: Maybe ApiReq,
-    _apiResType :: ApiRes
+    _apiResType :: ApiRes,
+    _apiTypeKind :: ApiKind,
+    _apiModuleName :: Text,
+    _requestValidation :: Maybe Text
   }
   deriving (Show)
 
@@ -62,9 +97,17 @@ data Apis = Apis
     _apis :: [ApiTT],
     _imports :: [Text],
     _importPackageOverrides :: Map String String,
-    _apiTypes :: TypesInfo
+    _apiTypes :: TypesInfo,
+    _extraOperations :: [ExtraOperations]
   }
   deriving (Show)
+
+data ExtraOperations = EXTRA_API_TYPES_FILE deriving (Show, Eq, Read)
+
+extraOperation :: String -> ExtraOperations
+extraOperation str = case readEither str of
+  Right operation -> operation
+  Left _ -> error "Invalid extra operation"
 
 $(makeLenses ''Apis)
 
@@ -72,15 +115,20 @@ type ApisM = BuilderM Apis
 
 data ApiRead = ApiRead
   { apiTypesImportPrefix :: String,
+    extraApiTypesImportPrefix :: String,
     apiServantImportPrefix :: String,
+    apiServantDashboardImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,
-    apiDefaultTypeImportMapper :: [(String, String)]
+    apiDefaultTypeImportMapper :: [(String, String)],
+    apiClientFunction :: Maybe String,
+    apiReadKind :: ApiKind
   }
 
 data ExtraParseInfo = ExtraParseInfo
   { _yamlObj :: Object,
     _parsedTypesDataNames :: [String]
   }
+  deriving (Show)
 
 $(makeLenses ''ExtraParseInfo)
 
@@ -88,6 +136,7 @@ data ApiState = ApiState
   { _apisRes :: Apis,
     _extraParseInfo :: ExtraParseInfo
   }
+  deriving (Show)
 
 $(makeLenses ''ApiState)
 
@@ -101,9 +150,9 @@ instance Default TypesInfo where
   def = TypesInfo [] []
 
 instance Default ApiRead where
-  def = ApiRead "" "" "" []
+  def = ApiRead "" "" "" "" "" [] Nothing UI
 
 instance Default Apis where
-  def = Apis "" [] [] mempty def
+  def = Apis "" [] [] mempty def []
 
 type ApiParserM = ParserM ApiRead ApiState

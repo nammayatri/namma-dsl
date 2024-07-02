@@ -49,7 +49,7 @@ data ExtraCachedQueryCode = ExtraCachedQueryCode
   deriving (Show)
 
 generateCachedQueries :: DefaultImports -> StorageRead -> TableDef -> Maybe CachedQueryCode
-generateCachedQueries (DefaultImports qualifiedImp simpleImp _) storageRead tableDef =
+generateCachedQueries (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
   if EXTRA_CACHED_QUERY_FILE `elem` extraOperations tableDef
     then
       Just $
@@ -137,8 +137,10 @@ generateCachedQueries (DefaultImports qualifiedImp simpleImp _) storageRead tabl
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = mempty,
+          _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = allQualifiedImports,
+          _packageImports,
           _codeBody = mempty
         }
     makeProperQualifiedImports :: Code -> [String] -> [String]
