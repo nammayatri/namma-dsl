@@ -2,6 +2,7 @@
 
 module NammaDSL.Generator.SQL.Table (generateSQL) where
 
+import Control.Monad (foldM)
 import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Maybe (isJust, isNothing, mapMaybe)
@@ -15,35 +16,36 @@ mkSnake :: BeamField -> String
 mkSnake = quietSnake . bFieldName
 
 -- Generates SQL for creating a table and altering it to add columns
-generateSQL :: Database -> Maybe MigrationFile -> TableDef -> String
+generateSQL :: Database -> Maybe MigrationFile -> TableDef -> Either SQL_ERROR String
 generateSQL database (Just oldSqlFile) tableDef = do
-  let (updatedFields, newFields, deletedFields, pkChanged) = getUpdatesAndRest oldSqlFile tableDef
-      tableName = tableNameSql tableDef
+  (updatedFields, newFields, deletedFields, pkChanged) <- getUpdatesAndRest oldSqlFile tableDef
+  let tableName = tableNameSql tableDef
       anyChanges = not (null (updatedFields <> newFields <> deletedFields))
       updateQueries = generateUpdateSQL database tableName updatedFields
       pkChangeQuery = if pkChanged then "ALTER TABLE " <> database <> "." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL database tableDef else ""
-      newColumnQueries = addColumnSQL database tableName newFields
-      deleteQueries = generateDeleteSQL database tableName deletedFields
+  newColumnQueries <- addColumnSQL True database tableName newFields
+  let deleteQueries = generateDeleteSQL database tableName deletedFields
   if anyChanges || pkChanged
-    then oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, deleteQueries, pkChangeQuery])
-    else oldSqlFile.rawLastSqlFile
-generateSQL database Nothing tableDef =
-  createTableSQL database tableDef ++ "\n" ++ alterTableSQL database tableDef ++ "\n" ++ addKeySQL database tableDef
+    then Right $ oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, deleteQueries, pkChangeQuery])
+    else Right $ oldSqlFile.rawLastSqlFile
+generateSQL database Nothing tableDef = do
+  altrStmts <- alterTableSQL database tableDef
+  Right $ createTableSQL database tableDef ++ "\n" ++ altrStmts ++ "\n" ++ addKeySQL database tableDef
 
 updateStamp :: String
 updateStamp = "\n\n\n------- SQL updates -------\n\n"
 
 generateDeleteSQL :: Database -> String -> [BeamField] -> String
 generateDeleteSQL database tableName beamFields =
-  if null beamFields
-    then mempty
-    else
-      "\n--- Drop columns section begins. Please be careful while running ---\n"
-        ++ dropStmts
-        ++ "\n--- Drop columns section ends ---\n"
-  where
-    dropStmts = intercalate "\n" . (flip map) beamFields $ \beamField -> do
-      ("ALTER TABLE " <> database <> ".") ++ tableName ++ " DROP COLUMN " ++ mkSnake beamField ++ ";"
+  let beamFieldsWithNotNull = filter (\field -> NotNull `elem` bConstraints field) beamFields
+      dropStmts = intercalate "\n" . (flip map) beamFieldsWithNotNull $ \beamField -> do
+        ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> mkSnake beamField <> " DROP NOT NULL;"
+   in if null beamFieldsWithNotNull
+        then mempty
+        else
+          "\n--- Now DSL don't allow dropping tables instead we will drop not null constraint if any .Please be careful while running ---\n"
+            ++ dropStmts
+            ++ "\n--- Drop section ends. Please check before running ---\n"
 
 generateUpdateSQL :: Database -> String -> [BeamField] -> String
 generateUpdateSQL database tableName beamFields = intercalate "\n" . (flip map) beamFields $ \beamField -> intercalate "\n" . filter (not . null) . (flip map) (bFieldUpdates beamField) $ \fieldUpdates -> case fieldUpdates of
@@ -54,43 +56,59 @@ generateUpdateSQL database tableName beamFields = intercalate "\n" . (flip map) 
   AddNotNull -> ("ALTER TABLE " <> database <> ".") <> tableName <> " ALTER COLUMN " <> (mkSnake beamField) <> " SET NOT NULL;"
   DropColumn -> ""
 
-whichChanges :: BeamField -> BeamField -> [SqlFieldUpdates]
+whichChanges :: BeamField -> BeamField -> Either SQL_ERROR [SqlFieldUpdates]
 whichChanges oldField newField = do
   let nCs = DS.fromList $ bConstraints newField
   let oCs = DS.fromList $ bConstraints oldField
   let addedConstraints = DS.difference nCs oCs
   let removedConstraints = DS.difference oCs nCs
-  let isChangeApplicable change =
-        case change of
-          DropColumn -> False
-          DropDefault -> isNothing (bDefaultVal newField) && isJust (bDefaultVal oldField)
-          AddDefault _ -> isJust (bDefaultVal newField) && isNothing (bDefaultVal oldField) || bDefaultVal oldField /= bDefaultVal newField
-          TypeChange -> bSqlType newField /= bSqlType oldField
-          DropNotNull -> DS.member NotNull removedConstraints
-          AddNotNull -> DS.member NotNull addedConstraints
-  filter isChangeApplicable [DropNotNull, DropDefault, AddNotNull, AddDefault "Not_Required_Here", TypeChange]
+  -- check before --
+  if DS.member NotNull removedConstraints && (isNothing $ bDefaultVal newField)
+    then Left ("Cannot drop not null constraint without default value for column " <> bFieldName newField)
+    else
+      if DS.member NotNull addedConstraints && (isNothing $ bDefaultVal newField)
+        then Left ("Cannot add not null constraint without default value for column " <> bFieldName newField)
+        else
+          let isChangeApplicable change =
+                case change of
+                  DropColumn -> False
+                  DropDefault -> isNothing (bDefaultVal newField) && isJust (bDefaultVal oldField)
+                  AddDefault _ -> isJust (bDefaultVal newField) && isNothing (bDefaultVal oldField) || bDefaultVal oldField /= bDefaultVal newField
+                  TypeChange -> bSqlType newField /= bSqlType oldField
+                  DropNotNull -> DS.member NotNull removedConstraints
+                  AddNotNull -> DS.member NotNull addedConstraints
+           in Right $ filter isChangeApplicable [AddDefault "Not_Required_Here", DropNotNull, AddNotNull, DropDefault, TypeChange]
 
-getUpdatesAndRest :: MigrationFile -> TableDef -> ([BeamField], [BeamField], [BeamField], Bool)
+getUpdatesAndRest :: MigrationFile -> TableDef -> Either SQL_ERROR ([BeamField], [BeamField], [BeamField], Bool)
 getUpdatesAndRest oldSqlFile tableDef = do
   let newSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields tableDef)
   let oldSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields_ oldSqlFile)
   let newKeyIds = DS.fromList $ tableDef.primaryKey -- <> tableDef.secondaryKey -- As secondary key should not the included in the primary keys
   let oldKeyIds = DS.fromList $ oldSqlFile.primaryKeys -- <> oldSqlFile.secondaryKeys
   let isPkChanged = newKeyIds /= oldKeyIds
-  let updatedFields =
-        fst $
-          M.mapAccumWithKey
-            ( \acc columnName newField ->
-                case M.lookup columnName oldSqlFields of
-                  Just oldField -> do
-                    let changes = whichChanges oldField newField
-                    if null changes
-                      then (acc, Nothing)
-                      else ((newField {bFieldUpdates = changes}) : acc, Just newField)
-                  Nothing -> (acc, Nothing)
-            )
-            []
-            newSqlFields
+  let processChanges acc (columnName, newField) =
+        case M.lookup columnName oldSqlFields of
+          Just oldField -> do
+            changesResult <- whichChanges oldField newField
+            return $
+              if null changesResult
+                then acc
+                else (newField {bFieldUpdates = changesResult} : acc)
+          Nothing -> Right acc
+  updatedFields <- foldM processChanges [] (M.toList newSqlFields)
+  -- fst $
+  --   M.mapAccumWithKey
+  --     ( \acc columnName newField ->
+  --         case M.lookup columnName oldSqlFields of
+  --           Just oldField -> do
+  --             let changes = whichChanges oldField newField
+  --             if null changes
+  --               then (acc, Nothing)
+  --               else ((newField {bFieldUpdates = changes}) : acc, Just newField)
+  --           Nothing -> (acc, Nothing)
+  --     )
+  --     []
+  --     newSqlFields
   let newFields =
         fst $
           M.mapAccumWithKey
@@ -111,7 +129,7 @@ getUpdatesAndRest oldSqlFile tableDef = do
             )
             []
             oldSqlFields
-  (updatedFields, newFields, deletedFields, isPkChanged)
+  return (updatedFields, newFields, deletedFields, isPkChanged)
 
 -- SQL for creating an empty table
 createTableSQL :: Database -> TableDef -> String
@@ -119,30 +137,37 @@ createTableSQL database tableDef =
   "CREATE TABLE " <> database <> "." ++ tableNameSql tableDef ++ " ();\n"
 
 -- SQL for altering the table to add each column
-alterTableSQL :: Database -> TableDef -> String
-alterTableSQL database tableDef =
-  intercalate "\n" $ map (addColumnSQL database (tableNameSql tableDef) . beamFields) $ filter (removeBeamFieldsWRTRelation . relation) (fields tableDef)
+alterTableSQL :: Database -> TableDef -> Either SQL_ERROR String
+alterTableSQL database tableDef = do
+  altrStmts <- sequence $ map (addColumnSQL False database (tableNameSql tableDef) . beamFields) $ filter (removeBeamFieldsWRTRelation . relation) (fields tableDef)
+  return (intercalate "\n" altrStmts)
 
 -- SQL for adding a single column with constraints
-addColumnSQL :: Database -> String -> [BeamField] -> String
-addColumnSQL database tableName beamFields =
-  intercalate "\n" $
-    map
-      ( \fieldDef ->
-          generateAlterColumnSQL database (mkSnake fieldDef) (bSqlType fieldDef) fieldDef
-      )
-      beamFields
+addColumnSQL :: Bool -> Database -> String -> [BeamField] -> Either SQL_ERROR String
+addColumnSQL hasOldMigration database tableName beamFields = do
+  mappedAddColStmts <-
+    sequence $
+      map
+        ( \fieldDef ->
+            generateAlterColumnSQL database (mkSnake fieldDef) (bSqlType fieldDef) fieldDef
+        )
+        beamFields
+  return (intercalate "\n" mappedAddColStmts)
   where
     sqlKeywords = ["group", "order", "inner", "left", "right", "full", "union", "insert", "values", "update", "set", "delete", "create", "alter", "drop", "truncate", "index", "constraint", "primary", "foreign", "default", "not", "distinct", "like", "between", "in", "exists", "case", "then", "else", "end", "null", "is", "count", "avg", "sum", "max", "min", "any", "all", "as"]
     wrapWithQuotes columnName
       | columnName `elem` sqlKeywords = "\"" ++ columnName ++ "\""
       | otherwise = columnName
-    generateAlterColumnSQL :: Database -> String -> String -> BeamField -> String
+    generateAlterColumnSQL :: Database -> String -> String -> BeamField -> Either SQL_ERROR String
     generateAlterColumnSQL database' fieldName_ sqlType_ beamField =
-      ("ALTER TABLE " <> database' <> ".") ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [wrapWithQuotes fieldName_, sqlType_]) ++ " "
-        ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
-        ++ maybe "" (" default " ++) (bDefaultVal beamField)
-        ++ ";"
+      if hasOldMigration && NotNull `elem` bConstraints beamField
+        then Left ("Error: Not allowed to add new columns with Not Null constraint. Please make the column " <> bFieldName beamField <> " nullable for backwards compatibility")
+        else
+          Right $
+            ("ALTER TABLE " <> database' <> ".") ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [wrapWithQuotes fieldName_, sqlType_]) ++ " "
+              ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
+              ++ maybe "" (" default " ++) (bDefaultVal beamField)
+              ++ ";"
 
 addKeySQL :: Database -> TableDef -> String
 addKeySQL database tableDef =

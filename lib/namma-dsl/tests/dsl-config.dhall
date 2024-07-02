@@ -2,9 +2,7 @@ let outputPrefix =
       "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/tests/src-read-only/"
 
 let sqlOutputPaths =
-      [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" }
-      , { _1 = outputPrefix ++ "/migrations2", _2 = "atlas_driver" }
-      ]
+      [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" } ]
 
 let outputPath =
       { _apiRelatedTypes = outputPrefix ++ "UI/Api/Types"
@@ -166,8 +164,8 @@ in  { _output = outputPath
     , _defaultImports = defaultImports
     , _defaultTypeImportMapper = defaultTypeImportMapper
     , _generate =
-      [ GeneratorType.DOMAIN_TYPE
-      , GeneratorType.SQL
+      [ GeneratorType.SQL
+      , GeneratorType.DOMAIN_TYPE
       , GeneratorType.BEAM_TABLE
       , GeneratorType.BEAM_QUERIES
       , GeneratorType.DOMAIN_HANDLER
