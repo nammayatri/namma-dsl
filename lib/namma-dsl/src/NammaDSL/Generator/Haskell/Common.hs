@@ -53,6 +53,7 @@ apiAuthTypeMapperServant generationType apiT = case _authType apiT of
   Just (DashboardAuth _) -> pure $ cT "TokenInfo"
   Just ApiAuth {} -> case generationType of
     SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
+    DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
   Just NoAuth -> []
