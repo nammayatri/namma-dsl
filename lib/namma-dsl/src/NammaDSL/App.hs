@@ -234,6 +234,17 @@ mkDomainHandlerDashboard appConfigs apiRead apiDef = do
   fileExists <- doesFileExist (filePath </> fileName)
   unless fileExists $ writeToFile filePath fileName (show $ generateDomainHandlerDashboard' apiDef)
 
+-- let appendDomainHandler = True -- TODO make it optional
+-- when (fileExists && appendDomainHandler) $ do
+--   contents <- readFile (filePath </> fileName)
+
+--   filter by (not fileContainsHandler) condition
+
+-- fileContainsHandler :: String -> ApiTT -> Bool
+-- fileContainsHandler contents apiTT = do
+--   let handlerName = T.unpack . handlerFunctionText <$> input ^. apis
+--   isInfixOf "\n" <> handlerName " ::" contents
+
 mkFrontendAPIIntegration :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkFrontendAPIIntegration appConfigs _apiRead apiDef = do
   let filePath = appConfigs ^. output . purescriptFrontend
