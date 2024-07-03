@@ -6,6 +6,8 @@ import Data.Default
 import System.Exit
 import Prelude
 
+data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
+
 data RecordType
   = NewType
   | Data

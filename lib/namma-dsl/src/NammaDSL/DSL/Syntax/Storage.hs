@@ -232,12 +232,13 @@ data StorageRead = StorageRead
     sqlMapper :: [(String, String)],
     extraDefaultFields :: [(String, String)],
     storageDefaultTypeImportMapper :: [(String, String)],
-    defaultCachedQueryKeyPfx :: String
+    defaultCachedQueryKeyPfx :: String,
+    srcFileStatus :: FileState
   }
   deriving (Show)
 
 instance Default StorageRead where
-  def = StorageRead mempty mempty mempty mempty [] [] [] mempty
+  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW
 
 type StorageParserM = ParserM StorageRead StorageState
 

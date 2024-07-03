@@ -426,8 +426,10 @@ parseInstances = do
 
 parsePrimaryAndSecondaryKeys :: StorageParserM ()
 parsePrimaryAndSecondaryKeys = do
+  srcStatus <- asks srcFileStatus
   fields <- gets (fields . tableDef)
   let (primaryKey, secondaryKey) = extractKeys fields
+  when ((not $ null $ L.intersect secondaryKey notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
   modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey}}
   where
     extractKeys :: [FieldDef] -> ([String], [String])
@@ -438,6 +440,9 @@ parsePrimaryAndSecondaryKeys = do
       where
         primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
         secondaryKeyFields = [bFieldName fd | fd <- fieldDefs, SecondaryKey `elem` bConstraints fd]
+
+notAllowedSecondaryKeys :: [String]
+notAllowedSecondaryKeys = ["merchantId", "merchantOperatingCityId", "status"]
 
 parseRelationalTableNamesHaskell :: StorageParserM ()
 parseRelationalTableNamesHaskell = do
