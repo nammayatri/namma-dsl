@@ -45,6 +45,7 @@ library
       NammaDSL.Generator.Haskell.Servant
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
+      NammaDSL.Generator.Purs.CST
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
@@ -117,6 +118,7 @@ library
     , pcre-heavy
     , pretty
     , process
+    , purescript
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
@@ -163,6 +165,7 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Haskell.Servant
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
+      NammaDSL.Generator.Purs.CST
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
@@ -236,6 +239,7 @@ test-suite namma-dsl-tests
     , pcre-heavy
     , pretty
     , process
+    , purescript
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
