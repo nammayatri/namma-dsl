@@ -12,6 +12,7 @@ import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell
 import NammaDSL.Generator.Haskell.ApiTypes
@@ -24,11 +25,12 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.59"
+version = "1.0.60"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
   config <- fetchDhallConfig configPath
+  fileStatus <- getFileState yamlPath
   let modulePrefix tp = haskellModuleNameFromFilePath (config ^. output . tp)
       storageRead =
         StorageRead
@@ -39,7 +41,8 @@ runStorageGenerator configPath yamlPath = do
             sqlMapper = config ^. storageConfig . sqlTypeMapper,
             extraDefaultFields = _extraDefaultFields (config ^. storageConfig),
             storageDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
-            defaultCachedQueryKeyPfx = config ^. storageConfig . defaultCachedQueryKeyPrefix
+            defaultCachedQueryKeyPfx = config ^. storageConfig . defaultCachedQueryKeyPrefix,
+            srcFileStatus = fileStatus
           }
   tableDefs <- storageParser storageRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
@@ -77,8 +80,6 @@ runApiGenerator configPath yamlPath = do
       (DOMAIN_HANDLER, mkDomainHandler),
       (PURE_SCRIPT_FRONTEND, mkFrontendAPIIntegration)
     ]
-
-data FileState = NEW | CHANGED | UNCHANGED | NOT_EXIST deriving (Eq, Show)
 
 getHashObjectAtHEAD :: FilePath -> IO (Maybe String)
 getHashObjectAtHEAD filePath = do
