@@ -1,6 +1,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 
-module NammaDSL.App where
+module NammaDSL.App (module NammaDSL.App, module ReExport) where
 
 import Control.Lens ((^.))
 import Control.Monad (unless, when)
@@ -12,7 +12,7 @@ import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.DSL.Syntax.Common
+import NammaDSL.DSL.Syntax.Common as ReExport
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell
 import NammaDSL.Generator.Haskell.ApiTypes
@@ -25,7 +25,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.60"
+version = "1.0.61"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
