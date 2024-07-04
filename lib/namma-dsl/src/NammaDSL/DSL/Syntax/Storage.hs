@@ -166,7 +166,7 @@ type Create = Bool
 
 type FromCached = Bool
 
-data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT deriving (Show, Eq, Ord)
+data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | Forced FieldConstraint deriving (Show, Eq, Ord)
 
 data SqlFieldUpdates = DropNotNull | DropDefault | AddNotNull | AddDefault String | DropColumn | TypeChange deriving (Show)
 
