@@ -441,7 +441,13 @@ parsePrimaryAndSecondaryKeys = do
     extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, secondaryKeyFields)
       where
         primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
-        secondaryKeyFields = [bFieldName fd | fd <- fieldDefs, ((SecondaryKey `elem` bConstraints fd && bFieldName fd `elem` possKeys) || ((Forced SecondaryKey) `elem` bConstraints fd))]
+        secondaryKeyFields = map bFieldName filterFieldForSecondaryKey
+        filterFieldForSecondaryKey = filter secondaryKeyCondition fieldDefs
+        secondaryKeyCondition bf
+          | (Forced SecondaryKey) `elem` bConstraints bf = True
+          | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
+          | (SecondaryKey `elem` bConstraints bf) && (not $ bFieldName bf `elem` possKeys) = error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+          | otherwise = False
 
 notAllowedSecondaryKeys :: [String]
 notAllowedSecondaryKeys = ["merchantId", "merchantOperatingCityId", "status"]
