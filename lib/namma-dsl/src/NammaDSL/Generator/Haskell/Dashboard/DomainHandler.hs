@@ -148,7 +148,7 @@ handlerFunctionDef clientFuncName apiT = do
         TH.normalB $
           TH.doEW $ do
             whenJust (apiT ^. requestValidation) $ \validationFunc -> do
-              let reqParam = case findHandlerParam apiUnits ReqParam of
+              let reqParam = case findParamText apiUnits RequestUnit of
                     Just paramText -> vE paramText
                     Nothing -> error "Did not found request for validation"
               TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
@@ -163,9 +163,9 @@ handlerFunctionDef clientFuncName apiT = do
                       ~* (cE apiName ~* cE endpointName)
                       ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
-                      ~* generateHandlerParam apiUnits DriverIdParam
-                      ~* generateHandlerParam apiUnits RideIdParam
-                      ~* generateHandlerParam apiUnits ReqParam
+                      ~* generateHandlerParam apiUnits (CaptureUnit "driverId")
+                      ~* generateHandlerParam apiUnits (CaptureUnit "rideId")
+                      ~* generateHandlerParam apiUnits RequestUnit
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
             transactionWrapper $
               TH.noBindSW $
@@ -180,7 +180,7 @@ handlerFunctionDef clientFuncName apiT = do
     mkServerName (Just (ApiAuth serverName _ _)) = cE serverName.getServerName
     mkServerName _ = error "ApiAuth expected for dashboard api"
 
-    generateHandlerParam :: [ApiUnit] -> HandlerParam -> Q TH.Exp
-    generateHandlerParam apiUnits param = case findHandlerParam apiUnits param of
+    generateHandlerParam :: [ApiUnit] -> ApiUnit -> Q TH.Exp
+    generateHandlerParam apiUnits param = case findParamText apiUnits param of
       Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
       Nothing -> cE "Kernel.Prelude.Nothing"

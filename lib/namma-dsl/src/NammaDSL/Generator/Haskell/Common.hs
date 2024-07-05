@@ -2,10 +2,10 @@ module NammaDSL.Generator.Haskell.Common where
 
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
-import Data.List.Extra (snoc)
+import Data.List.Extra (find, nub, snoc)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map, lookup)
-import Data.Maybe (catMaybes, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -160,14 +160,31 @@ data ApiUnit
   | MandatoryQueryParamUnit Text
   | RequestUnit
   | ResponseUnit
+  deriving (Eq)
+
+--TODO add checks for identical params
+apiUnitToText :: ApiUnit -> String
+apiUnitToText apiUnit = T.unpack $ case apiUnit of
+  HeaderUnit name -> name
+  CaptureUnit name -> name
+  QueryParamUnit name -> name
+  MandatoryQueryParamUnit name -> name
+  RequestUnit -> "req"
+  ResponseUnit -> "resp"
 
 mkApiSignatureUnits :: ApiTT -> [ApiSignatureUnit]
-mkApiSignatureUnits input =
+mkApiSignatureUnits input = do
   let urlTypeText = map urlToText (_urlParts input)
       headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) ty) (_header input)
       reqTypeText = reqTypeToText <$> _apiReqType input
       resTypeText = respTypeToText $ _apiResType input
-   in snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList reqTypeText) resTypeText
+
+  let signatureUnits = snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList reqTypeText) resTypeText
+  let apiUnits = apiUnitToText . apiSignatureUnit <$> signatureUnits
+  -- TODO test this condition
+  if length (nub apiUnits) /= length apiUnits
+    then error $ "Please remove duplicating unit names from api definition " <> T.unpack (handlerFunctionText input) <> ": " <> show apiUnits
+    else signatureUnits
   where
     urlToText :: UrlParts -> Maybe ApiSignatureUnit
     urlToText (Capture name ty) = Just $ ApiSignatureUnit (CaptureUnit name) ty
@@ -188,35 +205,39 @@ handlerSignature = fmap apiSignatureType . mkApiSignatureUnits
 
 -- Last one is response, so no need to generate param
 generateParamsPat :: [ApiUnit] -> [Q r TH.Pat]
-generateParamsPat apiUnits = zipWith (\apiUnit n -> vP $ generateParamText n apiUnit) apiUnits [1, 2 .. length apiUnits - 1]
+generateParamsPat apiUnits = init $ vP . apiUnitToText <$> apiUnits
 
 -- Last one is response, so no need to generate param
 generateParamsExp :: [ApiUnit] -> [Q r TH.Exp]
-generateParamsExp apiUnits = zipWith (\apiUnit n -> vE $ generateParamText n apiUnit) apiUnits [1, 2 .. length apiUnits - 1]
+generateParamsExp apiUnits = init $ vE . apiUnitToText <$> apiUnits
 
-generateParamText :: Int -> ApiUnit -> String
-generateParamText n apiUnit = case mapMaybe (handlerParamMapper apiUnit) possibleHandlerParams of
-  [paramText] -> paramText
-  [] -> "a" <> show n
-  _ -> error "Impossible error: parsing more than one param at once"
+-- test with whole code
+findParamText :: [ApiUnit] -> ApiUnit -> Maybe String
+findParamText units unit = apiUnitToText <$> find (== unit) units
+
+-- generateParamText :: Int -> ApiUnit -> String
+-- generateParamText n apiUnit = case mapMaybe (handlerParamMapper apiUnit) possibleHandlerParams of
+--   [paramText] -> paramText
+--   [] -> "a" <> show n
+--   _ -> error "Impossible error: parsing more than one param at once"
 
 -- driverId and rideId parsing required for correct transaction store and should have proper type
-data HandlerParam = DriverIdParam | RideIdParam | ReqParam
+-- data HandlerParam = DriverIdParam | RideIdParam | ReqParam
 
-possibleHandlerParams :: [HandlerParam]
-possibleHandlerParams = [DriverIdParam, RideIdParam, ReqParam]
+-- possibleHandlerParams :: [HandlerParam]
+-- possibleHandlerParams = [DriverIdParam, RideIdParam, ReqParam]
 
-handlerParamMapper :: ApiUnit -> HandlerParam -> Maybe String
-handlerParamMapper (CaptureUnit "driverId") DriverIdParam = Just "driverId"
-handlerParamMapper (CaptureUnit "rideId") RideIdParam = Just "rideId"
-handlerParamMapper RequestUnit ReqParam = Just "req"
-handlerParamMapper _ _ = Nothing
+-- handlerParamMapper :: ApiUnit -> HandlerParam -> Maybe String
+-- handlerParamMapper (CaptureUnit "driverId") DriverIdParam = Just "driverId"
+-- handlerParamMapper (CaptureUnit "rideId") RideIdParam = Just "rideId"
+-- handlerParamMapper RequestUnit ReqParam = Just "req"
+-- handlerParamMapper _ _ = Nothing
 
-findHandlerParam :: [ApiUnit] -> HandlerParam -> Maybe String
-findHandlerParam apiUnits params = case flip handlerParamMapper params `mapMaybe` apiUnits of
-  [paramText] -> Just paramText
-  [] -> Nothing
-  _ -> error "Impossible error: find more than one param at once"
+-- findHandlerParam :: [ApiUnit] -> HandlerParam -> Maybe String
+-- findHandlerParam apiUnits params = case flip handlerParamMapper params `mapMaybe` apiUnits of
+--   [paramText] -> Just paramText
+--   [] -> Nothing
+--   _ -> error "Impossible error: find more than one param at once"
 
 class Importable a where
   getImportSignature :: a -> a
