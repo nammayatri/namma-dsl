@@ -52,6 +52,7 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
       nub $
         preventSameModuleImports $
           (T.unpack <$> input ^. apiTypes . typeImports)
+            <> (if apiReadKind apiRead == DASHBOARD then figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)) else [])
             <> qualifiedImp
 
     preventSameModuleImports :: [String] -> [String]

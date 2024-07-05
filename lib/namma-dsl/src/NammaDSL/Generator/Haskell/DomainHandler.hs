@@ -103,7 +103,7 @@ generateHandlerFunction apiKind apiT = decsW $ do
               whenJust (apiT ^. requestValidation) $ \validationFunc -> do
                 let reqParam = case findHandlerParam apiUnits ReqParam of
                       Just paramText -> vE paramText
-                      Nothing -> error "Did not found request for validation"
+                      Nothing -> error $ "Did not found request for validation: " <> T.unpack functionName
                 TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
               noBindSW $ appendE $ vE "error" NE.:| strE "Logic yet to be decided" : generateParamsExp apiUnits -- just for avoid unused vars error
 
