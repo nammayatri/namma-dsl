@@ -428,18 +428,26 @@ parsePrimaryAndSecondaryKeys :: StorageParserM ()
 parsePrimaryAndSecondaryKeys = do
   srcStatus <- asks srcFileStatus
   fields <- gets (fields . tableDef)
-  let (primaryKey, secondaryKey) = extractKeys fields
+  queries <- gets (queries . tableDef)
+  allFieldsUsedInQueries <- getAllFieldsUsedInQueries queries
+  let (primaryKey, secondaryKey) = extractKeys allFieldsUsedInQueries fields
   when ((not $ null $ L.intersect secondaryKey notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
   modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey}}
   where
-    extractKeys :: [FieldDef] -> ([String], [String])
-    extractKeys fieldDefs = extractKeysFromBeamFields (concatMap beamFields fieldDefs)
+    extractKeys :: [String] -> [FieldDef] -> ([String], [String])
+    extractKeys possKeys fieldDefs = extractKeysFromBeamFields possKeys (concatMap beamFields fieldDefs)
 
-    extractKeysFromBeamFields :: [BeamField] -> ([String], [String])
-    extractKeysFromBeamFields fieldDefs = (primaryKeyFields, secondaryKeyFields)
+    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [String])
+    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, secondaryKeyFields)
       where
         primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
-        secondaryKeyFields = [bFieldName fd | fd <- fieldDefs, SecondaryKey `elem` bConstraints fd]
+        secondaryKeyFields = map bFieldName filterFieldForSecondaryKey
+        filterFieldForSecondaryKey = filter secondaryKeyCondition fieldDefs
+        secondaryKeyCondition bf
+          | (Forced SecondaryKey) `elem` bConstraints bf = True
+          | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
+          | (SecondaryKey `elem` bConstraints bf) && (not $ bFieldName bf `elem` possKeys) = error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+          | otherwise = False
 
 notAllowedSecondaryKeys :: [String]
 notAllowedSecondaryKeys = ["merchantId", "merchantOperatingCityId", "status"]
@@ -1179,7 +1187,7 @@ getProperConstraint txt = case L.trim txt of
   "PrimaryKey" -> PrimaryKey
   "SecondaryKey" -> SecondaryKey
   "NotNull" -> NotNull
-  "AUTOINCREMENT" -> AUTOINCREMENT
+  "!SecondaryKey" -> Forced SecondaryKey
   _ -> error "No a proper contraint type"
 
 toModelList :: Object -> [(String, Object)]
@@ -1223,3 +1231,25 @@ findMatchingHaskellType sqlTypeWrtType sqlType =
 
 haskellTypeWrtSqlType :: [(String, String)] -> [(String, String)]
 haskellTypeWrtSqlType sqlTypeWrtType = map (first (T.unpack . T.replace "(" "\\(" . T.replace ")" "\\)" . T.replace "[" "\\[" . T.replace "]" "\\]" . T.pack) . second (T.unpack . T.replace "\\[" "[" . T.replace "\\]" "]" . T.pack) . swap) sqlTypeWrtType
+
+getAllFieldsUsedInQueries :: [QueryDef] -> StorageParserM [String]
+getAllFieldsUsedInQueries queries = do
+  fields <- gets (.tableDef.fields)
+  pure $ L.nub $ concatMap (getAllFieldsInQuery fields) queries
+  where
+    getAllFieldsInQuery :: [FieldDef] -> QueryDef -> [String]
+    getAllFieldsInQuery fdefs (QueryDef {..}) = L.nub ((fst orderBy) : (concatMap (getAllBeamFieldsUsedInQueryParam fdefs) (params <> allWhereClauseQueryParams whereClause)))
+
+    allWhereClauseQueryParams :: WhereClause -> [QueryParam]
+    allWhereClauseQueryParams = \case
+      EmptyWhere -> []
+      Leaf (qp, _) -> [qp]
+      Query (_, clauses) -> concatMap allWhereClauseQueryParams clauses
+
+    getAllBeamFieldsUsedInQueryParam :: [FieldDef] -> QueryParam -> [String]
+    getAllBeamFieldsUsedInQueryParam fdefs (QueryParam {..}) =
+      case qpIsBeam of
+        True -> [qpName]
+        False -> case find (\fdef -> fieldName fdef == qpName) fdefs of
+          Just (FieldDef {..}) -> map bFieldName beamFields
+          Nothing -> []
