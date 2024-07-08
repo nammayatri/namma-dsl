@@ -113,7 +113,9 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
 
             TH.NewtypeD [] thTypeName [] Nothing (TH.RecC thTypeName [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) [derives]
           Data -> TH.DataD [] thTypeName [] Nothing [TH.RecC thTypeName (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] [derives]
-          Type -> error "Generate data structure: expected Data but got Type"
+          Type -> case fields of -- FIXME refactor this in more type safe way
+            [("type", t)] -> TH.TySynD (mkNameT typeName) [] (TH.ConT $ mkNameT t)
+            _ -> error "Generate data structure: Type synonym definition should contain single \"type\" field"
 
 -- used in dashboard common apis
 generateServantApiType :: ApiTT -> Writer CodeUnit
