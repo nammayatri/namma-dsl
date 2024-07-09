@@ -7,13 +7,13 @@ import Data.Foldable
 import Data.Functor ((<&>))
 import Data.List (isInfixOf, nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (DASHBOARD), DefaultImports (..), GenerationType (API_TYPES))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
-import NammaDSL.Generator.Haskell.Common (apiTTToText, checkForPackageOverrides, generateAPIType, handlerFunctionText, handlerSignature, mkApiName)
+import NammaDSL.Generator.Haskell.Common (apiTTToText, checkForPackageOverrides, generateAPIType, handlerFunctionText, handlerSignature, handlerSignatureClient, mkApiName)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -54,9 +54,16 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
           (T.unpack <$> input ^. apiTypes . typeImports)
             <> (if apiReadKind apiRead == DASHBOARD then figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)) else [])
             <> qualifiedImp
+            <> multipartImports
 
     preventSameModuleImports :: [String] -> [String]
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))
+
+    multipartImports :: [String]
+    multipartImports = do
+      if apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)
+        then ["Kernel.ServantMultipart", "Data.ByteString.Lazy"]
+        else []
 
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
@@ -136,10 +143,10 @@ generateClientsType = do
         do
           recCW name $ do
             forM_ apiTTs $ \apiT -> do
-              let allTypes = handlerSignature apiT
-                  showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
+              let allTypes = handlerSignatureClient apiT
+                  showType = init allTypes
                   handlerName = TH.mkNameT $ handlerFunctionText apiT
-                  handlerType = showType <> [cT "EulerHS.Types.EulerClient" ~~ cT (T.unpack $ last allTypes)]
+                  handlerType = showType <> [cT "EulerHS.Types.EulerClient" ~~ last allTypes]
               TH.fieldDecW handlerName $ TH.appendArrow $ NE.fromList handlerType
         (pure ())
 

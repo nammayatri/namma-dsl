@@ -128,7 +128,7 @@ apiTTToText generationType apiTT = do
         else cT "QueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
 
     apiMultipartToText :: ApiMultipart -> Q r TH.Type
-    apiMultipartToText (ApiMultipart ty) = cT "MultipartForm" ~~ cT "Tmp" ~~ cT (T.unpack ty)
+    apiMultipartToText (ApiMultipart ty) = cT "Kernel.ServantMultipart.MultipartForm" ~~ cT "Kernel.ServantMultipart.Tmp" ~~ cT (T.unpack ty)
 
     apiReqToText :: ApiReq -> Q r TH.Type
     apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)
@@ -213,6 +213,12 @@ mkApiSignatureUnits input = do
 
 handlerSignature :: ApiTT -> [Text]
 handlerSignature = fmap apiSignatureType . mkApiSignatureUnits
+
+handlerSignatureClient :: ApiTT -> [Q r TH.Type]
+handlerSignatureClient = fmap apiSignatureTypeClient . mkApiSignatureUnits
+  where
+    apiSignatureTypeClient (ApiSignatureUnit MultipartUnit ty) = tupleT 2 ~~ cT "Data.ByteString.Lazy.ByteString" ~~ cT (T.unpack ty)
+    apiSignatureTypeClient apiSignatureUnit = cT . T.unpack $ apiSignatureType apiSignatureUnit
 
 -- Last one is response, so no need to generate param
 generateParamsPat :: [ApiUnit] -> [Q r TH.Pat]

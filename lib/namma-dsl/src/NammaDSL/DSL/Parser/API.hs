@@ -175,6 +175,7 @@ makeApiTTPartsQualified' = do
   moduleName <- gets (^. apisRes . moduleName)
   parsedTypeDataNames <- gets (^. extraParseInfo . parsedTypesDataNames)
   let mkQualified = T.pack . U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
+      mkQApiMultipart (ApiMultipart t1) = ApiMultipart (mkQualified t1)
       mkQApiReq (ApiReq t1 t2) = ApiReq (mkQualified t1) t2
       mkQApiRes (ApiRes t1 t2) = ApiRes (mkQualified t1) t2
       mkQUrlParts (Capture t1 t2) = Capture t1 (mkQualified t2)
@@ -183,6 +184,7 @@ makeApiTTPartsQualified' = do
       mkQHeaders (Header t1 t2) = Header t1 (mkQualified t2)
       mkQUrlApiTT apiTT =
         apiTT
+          & apiMultipartType . _Just %~ mkQApiMultipart
           & apiReqType . _Just %~ mkQApiReq
           & apiResType %~ mkQApiRes
           & urlParts . traverse %~ mkQUrlParts

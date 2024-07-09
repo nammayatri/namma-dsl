@@ -8,7 +8,7 @@ import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
-import NammaDSL.Config (DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
@@ -60,6 +60,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
         <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
         <> [getClientModuleName clientFuncName]
+        <> multipartImports
     allSimpleImports :: [String]
     allSimpleImports =
       ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
@@ -103,6 +104,9 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
 
     ifValidationRequired :: Bool
     ifValidationRequired = any (\apiT -> isJust $ apiT ^. requestValidation) $ input ^. apis
+
+    multipartImports :: [String]
+    multipartImports = ["Dashboard.Common" | apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)]
 
 when_ :: Bool -> [a] -> [a]
 when_ False _ = []
@@ -168,12 +172,17 @@ handlerFunctionDef clientFuncName apiT = do
                       ~* generateReqParam apiUnits
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
             transactionWrapper $
-              TH.noBindSW $
+              TH.noBindSW $ do
+                let clientCall = vE ("." <> T.unpack (headToLower moduleName') <> "DSL" #. T.unpack functionName)
+                let clientCallWithBoundary =
+                      if isJust (apiT ^. apiMultipartType)
+                        then (vE "Dashboard.Common.addMultipartBoundary" ~* strE "XXX00XXX") ~. clientCall
+                        else clientCall
                 TH.appendE $
                   vE clientFuncName
                     NE.:| vE "checkedMerchantId" :
                   vE "opCity" :
-                  vE ("." <> T.unpack (headToLower moduleName') <> "DSL" #. T.unpack functionName) :
+                  clientCallWithBoundary :
                   generateParamsExp apiUnits
   where
     mkServerName :: Maybe AuthType -> Q TH.Exp
