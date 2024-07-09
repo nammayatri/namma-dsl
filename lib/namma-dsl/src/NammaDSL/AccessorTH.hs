@@ -60,5 +60,6 @@ $( makeAccKeysTH
     paramsOrder
     queryType
     validation
+    multipart
     |]
  )

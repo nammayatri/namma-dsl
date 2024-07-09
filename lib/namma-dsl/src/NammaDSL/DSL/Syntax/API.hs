@@ -72,12 +72,16 @@ data ApiTT = ApiTT
     _apiType :: ApiType,
     _authType :: Maybe AuthType,
     _header :: [HeaderType],
+    _apiMultipartType :: Maybe ApiMultipart,
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text
   }
+  deriving (Show)
+
+newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
 $(makeLenses ''ApiTT)

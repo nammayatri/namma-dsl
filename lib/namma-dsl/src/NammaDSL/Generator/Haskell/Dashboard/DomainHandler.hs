@@ -148,7 +148,7 @@ handlerFunctionDef clientFuncName apiT = do
         TH.normalB $
           TH.doEW $ do
             whenJust (apiT ^. requestValidation) $ \validationFunc -> do
-              let reqParam = case findParamText apiUnits RequestUnit of
+              let reqParam = case findRequest apiUnits of
                     Just paramText -> vE paramText
                     Nothing -> error "Did not found request for validation"
               TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
@@ -165,7 +165,7 @@ handlerFunctionDef clientFuncName apiT = do
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits (CaptureUnit "driverId")
                       ~* generateHandlerParam apiUnits (CaptureUnit "rideId")
-                      ~* generateHandlerParam apiUnits RequestUnit
+                      ~* generateReqParam apiUnits
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
             transactionWrapper $
               TH.noBindSW $
@@ -182,5 +182,10 @@ handlerFunctionDef clientFuncName apiT = do
 
     generateHandlerParam :: [ApiUnit] -> ApiUnit -> Q TH.Exp
     generateHandlerParam apiUnits param = case findParamText apiUnits param of
+      Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
+      Nothing -> cE "Kernel.Prelude.Nothing"
+
+    generateReqParam :: [ApiUnit] -> Q TH.Exp
+    generateReqParam apiUnits = case findRequest apiUnits of
       Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
       Nothing -> cE "Kernel.Prelude.Nothing"

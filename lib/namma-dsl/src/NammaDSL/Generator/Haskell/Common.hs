@@ -1,5 +1,6 @@
 module NammaDSL.Generator.Haskell.Common where
 
+import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
 import Data.List.Extra (find, nub, snoc)
@@ -105,6 +106,7 @@ apiTTToText :: GenerationType -> ApiTT -> Q r TH.Type
 apiTTToText generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
+      apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
       apiReqText = apiReqToText <$> _apiReqType apiTT
       apiResText = apiResToText apiTypeText (_apiResType apiTT)
       headerText = map headerToText (_header apiTT)
@@ -113,6 +115,7 @@ apiTTToText generationType apiTT = do
     maybeToList (addAuthToApi generationType $ _authType apiTT)
       <> urlPartsText
       <> headerText
+      <> maybeToList apiMultipartText
       <> maybeToList apiReqText
       <> [apiResText]
   where
@@ -123,6 +126,9 @@ apiTTToText generationType apiTT = do
       if isMandatory
         then cT "MandatoryQueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
         else cT "QueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
+
+    apiMultipartToText :: ApiMultipart -> Q r TH.Type
+    apiMultipartToText (ApiMultipart ty) = cT "MultipartForm" ~~ cT "Tmp" ~~ cT (T.unpack ty)
 
     apiReqToText :: ApiReq -> Q r TH.Type
     apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)
@@ -158,6 +164,7 @@ data ApiUnit
   | CaptureUnit Text
   | QueryParamUnit Text
   | MandatoryQueryParamUnit Text
+  | MultipartUnit
   | RequestUnit
   | ResponseUnit
   deriving (Eq)
@@ -169,6 +176,7 @@ apiUnitToText apiUnit = T.unpack $ case apiUnit of
   CaptureUnit name -> name
   QueryParamUnit name -> name
   MandatoryQueryParamUnit name -> name
+  MultipartUnit -> "req" -- shouldn't be both MultipartUnit and RequestUnit in the same api
   RequestUnit -> "req"
   ResponseUnit -> "resp"
 
@@ -178,10 +186,10 @@ mkApiSignatureUnits input = do
       headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) ty) (_header input)
       reqTypeText = reqTypeToText <$> _apiReqType input
       resTypeText = respTypeToText $ _apiResType input
+      multipartTypeText = multipartTypeToText <$> _apiMultipartType input
 
-  let signatureUnits = snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList reqTypeText) resTypeText
+  let signatureUnits = snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList multipartTypeText <> maybeToList reqTypeText) resTypeText
   let apiUnits = apiUnitToText . apiSignatureUnit <$> signatureUnits
-  -- TODO test this condition
   if length (nub apiUnits) /= length apiUnits
     then error $ "Please remove duplicating unit names from api definition " <> T.unpack (handlerFunctionText input) <> ": " <> show apiUnits
     else signatureUnits
@@ -193,6 +201,9 @@ mkApiSignatureUnits input = do
         then Just $ ApiSignatureUnit (MandatoryQueryParamUnit name) ty
         else Just $ ApiSignatureUnit (QueryParamUnit name) $ "Kernel.Prelude.Maybe (" <> ty <> ")"
     urlToText _ = Nothing
+
+    multipartTypeToText :: ApiMultipart -> ApiSignatureUnit
+    multipartTypeToText (ApiMultipart ty) = ApiSignatureUnit MultipartUnit ty
 
     reqTypeToText :: ApiReq -> ApiSignatureUnit
     reqTypeToText (ApiReq ty _) = ApiSignatureUnit RequestUnit ty
@@ -214,6 +225,9 @@ generateParamsExp apiUnits = init $ vE . apiUnitToText <$> apiUnits
 -- test with whole code
 findParamText :: [ApiUnit] -> ApiUnit -> Maybe String
 findParamText units unit = apiUnitToText <$> find (== unit) units
+
+findRequest :: [ApiUnit] -> Maybe String
+findRequest units = findParamText units RequestUnit <|> findParamText units MultipartUnit
 
 -- generateParamText :: Int -> ApiUnit -> String
 -- generateParamText n apiUnit = case mapMaybe (handlerParamMapper apiUnit) possibleHandlerParams of

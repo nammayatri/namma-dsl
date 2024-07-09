@@ -100,7 +100,11 @@ parseAllApis' = do
           headers = fromMaybe [] (preview (ix acc_headers ._Array . to (mkHeaderList . V.toList)) obj)
 
           requestValidation = preview (ix acc_validation . _String) obj
-      return $ ApiTT allApiParts apiTp auth headers req res apiKind moduleName requestValidation
+
+          multipartObj = preview (ix acc_multipart . _Object) obj
+          multipartTp = multipartObj >>= preview (ix acc_type . _String)
+          multipart = ApiMultipart <$> multipartTp
+      return $ ApiTT allApiParts apiTp auth headers multipart req res apiKind moduleName requestValidation
     parseSingleApi _ _ _ = error "Api specs missing"
 
 parseImports' :: ApiParserM ()
