@@ -2,6 +2,7 @@ module NammaDSL.Generator.Haskell.ApiTypes (generateApiTypes) where
 
 import Control.Lens ((^.))
 import Control.Monad (when)
+import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
 import Data.Foldable
 import Data.Functor ((<&>))
@@ -13,7 +14,7 @@ import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (DASHBOARD), DefaultImports (..), GenerationType (API_TYPES))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
-import NammaDSL.Generator.Haskell.Common (apiTTToText, checkForPackageOverrides, generateAPIType, handlerFunctionText, handlerSignature, handlerSignatureClient, mkApiName)
+import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -52,7 +53,7 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
       nub $
         preventSameModuleImports $
           (T.unpack <$> input ^. apiTypes . typeImports)
-            <> (if apiReadKind apiRead == DASHBOARD then figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)) else [])
+            <> (if apiReadKind apiRead == DASHBOARD then figureOutImports (T.unpack <$> (concatMap handlerSignature (_apis input) <> concatMap handlerSignatureHelper (_apis input))) else [])
             <> qualifiedImp
             <> multipartImports
 
@@ -72,7 +73,7 @@ mkCodeBody apiRead = do
     interpreter input $ do
       generateHaskellTypes (input ^. apiTypes . types)
       when (apiReadKind apiRead == DASHBOARD) $ do
-        generateAPIType API_TYPES apiRead
+        generateAPITypeHelper API_TYPES apiRead
         generateServantApiType `mapM_` (input ^. apis)
         generateClientsType
         generateMkClientsType
@@ -129,6 +130,9 @@ generateServantApiType :: ApiTT -> Writer CodeUnit
 generateServantApiType api = do
   tySynDW (TH.mkNameT $ mkApiName api) [] $ do
     apiTTToText API_TYPES api
+  whenJust (api ^. apiHelperApi) $ \_ -> do
+    tySynDW (TH.mkNameT $ mkApiNameHelper api) [] $ do
+      apiTTToTextHelper API_TYPES api
 
 generateClientsType :: Writer CodeUnit
 generateClientsType = do
@@ -143,7 +147,7 @@ generateClientsType = do
         do
           recCW name $ do
             forM_ apiTTs $ \apiT -> do
-              let allTypes = handlerSignatureClient apiT
+              let allTypes = handlerSignatureClientHelper apiT
                   showType = init allTypes
                   handlerName = TH.mkNameT $ handlerFunctionText apiT
                   handlerType = showType <> [cT "EulerHS.Types.EulerClient" ~~ last allTypes]

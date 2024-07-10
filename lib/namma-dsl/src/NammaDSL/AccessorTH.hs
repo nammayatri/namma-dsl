@@ -61,5 +61,6 @@ $( makeAccKeysTH
     queryType
     validation
     multipart
+    helperApi
     |]
  )

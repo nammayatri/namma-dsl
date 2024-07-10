@@ -75,6 +75,7 @@ data ApiTT = ApiTT
     _apiMultipartType :: Maybe ApiMultipart,
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
+    _apiHelperApi :: Maybe HelperApiTT,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text
@@ -84,7 +85,16 @@ data ApiTT = ApiTT
 newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
+-- relevant only for dashboard apis
+data HelperApiTT = HelperApiTT
+  { _helperApiReqType :: Maybe ApiReq,
+    _helperApiResType :: ApiRes
+  }
+  deriving (Show)
+
 $(makeLenses ''ApiTT)
+
+$(makeLenses ''HelperApiTT)
 
 data TypeObject = TypeObject RecordType (Text, ([(Text, Text)], [Text])) deriving (Show)
 

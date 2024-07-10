@@ -9,6 +9,7 @@ module NammaDSL.DSL.Parser.API where
 import Control.Lens hiding (noneOf)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
+import qualified Data.Aeson as A
 import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (_Array, _Object, _String, _Value)
@@ -83,15 +84,13 @@ parseAllApis' = do
           endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
           auth = getAuthType <$> preview (ix acc_auth . _String) obj
 
-          requestObj = preview (ix acc_request . _Object) obj
-          requestTp = requestObj >>= preview (ix acc_type . _String)
-          requestFmt = Just $ fromMaybe "JSON" $ requestObj >>= preview (ix acc_format . _String)
-          req = ApiReq <$> requestTp <*> requestFmt
+          req = parseRequest obj
+          res = parseResponse obj
 
-          responseObj = fromMaybe (error "Response Object is required") $ preview (ix acc_response . _Object) obj
-          responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
-          responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
-          res = ApiRes responseTp responseFmt
+          -- responseObj = fromMaybe (error "Response Object is required") $ preview (ix acc_response . _Object) obj
+          -- responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
+          -- responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
+          -- res = ApiRes responseTp responseFmt
 
           query = fromMaybe [] $ preview (ix acc_query . _Value . to mkList . to (map (\(a, b) -> QueryParam a b False))) obj
           mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkList . to (map (\(a, b) -> QueryParam a b True))) obj
@@ -104,8 +103,31 @@ parseAllApis' = do
           multipartObj = preview (ix acc_multipart . _Object) obj
           multipartTp = multipartObj >>= preview (ix acc_type . _String)
           multipart = ApiMultipart <$> multipartTp
-      return $ ApiTT allApiParts apiTp auth headers multipart req res apiKind moduleName requestValidation
+
+          helperApi = parseHelperApi <$> preview (ix acc_helperApi . _Object) obj
+      return $ ApiTT allApiParts apiTp auth headers multipart req res helperApi apiKind moduleName requestValidation
     parseSingleApi _ _ _ = error "Api specs missing"
+
+    parseRequest :: A.Object -> Maybe ApiReq
+    parseRequest obj = do
+      let requestObj = preview (ix acc_request . _Object) obj
+          requestTp = requestObj >>= preview (ix acc_type . _String)
+          requestFmt = Just $ fromMaybe "JSON" $ requestObj >>= preview (ix acc_format . _String)
+      ApiReq <$> requestTp <*> requestFmt
+
+    parseResponse :: A.Object -> ApiRes
+    parseResponse obj = do
+      let responseObj = fromMaybe (error "Response Object is required") $ preview (ix acc_response . _Object) obj
+          responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
+          responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
+      ApiRes responseTp responseFmt
+
+    parseHelperApi :: A.Object -> HelperApiTT
+    parseHelperApi obj =
+      HelperApiTT
+        { _helperApiReqType = parseRequest obj,
+          _helperApiResType = parseResponse obj
+        }
 
 parseImports' :: ApiParserM ()
 parseImports' = do
