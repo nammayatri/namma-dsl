@@ -53,12 +53,13 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
           <> domainHandlerModulePrefix
           <> T.unpack (_moduleName input)
       ]
-        <> nub
-          ( qualifiedImp
-              <> figureOutImports
-                (T.unpack <$> concatMap handlerSignatureHelper (_apis input))
-          )
+        <> nub (qualifiedImp <> figureOutImports allHandlersSignatures)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
+
+    allHandlersSignatures :: [String]
+    allHandlersSignatures = case apiReadKind apiRead of
+      UI -> T.unpack <$> concatMap handlerSignature (_apis input)
+      DASHBOARD -> T.unpack <$> concatMap handlerSignatureHelper (_apis input)
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -174,7 +175,9 @@ generateAPIHandler apiRead = do
     handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
     handlerFunctionDef moduleName' apiT = do
       let functionName = handlerFunctionText apiT
-          allTypes = handlerSignatureHelper apiT
+          allTypes = case apiReadKind apiRead of
+            UI -> handlerSignature apiT
+            DASHBOARD -> handlerSignatureHelper apiT
           showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
           handlerTypes = apiAuthTypeMapperServant SERVANT_API apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
       TH.decsW $ do

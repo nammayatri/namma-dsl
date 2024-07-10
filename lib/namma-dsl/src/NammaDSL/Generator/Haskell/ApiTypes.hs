@@ -11,7 +11,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (DASHBOARD), DefaultImports (..), GenerationType (API_TYPES))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (API_TYPES))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Generator.Haskell.Common
@@ -53,9 +53,14 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
       nub $
         preventSameModuleImports $
           (T.unpack <$> input ^. apiTypes . typeImports)
-            <> (if apiReadKind apiRead == DASHBOARD then figureOutImports (T.unpack <$> (concatMap handlerSignature (_apis input) <> concatMap handlerSignatureHelper (_apis input))) else [])
+            <> figureOutImports allHandlersSignatures
             <> qualifiedImp
             <> multipartImports
+
+    allHandlersSignatures :: [String]
+    allHandlersSignatures = case apiReadKind apiRead of
+      UI -> []
+      DASHBOARD -> T.unpack <$> (concatMap handlerSignature (_apis input) <> concatMap handlerSignatureHelper (_apis input))
 
     preventSameModuleImports :: [String] -> [String]
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))

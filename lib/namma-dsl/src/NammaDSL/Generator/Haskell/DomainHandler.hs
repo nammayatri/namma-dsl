@@ -82,7 +82,9 @@ generateHandlerFunction :: ApiKind -> ApiTT -> Writer CodeUnit
 generateHandlerFunction apiKind apiT = decsW $ do
   let functionName = handlerFunctionText apiT
       authToType = apiAuthTypeMapperDomainHandler apiT
-      signatureUnits = mkApiSignatureUnitsHelper apiT
+      signatureUnits = case apiKind of
+        UI -> mkApiSignatureUnitsHelper apiT
+        DASHBOARD -> mkApiSignatureUnits apiT
       allTypes = map apiSignatureType signatureUnits
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)

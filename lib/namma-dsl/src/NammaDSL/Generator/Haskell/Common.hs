@@ -73,13 +73,13 @@ checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, I
 checkForPackageOverrides packageOverrides = map (\x -> maybe x (\a -> "\"" <> a <> "\" " <> x) (lookup (getImportSignature x) packageOverrides))
 
 mkApiNameHelper :: ApiTT -> Text
-mkApiNameHelper = mkApiName' HELPER
+mkApiNameHelper = mkApiName' True
 
 mkApiName :: ApiTT -> Text
-mkApiName = mkApiName' DEFAULT
+mkApiName = mkApiName' False
 
-mkApiName' :: ApiDestination -> ApiTT -> Text
-mkApiName' HELPER apiT | isJust (apiT ^. apiHelperApi) = (<> "Helper") . headToUpper . handlerFunctionText $ apiT
+mkApiName' :: IsHelperApi -> ApiTT -> Text
+mkApiName' True apiT | isJust (apiT ^. apiHelperApi) = (<> "Helper") . headToUpper . handlerFunctionText $ apiT
 mkApiName' _ apiT = headToUpper . handlerFunctionText $ apiT
 
 handlerFunctionText :: ApiTT -> Text
@@ -109,24 +109,21 @@ addAuthToApi generationType authtype = case authtype of
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
 
--- In case if helper api is not the same as dashboard api
-data ApiDestination = DEFAULT | HELPER
-
--- type IsHelperApi = Bool
+type IsHelperApi = Bool
 
 apiTTToText :: GenerationType -> ApiTT -> Q r TH.Type
-apiTTToText = apiTTToText' DEFAULT
+apiTTToText = apiTTToText' False
 
 apiTTToTextHelper :: GenerationType -> ApiTT -> Q r TH.Type
-apiTTToTextHelper = apiTTToText' HELPER
+apiTTToTextHelper = apiTTToText' True
 
-apiTTToText' :: ApiDestination -> GenerationType -> ApiTT -> Q r TH.Type
-apiTTToText' apiDestination generationType apiTT = do
+apiTTToText' :: IsHelperApi -> GenerationType -> ApiTT -> Q r TH.Type
+apiTTToText' isHelperApi generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
-      apiReqText = apiReqToText <$> getApiReq apiDestination apiTT
-      apiResText = apiResToText apiTypeText (getApiRes apiDestination apiTT)
+      apiReqText = apiReqToText <$> getApiReq isHelperApi apiTT
+      apiResText = apiResToText apiTypeText (getApiRes isHelperApi apiTT)
       headerText = map headerToText (_header apiTT)
 
   TH.appendInfixT ":>" . NE.fromList $
@@ -158,35 +155,35 @@ apiTTToText' apiDestination generationType apiTT = do
     headerToText :: HeaderType -> Q r TH.Type
     headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ cT (T.unpack ty)
 
-getApiReq :: ApiDestination -> ApiTT -> Maybe ApiReq
-getApiReq HELPER apiT = case apiT ^. apiHelperApi of
+getApiReq :: IsHelperApi -> ApiTT -> Maybe ApiReq
+getApiReq True apiT = case apiT ^. apiHelperApi of
   Just helperApiT -> helperApiT ^. helperApiReqType
   Nothing -> apiT ^. apiReqType
-getApiReq DEFAULT apiT = apiT ^. apiReqType
+getApiReq False apiT = apiT ^. apiReqType
 
-getApiRes :: ApiDestination -> ApiTT -> ApiRes
-getApiRes HELPER apiT = case apiT ^. apiHelperApi of
+getApiRes :: IsHelperApi -> ApiTT -> ApiRes
+getApiRes True apiT = case apiT ^. apiHelperApi of
   Just helperApiT -> helperApiT ^. helperApiResType
   Nothing -> apiT ^. apiResType
-getApiRes DEFAULT apiT = apiT ^. apiResType
+getApiRes False apiT = apiT ^. apiResType
 
 generateAPIType :: GenerationType -> ApiRead -> Writer Apis CodeUnit
-generateAPIType = generateAPIType' DEFAULT
+generateAPIType = generateAPIType' False
 
 generateAPITypeHelper :: GenerationType -> ApiRead -> Writer Apis CodeUnit
-generateAPITypeHelper = generateAPIType' HELPER
+generateAPITypeHelper = generateAPIType' True
 
-generateAPIType' :: ApiDestination -> GenerationType -> ApiRead -> Writer Apis CodeUnit
-generateAPIType' apiDestination generationType apiRead = do
+generateAPIType' :: IsHelperApi -> GenerationType -> ApiRead -> Writer Apis CodeUnit
+generateAPIType' isHelperApi generationType apiRead = do
   input <- ask
   let allApis = input ^. apis
   tySynDW "API" [] $ do
     case apiReadKind apiRead of
       UI -> do
-        let apiTTToText_ = apiTTToText' apiDestination generationType
+        let apiTTToText_ = apiTTToText' isHelperApi generationType
         appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
       DASHBOARD -> do
-        let apiTTToText_ = cT . T.unpack . mkApiName' apiDestination
+        let apiTTToText_ = cT . T.unpack . mkApiName' isHelperApi
         uInfixT (strT . T.unpack . headToLower $ input ^. moduleName) ":>" $
           TH.parensT . appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
 
@@ -217,17 +214,17 @@ apiUnitToText apiUnit = T.unpack $ case apiUnit of
   ResponseUnit -> "resp"
 
 mkApiSignatureUnits :: ApiTT -> [ApiSignatureUnit]
-mkApiSignatureUnits = mkApiSignatureUnits' DEFAULT
+mkApiSignatureUnits = mkApiSignatureUnits' False
 
 mkApiSignatureUnitsHelper :: ApiTT -> [ApiSignatureUnit]
-mkApiSignatureUnitsHelper = mkApiSignatureUnits' HELPER
+mkApiSignatureUnitsHelper = mkApiSignatureUnits' True
 
-mkApiSignatureUnits' :: ApiDestination -> ApiTT -> [ApiSignatureUnit]
-mkApiSignatureUnits' apiDestination input = do
+mkApiSignatureUnits' :: IsHelperApi -> ApiTT -> [ApiSignatureUnit]
+mkApiSignatureUnits' isHelperApi input = do
   let urlTypeText = map urlToText (_urlParts input)
       headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) ty) (_header input)
-      reqTypeText = reqTypeToText <$> getApiReq apiDestination input
-      resTypeText = respTypeToText $ getApiRes apiDestination input
+      reqTypeText = reqTypeToText <$> getApiReq isHelperApi input
+      resTypeText = respTypeToText $ getApiRes isHelperApi input
       multipartTypeText = multipartTypeToText <$> _apiMultipartType input
 
   let signatureUnits = snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList multipartTypeText <> maybeToList reqTypeText) resTypeText
@@ -254,13 +251,13 @@ mkApiSignatureUnits' apiDestination input = do
     respTypeToText = ApiSignatureUnit ResponseUnit . _apiResTypeName
 
 handlerSignature :: ApiTT -> [Text]
-handlerSignature = handlerSignature' DEFAULT
+handlerSignature = handlerSignature' False
 
 handlerSignatureHelper :: ApiTT -> [Text]
-handlerSignatureHelper = handlerSignature' HELPER
+handlerSignatureHelper = handlerSignature' True
 
-handlerSignature' :: ApiDestination -> ApiTT -> [Text]
-handlerSignature' apiDestination = fmap apiSignatureType . mkApiSignatureUnits' apiDestination
+handlerSignature' :: IsHelperApi -> ApiTT -> [Text]
+handlerSignature' isHelperApi = fmap apiSignatureType . mkApiSignatureUnits' isHelperApi
 
 handlerSignatureClientHelper :: ApiTT -> [Q r TH.Type]
 handlerSignatureClientHelper = fmap apiSignatureTypeClient . mkApiSignatureUnits
