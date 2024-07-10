@@ -82,14 +82,10 @@ data ApiTT = ApiTT
   }
   deriving (Show)
 
-newtype ApiMultipart = ApiMultipart Text
+newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
   deriving (Show)
 
--- relevant only for dashboard apis
-data HelperApiTT = HelperApiTT
-  { _helperApiReqType :: Maybe ApiReq,
-    _helperApiResType :: ApiRes
-  }
+newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
 $(makeLenses ''ApiTT)

@@ -72,11 +72,11 @@ parseAllApis' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   moduleName <- gets (^. apisRes . moduleName)
   apiKind <- asks apiReadKind
-  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM (parseSingleApi moduleName apiKind)
+  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM (parseSingleApi False moduleName apiKind)
   modify $ \s -> s & apisRes . apis .~ allApis
   where
-    parseSingleApi :: Text -> ApiKind -> Value -> Maybe ApiTT
-    parseSingleApi moduleName apiKind (Object ob) = do
+    parseSingleApi :: Bool -> Text -> ApiKind -> Value -> Maybe ApiTT
+    parseSingleApi isHelperApi moduleName apiKind (Object ob) = do
       let (key, val) = head $ KM.toList ob
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
@@ -104,9 +104,18 @@ parseAllApis' = do
           multipartTp = multipartObj >>= preview (ix acc_type . _String)
           multipart = ApiMultipart <$> multipartTp
 
-          helperApi = parseHelperApi <$> preview (ix acc_helperApi . _Object) obj
+          helperApi =
+            HelperApiTT
+              <$> if isHelperApi
+                then Nothing -- shouldn't be helperApi inside of helperApi
+                else
+                  preview (ix acc_helperApi . _Array . to V.toList) obj >>= \case
+                    [] -> Nothing
+                    [helperApiVal] -> parseSingleApi True moduleName apiKind helperApiVal
+                    _vs -> error "More than one helper api not supported"
+
       return $ ApiTT allApiParts apiTp auth headers multipart req res helperApi apiKind moduleName requestValidation
-    parseSingleApi _ _ _ = error "Api specs missing"
+    parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq
     parseRequest obj = do
@@ -121,13 +130,6 @@ parseAllApis' = do
           responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
           responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
       ApiRes responseTp responseFmt
-
-    parseHelperApi :: A.Object -> HelperApiTT
-    parseHelperApi obj =
-      HelperApiTT
-        { _helperApiReqType = parseRequest obj,
-          _helperApiResType = parseResponse obj
-        }
 
 parseImports' :: ApiParserM ()
 parseImports' = do
