@@ -214,6 +214,7 @@ makeApiTTPartsQualified' = do
           & urlParts . traverse %~ mkQUrlParts
           & header . traverse %~ mkQHeaders
   modify $ \s -> s & apisRes . apis . traverse %~ mkQUrlApiTT
+  modify $ \s -> s & apisRes . apis . traverse . apiHelperApi . _Just . getHelperAPI %~ mkQUrlApiTT
 
 makeQualifiedTypesInTypes :: [(String, String)] -> Text -> Text -> [TypeObject] -> Object -> [TypeObject]
 makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModule input obj =
