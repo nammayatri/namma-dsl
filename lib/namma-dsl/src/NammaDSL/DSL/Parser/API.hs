@@ -92,8 +92,8 @@ parseAllApis' = do
           -- responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
           -- res = ApiRes responseTp responseFmt
 
-          query = fromMaybe [] $ preview (ix acc_query . _Value . to mkList . to (map (\(a, b) -> QueryParam a b False))) obj
-          mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkList . to (map (\(a, b) -> QueryParam a b True))) obj
+          query = fromMaybe [] $ preview (ix acc_query . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParam a b False))) obj
+          mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParam a b True))) obj
           allApiParts = endpoint <> query <> mQuery
 
           headers = fromMaybe [] (preview (ix acc_headers ._Array . to (mkHeaderList . V.toList)) obj)
@@ -269,6 +269,21 @@ mkList (Object obj) =
     String t -> [((toText k), t)]
     _ -> []
 mkList _ = []
+
+mkListFromSingleton :: Value -> [(Text, Text)]
+mkListFromSingleton (Object obj) =
+  -- TODO remove case with Object, because it sorts fields alphabetically
+  KM.toList obj >>= \(k, v) -> case v of
+    String t -> [((toText k), t)]
+    _ -> []
+mkListFromSingleton (Array arr) = do
+  V.toList arr <&> \case
+    Object obj -> case KM.toList obj of
+      [(k, v)] -> case v of
+        String t -> (toText k, t)
+        _ -> error $ "String expected: " <> show v
+      _ -> error $ "Only one field in object expected: " <> show obj
+    field -> error $ "Object expected: " <> show field
 
 mkHeaderList :: [Value] -> [HeaderType]
 mkHeaderList val =
