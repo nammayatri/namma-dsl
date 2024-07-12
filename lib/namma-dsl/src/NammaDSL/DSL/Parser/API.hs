@@ -273,17 +273,20 @@ mkList _ = []
 mkListFromSingleton :: Value -> [(Text, Text)]
 mkListFromSingleton (Object obj) =
   -- TODO remove case with Object, because it sorts fields alphabetically
-  KM.toList obj >>= \(k, v) -> case v of
-    String t -> [((toText k), t)]
-    _ -> []
+  KM.toList obj >>= \(k, v) -> [(toText k, extractString v)]
 mkListFromSingleton (Array arr) = do
   V.toList arr <&> \case
     Object obj -> case KM.toList obj of
-      [(k, v)] -> case v of
-        String t -> (toText k, t)
-        _ -> error $ "String expected: " <> show v
+      [(k, v)] -> (toText k, extractString v)
       _ -> error $ "Only one field in object expected: " <> show obj
     field -> error $ "Object expected: " <> show field
+
+extractString :: Value -> T.Text
+extractString (String t) = t
+extractString (Array arr) = case V.toList arr of
+  [String t] -> "[" <> t <> "]"
+  _ -> error $ "Unexpected type in array: " <> show arr
+extractString v = error $ "Non-string type found in field definition: " <> show v
 
 mkHeaderList :: [Value] -> [HeaderType]
 mkHeaderList val =
@@ -352,30 +355,15 @@ typesToTypeObject :: Maybe Value -> [TypeObject]
 typesToTypeObject (Just (Object obj)) =
   map processType1 (KM.toList obj)
   where
-    extractRecordType :: Object -> RecordType
-    extractRecordType =
-      (fromMaybe Data)
-        . ( preview
-              ( ix acc_recordType . _String
-                  . to
-                    ( \case
-                        "NewType" -> NewType
-                        "Data" -> Data
-                        "Type" -> Type
-                        _ -> error "Not a valid"
-                    )
-              )
-          )
+    extractRecordType :: [(Text, Text)] -> RecordType
+    extractRecordType = maybe Data parsePecordType . lookup "recordType"
 
-    extractFields :: KM.KeyMap Value -> [(T.Text, T.Text)]
-    extractFields = map (first toText) . KM.toList . fmap extractString
-
-    extractString :: Value -> T.Text
-    extractString (String t) = t
-    extractString (Array arr) = case V.head arr of
-      String t -> "[" <> t <> "]"
-      _ -> error "Unexpected type in array: "
-    extractString _ = error "Non-string type found in field definition"
+    parsePecordType :: Text -> RecordType
+    parsePecordType = \case
+      "NewType" -> NewType
+      "Data" -> Data
+      "Type" -> Type
+      _ -> error "Not a valid"
 
     splitTypeAndDerivation :: [(Text, Text)] -> ([(Text, Text)], [Text])
     splitTypeAndDerivation fields = (filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
@@ -387,7 +375,7 @@ typesToTypeObject (Just (Object obj)) =
           | otherwise = extractDerive xs
 
     processType1 :: (Key, Value) -> TypeObject
-    processType1 (typeName, Object typeDef) =
-      TypeObject (extractRecordType typeDef) (toText typeName, splitTypeAndDerivation $ extractFields typeDef)
-    processType1 _ = error "Expected an object in fields"
+    processType1 (typeName, typeDef) = do
+      let fieldsList = mkListFromSingleton typeDef
+      TypeObject (extractRecordType fieldsList) (toText typeName, splitTypeAndDerivation $ mkListFromSingleton typeDef)
 typesToTypeObject _ = error "Expecting Object in Types"
