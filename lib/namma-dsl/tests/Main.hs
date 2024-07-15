@@ -54,14 +54,16 @@ checkHypothesis pursFilePath = do
     Right md -> do
       putStrLn (show md)
       let newTypeName = "animConfig"
+          funcSigToAddComment = "feedbackBasedOnRatingView"
+          commentToAdd = [Comment "-- This is a comment", Line LF]
           newField = "abc"
-          tp = "\"\""
-          newDecls = PCST.findAndAddFieldToDecl newTypeName newField tp (modDecls md)
+          tp = "PrestoAnim.Bezier 0.37 1.0"
+          newDecls = PCST.addCmtUpDeclSig funcSigToAddComment commentToAdd $ PCST.findAndAddFieldToDecl newTypeName newField tp (modDecls md)
           newMd = md {modDecls = newDecls}
-      let maybeDecl = PCST.findDeclWithName "Event" (modDecls md)
-      case maybeDecl of
-        Just decl -> putStrLn (show decl)
-        Nothing -> putStrLn "Did not find the declaration"
+      -- let maybeDecl = PCST.findDeclWithName "Event" (modDecls md)
+      -- case maybeDecl of
+      --   Just decl -> putStrLn (show decl)
+      --   Nothing -> putStrLn "Did not find the declaration"
       T.writeFile pursFilePath (P.printModule newMd)
 
 addImport :: Module () -> ImportDecl () -> Module ()

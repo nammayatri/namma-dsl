@@ -95,7 +95,20 @@ addImport mod' importDecl = mod' {modImports = modImports mod' ++ [importDecl]}
 findAndAddFieldToDecl :: Text -> Text -> Text -> [Declaration ()] -> [Declaration ()]
 findAndAddFieldToDecl declName lblName typeName decls =
   let addFieldFunc = addFieldToDecls lblName typeName
-   in findAndApply (isDeclWithName declName) addFieldFunc decls
+   in findAndApply (\dec -> isDeclWithName declName dec && isDeclField dec) addFieldFunc decls
+
+isDeclField :: Declaration a -> Bool
+isDeclField = \case
+  DeclValue _ _ -> True
+  DeclData _ _ _ -> False -- For now will add support later
+  DeclType _ _ _ _ -> True
+  DeclNewtype _ _ _ _ _ -> True
+  _ -> False
+
+isDeclSignature :: Declaration a -> Bool
+isDeclSignature = \case
+  DeclSignature _ _ -> True
+  _ -> False
 
 isDeclWithName :: Text -> Declaration a -> Bool
 isDeclWithName searchName decl = getName decl == searchName
@@ -147,7 +160,7 @@ addFieldToDecls lblName typeName decl =
             let newWhere = whereA {whereExpr = addFieldToExprRecord lblName typeName (whereExpr whereA)}
              in Unconditional st newWhere
           _ -> valGuarded vbf
-    _ -> error "Not Implemented for other Decl"
+    dec@_ -> dec
 
 addLabelToTypeRecord :: Labeled Label (Type a) -> Type a -> Type a
 addLabelToTypeRecord lbl (TypeRecord ann wrpRows) = TypeRecord ann (wrpRows {wrpValue = addLabelToRow lbl (wrpValue wrpRows)})
@@ -169,6 +182,12 @@ pLabel lc ec lblName =
     { lblTok = pSourceToken lc ec (TokUpperName mempty lblName),
       lblName = mkString lblName
     }
+
+findAndApply :: (a -> Bool) -> (a -> a) -> [a] -> [a]
+findAndApply _ _ [] = []
+findAndApply isElementCondition functionTobeApplied (x : xs)
+  | isElementCondition x = functionTobeApplied x : xs
+  | otherwise = x : findAndApply isElementCondition functionTobeApplied xs
 
 class GetCLF a where
   getLC :: a -> LC
@@ -228,7 +247,11 @@ instance GetName (Declaration a) where
     DeclNewtype _ dh _ _ _ -> getName dh
     DeclType _ dh _ _ -> getName dh
     DeclValue _ vbf -> getName vbf
+    DeclSignature _ lbled -> getName lbled
     _ -> "So many will check later if required"
+
+instance GetName a => GetName (Labeled a b) where
+  getName = getName . lblLabel
 
 instance GetName (ValueBindingFields a) where
   getName = getName . valName
@@ -248,8 +271,25 @@ instance GetName (ProperName k) where
 instance Default SourceRange where
   def = SourceRange (SourcePos 0 0) (SourcePos 0 0)
 
-findAndApply :: (a -> Bool) -> (a -> a) -> [a] -> [a]
-findAndApply _ _ [] = []
-findAndApply isElementCondition functionTobeApplied (x : xs)
-  | isElementCondition x = functionTobeApplied x : xs
-  | otherwise = x : findAndApply isElementCondition functionTobeApplied xs
+class CmtUp a where
+  cmtUp :: LC -> a -> a
+
+instance CmtUp TokenAnn where
+  cmtUp cmt tokAnn = tokAnn {tokLeadingComments = (tokLeadingComments tokAnn) ++ cmt}
+
+instance CmtUp SourceToken where
+  cmtUp cmt srcTok = srcTok {tokAnn = cmtUp cmt (tokAnn srcTok)}
+
+instance CmtUp (Name a) where
+  cmtUp cmt nm = nm {nameTok = cmtUp cmt (nameTok nm)}
+
+instance CmtUp a => CmtUp (Labeled a b) where
+  cmtUp cmt lbl = lbl {lblLabel = cmtUp cmt (lblLabel lbl)}
+
+instance CmtUp (Declaration a) where
+  cmtUp cmt = \case
+    DeclSignature ann lbled -> DeclSignature ann (cmtUp cmt lbled)
+    decl@_ -> decl
+
+addCmtUpDeclSig :: Text -> LC -> [Declaration ()] -> [Declaration ()]
+addCmtUpDeclSig searchName cmt decls = findAndApply (\dec -> isDeclWithName searchName dec && isDeclSignature dec) (cmtUp cmt) decls
