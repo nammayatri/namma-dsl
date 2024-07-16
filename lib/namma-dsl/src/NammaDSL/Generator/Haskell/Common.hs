@@ -17,6 +17,7 @@ import NammaDSL.Lib
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils
+import Text.Casing (camel)
 import Prelude hiding (lookup)
 
 _Maybe :: TH.Q r TH.Type
@@ -187,7 +188,7 @@ data ApiUnit
 
 --TODO add checks for identical params
 apiUnitToText :: ApiUnit -> String
-apiUnitToText apiUnit = T.unpack $ case apiUnit of
+apiUnitToText apiUnit = camel $ T.unpack case apiUnit of
   HeaderUnit name -> name
   CaptureUnit name -> name
   QueryParamUnit name -> name
