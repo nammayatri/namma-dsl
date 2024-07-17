@@ -6,7 +6,6 @@ module Main where
 import qualified Data.Text.IO as T
 import Language.PureScript.CST as P
 import Language.PureScript.CST.Types ()
-import Language.PureScript.Names
 import NammaDSL.App
 import qualified NammaDSL.Generator.Purs.CST as PCST
 import Prelude
@@ -53,55 +52,19 @@ checkHypothesis pursFilePath = do
     Left err -> print err
     Right md -> do
       putStrLn (show md)
-      let newTypeName = "animConfig"
+      let newTypeName = "Colors"
           funcSigToAddComment = "feedbackBasedOnRatingView"
-          commentToAdd = [Comment "-- This is a comment", Line LF]
-          newField = "abc"
-          tp = "PrestoAnim.Bezier 0.37 1.0"
+          commentToAdd = [Comment "-- This is a comment2", Line LF]
+          newField = "bca"
+          tp = "Array Int"
+          newImports =
+            [ PCST.PImport "A.B.C" PCST.Qualified,
+              PCST.PImport "B.C.A" PCST.Simple,
+              PCST.PImport "C.D.E" PCST.Qualified
+            ]
           newDecls = PCST.addCmtUpDeclSig funcSigToAddComment commentToAdd $ PCST.findAndAddFieldToDecl newTypeName newField tp (modDecls md)
-          newMd = md {modDecls = newDecls}
-      -- let maybeDecl = PCST.findDeclWithName "Event" (modDecls md)
-      -- case maybeDecl of
-      --   Just decl -> putStrLn (show decl)
-      --   Nothing -> putStrLn "Did not find the declaration"
+          newMd = PCST.addImports newImports $ md {modDecls = newDecls}
       T.writeFile pursFilePath (P.printModule newMd)
-
-addImport :: Module () -> ImportDecl () -> Module ()
-addImport mod' importDecl = mod' {modImports = modImports mod' ++ [importDecl]}
-
--- A new import declaration for
--- import Cheking.The.Hypothesis --
-newImport :: ImportDecl ()
-newImport =
-  ImportDecl
-    { impAnn = (),
-      impKeyword =
-        SourceToken
-          { tokAnn =
-              TokenAnn
-                { tokRange = dummyRange,
-                  tokLeadingComments = [Line LF],
-                  tokTrailingComments = [Space 1]
-                },
-            tokValue = TokLowerName [] "import"
-          },
-      impModule =
-        Name
-          { nameTok =
-              SourceToken
-                { tokAnn =
-                    TokenAnn
-                      { tokRange = dummyRange,
-                        tokLeadingComments = [],
-                        tokTrailingComments = []
-                      },
-                  tokValue = TokUpperName [] "Cheking.The.Hypothesis"
-                },
-            nameValue = ModuleName ""
-          },
-      impNames = Nothing,
-      impQual = Just (SourceToken {tokAnn = TokenAnn {tokRange = SourceRange {srcStart = SourcePos {srcLine = 3, srcColumn = 19}, srcEnd = SourcePos {srcLine = 3, srcColumn = 21}}, tokLeadingComments = [Space 1], tokTrailingComments = [Space 1]}, tokValue = TokLowerName [] "as"}, Name {nameTok = SourceToken {tokAnn = TokenAnn {tokRange = SourceRange {srcStart = SourcePos {srcLine = 3, srcColumn = 22}, srcEnd = SourcePos {srcLine = 3, srcColumn = 28}}, tokLeadingComments = [], tokTrailingComments = []}, tokValue = TokUpperName [] "Maybe2"}, nameValue = ModuleName "Maybe2"})
-    }
 
 -- not sure if its okay to use this dummy range
 dummyRange :: SourceRange

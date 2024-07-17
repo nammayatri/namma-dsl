@@ -4,24 +4,28 @@
 module NammaDSL.Generator.Purs.CST where
 
 import Control.Arrow ((&&&))
+--import Debug.Trace (traceShowId)
+import Data.Bool (bool)
 import Data.Default
 import qualified Data.List as L
+import Data.Maybe
 import Data.Text (Text)
 import Data.Text.IO as T
 import Data.Void (Void)
 import qualified Language.PureScript.CST as P
 import Language.PureScript.CST.Types
-import Language.PureScript.Names (ModuleName (..), ProperName (..))
+import Language.PureScript.Names (ModuleName (..), ProperName (..), runModuleName)
 import Language.PureScript.PSString (mkString)
+import qualified Language.PureScript.PSString as PS
 import Prelude
 
 type LC = [Comment LineFeed]
 
 type EC = [Comment Void]
 
--- Notes:
--- 1. ProperName has several kinds. Check later
--- 2. trailing comments cant have line feed.
+data PImportType = Simple | Qualified deriving (Show, Eq, Ord)
+
+data PImport = PImport Text PImportType deriving (Show, Eq, Ord)
 
 doCSTChanges :: FilePath -> [(Module () -> Module ())] -> IO ()
 doCSTChanges pursFilePath changes = do
@@ -89,8 +93,27 @@ pImport qualifiedName txt =
             )
     }
 
-addImport :: Module () -> ImportDecl () -> Module ()
-addImport mod' importDecl = mod' {modImports = modImports mod' ++ [importDecl]}
+addImports :: [PImport] -> Module () -> Module ()
+addImports imports mod' =
+  let oldImportDecls = modImports mod'
+      newImportDecls = foldl (\acc imp -> addImportIfNotPresent imp acc) oldImportDecls imports
+   in mod' {modImports = newImportDecls}
+
+addImportIfNotPresent :: PImport -> [ImportDecl ()] -> [ImportDecl ()]
+addImportIfNotPresent imp@(PImport val typ) _imports =
+  let newImport = case typ of
+        Qualified -> pImport (pure val) val
+        Simple -> pImport Nothing val
+   in _imports ++ [newImport | not (isPresent imp _imports)]
+
+isPresent :: PImport -> [ImportDecl ()] -> Bool
+isPresent (PImport val typ) =
+  any
+    ( \imp ->
+        let importedModuleName = getName (impModule imp)
+            qualifiedAs = getName . snd <$> impQual imp
+         in importedModuleName == val && ((typ == Qualified && qualifiedAs == Just val) || (typ == Simple && isNothing (impNames imp)))
+    )
 
 findAndAddFieldToDecl :: Text -> Text -> Text -> [Declaration ()] -> [Declaration ()]
 findAndAddFieldToDecl declName lblName typeName decls =
@@ -133,38 +156,46 @@ addRecordLabeledToSeperated fieldName fieldValue sep = sep {sepTail = sepTail se
 
 addFieldToDecls :: Text -> Text -> Declaration () -> Declaration ()
 addFieldToDecls lblName typeName decl =
-  case decl of
-    DeclNewtype ann dh s nm tp ->
-      let (lc, ec) =
-            ( \case
-                (TypeRecord _ wrp) -> (getLC &&& getEC) wrp
-                _ -> ([], [])
-            )
-              tp
-          labeled = pLabeled lc ec lblName (pTypeVar ann [Space 1] [] typeName)
-       in DeclNewtype ann dh s nm (addLabelToTypeRecord labeled tp) -- TODO: For other Types it will break.. only for DeclNewtype
-    DeclType ann dh s tp ->
-      let (lc, ec) =
-            ( \case
-                (TypeRecord _ wrp) -> (getLC &&& getEC) wrp
-                _ -> ([], [])
-            )
-              tp
-          labeled = pLabeled lc ec lblName (pTypeVar ann [Space 1] [] typeName)
-       in DeclType ann dh s (addLabelToTypeRecord labeled tp) -- TODO: For other Types it will break.. only for DeclType
-    DeclValue ann vbf ->
-      DeclValue ann (vbf {valGuarded = newValGuarded})
-      where
-        newValGuarded = case valGuarded vbf of
-          Unconditional st whereA ->
-            let newWhere = whereA {whereExpr = addFieldToExprRecord lblName typeName (whereExpr whereA)}
-             in Unconditional st newWhere
-          _ -> valGuarded vbf
-    dec@_ -> dec
+  bool
+    decl
+    ( case decl of
+        DeclNewtype ann dh s nm tp ->
+          let (lc, ec) =
+                ( \case
+                    TypeRecord _ wrp -> (getLC &&& getEC) wrp
+                    TypeRow _ wrp -> (getLC &&& getEC) wrp
+                    _ -> ([], [])
+                )
+                  tp
+              labeled = pLabeled lc ec lblName (pTypeVar ann [Space 1] [] typeName)
+           in DeclNewtype ann dh s nm (addLabelToTypeRecord labeled tp) -- TODO: For other Types it will break.. only for DeclNewtype
+        DeclType ann dh s tp ->
+          let (lc, ec) =
+                ( \case
+                    TypeRecord _ wrp -> (getLC &&& getEC) wrp
+                    TypeRow _ wrp -> (getLC &&& getEC) wrp
+                    _ -> ([], [])
+                )
+                  tp
+              labeled = pLabeled lc ec lblName (pTypeVar ann [Space 1] [] typeName)
+           in DeclType ann dh s (addLabelToTypeRecord labeled tp) -- TODO: For other Types it will break.. only for DeclType
+        DeclValue ann vbf ->
+          DeclValue ann (vbf {valGuarded = newValGuarded})
+          where
+            newValGuarded = case valGuarded vbf of
+              Unconditional st whereA ->
+                let newWhere = whereA {whereExpr = addFieldToExprRecord lblName typeName (whereExpr whereA)}
+                 in Unconditional st newWhere
+              _ -> valGuarded vbf
+        dec@_ -> dec
+    )
+    (lblName `notElem` getFields decl)
 
 addLabelToTypeRecord :: Labeled Label (Type a) -> Type a -> Type a
-addLabelToTypeRecord lbl (TypeRecord ann wrpRows) = TypeRecord ann (wrpRows {wrpValue = addLabelToRow lbl (wrpValue wrpRows)})
-addLabelToTypeRecord _ _ = error "Not Implemented for other Type"
+addLabelToTypeRecord lbl = \case
+  TypeRecord ann wrpRows -> TypeRecord ann (wrpRows {wrpValue = addLabelToRow lbl (wrpValue wrpRows)})
+  TypeRow ann wrpRows -> TypeRow ann (wrpRows {wrpValue = addLabelToRow lbl (wrpValue wrpRows)})
+  ty@_ -> ty
 
 pLabeled :: LC -> EC -> Text -> Type a -> Labeled Label (Type a)
 pLabeled lc ec lblName typ =
@@ -268,6 +299,9 @@ instance GetName a => GetName (Name a) where
 instance GetName (ProperName k) where
   getName = runProperName
 
+instance GetName (ModuleName) where
+  getName = runModuleName
+
 instance Default SourceRange where
   def = SourceRange (SourcePos 0 0) (SourcePos 0 0)
 
@@ -290,6 +324,68 @@ instance CmtUp (Declaration a) where
   cmtUp cmt = \case
     DeclSignature ann lbled -> DeclSignature ann (cmtUp cmt lbled)
     decl@_ -> decl
+
+class GetFields a where
+  getFields :: a -> [Text]
+
+instance GetFields Label where
+  getFields lbl = [fromMaybe mempty (PS.decodeString $ lblName lbl)]
+
+instance GetFields a => GetFields (Labeled a b) where
+  getFields = getFields . lblLabel
+
+instance GetFields a => GetFields (Separated a) where
+  getFields sep = getFields (sepHead sep) ++ concatMap getFields (snd <$> sepTail sep)
+
+instance GetFields a => GetFields (Maybe a) where
+  getFields = maybe [] getFields
+
+instance GetFields (Row a) where
+  getFields = maybe [] getFields . rowLabels
+
+instance GetFields a => GetFields (Wrapped a) where
+  getFields = getFields . wrpValue
+
+instance GetFields (Type a) where
+  getFields = \case
+    TypeRecord _ wrp -> getFields wrp
+    TypeRow _ wrp -> getFields wrp
+    _ -> []
+
+instance GetFields (RecordLabeled a) where
+  getFields = \case
+    RecordField lbl _ _ -> getFields lbl
+    RecordPun _ -> []
+
+instance GetFields a => GetFields (Name a) where
+  getFields = getFields . nameValue
+
+instance GetFields Ident where
+  getFields = pure . getIdent
+
+instance GetFields (Expr a) where
+  getFields = \case
+    ExprHole _ nm -> getFields nm
+    ExprRecord _ wrp -> getFields wrp
+    _ -> []
+
+instance GetFields (Where a) where
+  getFields = getFields . whereExpr
+
+instance GetFields (ValueBindingFields a) where
+  getFields = getFields . valGuarded
+
+instance GetFields (Guarded a) where
+  getFields = \case
+    Unconditional _ whr -> getFields whr
+    _ -> []
+
+instance GetFields (Declaration a) where
+  getFields = \case
+    DeclNewtype _ _ _ _ tp -> getFields tp
+    DeclType _ _ _ tp -> getFields tp
+    DeclValue _ vbf -> getFields vbf
+    _ -> []
 
 addCmtUpDeclSig :: Text -> LC -> [Declaration ()] -> [Declaration ()]
 addCmtUpDeclSig searchName cmt decls = findAndApply (\dec -> isDeclWithName searchName dec && isDeclSignature dec) (cmtUp cmt) decls
