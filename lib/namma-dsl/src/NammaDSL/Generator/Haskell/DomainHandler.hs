@@ -79,7 +79,7 @@ mkCodeBody apiKind = do
       forM_ (_apis input) $ generateHandlerFunction apiKind
 
 generateHandlerFunction :: ApiKind -> ApiTT -> Writer CodeUnit
-generateHandlerFunction apiKind apiT = decsW $ do
+generateHandlerFunction apiKind apiT = do
   let functionName = handlerFunctionText apiT
       authToType = apiAuthTypeMapperDomainHandler apiT
       signatureUnits = case apiKind of
@@ -89,25 +89,27 @@ generateHandlerFunction apiKind apiT = decsW $ do
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
       handlerTypes = authToType <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
-  TH.sigDW (mkNameT functionName) $ do
-    TH.forallT [] [] $
-      TH.appendInfixT "->" $ NE.fromList handlerTypes
-  TH.funDW (mkNameT functionName) $ do
-    let pats = case apiKind of
-          UI -> []
-          DASHBOARD -> vP "_merchantShortId" : vP "_opCity" : generateParamsPat apiUnits
-    TH.clauseW pats $
-      TH.normalB $
-        TH.doEW $ do
-          case apiKind of
-            UI -> noBindSW $ vE "error" ~* strE "Logic yet to be decided"
-            DASHBOARD -> do
-              whenJust (apiT ^. requestValidation) $ \validationFunc -> do
-                let reqParam = case findRequest apiUnits of
-                      Just paramText -> vE paramText
-                      Nothing -> error $ "Did not found request for validation: " <> T.unpack functionName
-                TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
-              noBindSW $ appendE $ vE "error" NE.:| strE "Logic yet to be decided" : generateParamsExp apiUnits -- just for avoid unused vars error
+  delimiterComment $ T.unpack functionName
+  decsW $ do
+    TH.sigDW (mkNameT functionName) $ do
+      TH.forallT [] [] $
+        TH.appendInfixT "->" $ NE.fromList handlerTypes
+    TH.funDW (mkNameT functionName) $ do
+      let pats = case apiKind of
+            UI -> []
+            DASHBOARD -> vP "_merchantShortId" : vP "_opCity" : generateParamsPat apiUnits
+      TH.clauseW pats $
+        TH.normalB $
+          TH.doEW $ do
+            case apiKind of
+              UI -> noBindSW $ vE "error" ~* strE "Logic yet to be decided"
+              DASHBOARD -> do
+                whenJust (apiT ^. requestValidation) $ \validationFunc -> do
+                  let reqParam = case findRequest apiUnits of
+                        Just paramText -> vE paramText
+                        Nothing -> error $ "Did not found request for validation: " <> T.unpack functionName
+                  TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
+                noBindSW $ appendE $ vE "error" NE.:| strE "Logic yet to be decided" : generateParamsExp apiUnits -- just for avoid unused vars error
 
 _ShortId :: Q TH.Type
 _ShortId = cT "Kernel.Types.Id.ShortId"
