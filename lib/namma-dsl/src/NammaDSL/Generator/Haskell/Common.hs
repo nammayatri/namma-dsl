@@ -306,13 +306,14 @@ generateWithFlowHandlerAPI = \case
 delimiterComment :: String -> Writer r CodeUnit
 delimiterComment handlerName = do
   let delimiterLength = 80
-  commentW $ " " <> replicate (delimiterLength - 3) '='
+  commentW $ " " <> replicate (delimiterLength - 4) '='
   commentW $
     replicate 11 '-'
       <> " "
       <> handlerName
       <> do
-        let remainder = delimiterLength - length handlerName - 15
+        let remainder = delimiterLength - length handlerName - 16
         if remainder > 0
           then " " <> replicate remainder '-'
           else ""
+  addNewLineW
