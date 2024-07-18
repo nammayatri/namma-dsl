@@ -142,6 +142,7 @@ handlerFunctionDef clientFuncName apiT = do
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
       handlerTypes = apiAuthTypeMapperServant DOMAIN_HANDLER_DASHBOARD apiT <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
+  delimiterComment $ T.unpack functionName
   TH.decsW $ do
     TH.sigDW (TH.mkNameT functionName) $ do
       TH.forallT [] [] $

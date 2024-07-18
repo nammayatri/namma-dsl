@@ -376,3 +376,6 @@ matchWOD patQ bodyQ = do
   pat <- patQ
   body <- bodyQ
   pure $ TH.Match pat body []
+
+commentW :: String -> Writer r CodeUnit
+commentW str = tell [CodeComment (Comment str)]
