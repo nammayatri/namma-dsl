@@ -336,3 +336,21 @@ mkFullUserActionType apiRead apiTT = do
   let moduleUserActionType = screamingSnake $ T.unpack (apiTT ^. apiModuleName)
   let endpointUserActionType = mkUserActionTypeName apiTT
   pure (folderUserActionType, moduleUserActionType, endpointUserActionType)
+
+-- example:
+-- ============================================================================
+------------- postMerchantConfigFarePolicyDriverExtraFeeBoundsCreate ----------
+
+delimiterComment :: String -> Writer r CodeUnit
+delimiterComment handlerName = do
+  let delimiterLength = 80
+  commentW $ " " <> replicate (delimiterLength - 3) '='
+  commentW $
+    replicate 11 '-'
+      <> " "
+      <> handlerName
+      <> do
+        let remainder = delimiterLength - length handlerName - 15
+        if remainder > 0
+          then " " <> replicate remainder '-'
+          else ""
