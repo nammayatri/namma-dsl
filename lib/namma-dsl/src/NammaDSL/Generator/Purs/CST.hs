@@ -11,21 +11,13 @@ import qualified Data.List as L
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text.IO as T
-import Data.Void (Void)
 import qualified Language.PureScript.CST as P
 import Language.PureScript.CST.Types
 import Language.PureScript.Names (ModuleName (..), ProperName (..), runModuleName)
 import Language.PureScript.PSString (mkString)
 import qualified Language.PureScript.PSString as PS
+import NammaDSL.DSL.Syntax.TechDesign
 import Prelude
-
-type LC = [Comment LineFeed]
-
-type EC = [Comment Void]
-
-data PImportType = Simple | Qualified deriving (Show, Eq, Ord)
-
-data PImport = PImport Text PImportType deriving (Show, Eq, Ord)
 
 doCSTChanges :: FilePath -> [(Module () -> Module ())] -> IO ()
 doCSTChanges pursFilePath changes = do

@@ -31,9 +31,11 @@ library
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
+      NammaDSL.DSL.Parser.TechDesign
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
+      NammaDSL.DSL.Syntax.TechDesign
       NammaDSL.Generator.Haskell
       NammaDSL.Generator.Haskell.ApiTypes
       NammaDSL.Generator.Haskell.BeamQueries
@@ -151,9 +153,11 @@ test-suite namma-dsl-tests
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
+      NammaDSL.DSL.Parser.TechDesign
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
+      NammaDSL.DSL.Syntax.TechDesign
       NammaDSL.Generator.Haskell
       NammaDSL.Generator.Haskell.ApiTypes
       NammaDSL.Generator.Haskell.BeamQueries

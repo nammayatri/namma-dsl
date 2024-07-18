@@ -52,10 +52,10 @@ checkHypothesis pursFilePath = do
     Left err -> print err
     Right md -> do
       putStrLn (show md)
-      let newTypeName = "Colors"
+      let newTypeName = "ABC"
           funcSigToAddComment = "feedbackBasedOnRatingView"
           commentToAdd = [Comment "-- This is a comment2", Line LF]
-          newField = "bca"
+          newField = "bca2"
           tp = "Array Int"
           newImports =
             [ PCST.PImport "A.B.C" PCST.Qualified,
