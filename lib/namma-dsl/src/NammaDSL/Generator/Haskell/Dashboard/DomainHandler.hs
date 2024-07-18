@@ -1,7 +1,7 @@
 module NammaDSL.Generator.Haskell.Dashboard.DomainHandler (mkCodeBodyDomainHandlerDashboard, generateDomainHandlerDashboard) where
 
 import Control.Lens ((^.))
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
@@ -9,7 +9,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
-import NammaDSL.DSL.Syntax.API
+import NammaDSL.DSL.Syntax.API hiding (ModuleName)
 import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
@@ -132,16 +132,40 @@ mkCodeBodyDomainHandlerDashboard apiRead input = do
   interpreter input $ do
     forM_ allApis $ handlerFunctionDef clientFuncName
 
+_KernelPrelude, _Environment, _KernelUtilsValidation, _SharedLogicTransaction, _DashboardCommon, _DomainTypesTransaction :: Import
+_KernelPrelude = Import NotQualified Nothing (ModuleName "Kernel.Prelude") Nothing Nothing
+_Environment = Import NotQualified (Just $ PackageName "lib-dashboard") (ModuleName "Environment") Nothing Nothing
+_KernelUtilsValidation = Import NotQualified Nothing (ModuleName "Kernel.Utils.Validation") Nothing (Just $ ImportList "(runRequestValidation)")
+_SharedLogicTransaction = Import Qualified Nothing (ModuleName "SharedLogic.Transaction") (Just $ ModuleSynonym "T") Nothing
+_DashboardCommon = Import Qualified Nothing (ModuleName "Dashboard.Common") (Just $ ModuleSynonym "Common") Nothing
+_DomainTypesTransaction = Import Qualified (Just $ PackageName "lib-dashboard") (ModuleName "Domain.Types.Transaction") (Just $ ModuleSynonym "DT") Nothing
+
+mkDashboardCommonModule :: T.Text -> Import
+mkDashboardCommonModule moduleName' =
+  Import Qualified Nothing (ModuleName $ "Dashboard.Common" #. T.unpack moduleName') (Just $ ModuleSynonym "Common") Nothing
+
 handlerFunctionDef :: String -> ApiTT -> Writer CodeUnit
 handlerFunctionDef clientFuncName apiT = do
   input <- ask
   let moduleName' = input ^. moduleName
+
+  importW _KernelPrelude
+  importW _Environment
+  whenJust (apiT ^. requestValidation) $ \_ -> do
+    importW _KernelUtilsValidation
+  let _DashboardCommonModule = mkDashboardCommonModule moduleName'
+  when (apiT ^. apiType /= GET) $ do
+    importW _SharedLogicTransaction
+    importW _DashboardCommonModule
+    importW _DomainTypesTransaction
+  importW _DashboardCommon
+
   let functionName = handlerFunctionText apiT
       signatureUnits = mkApiSignatureUnits apiT
       allTypes = map apiSignatureType signatureUnits
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
-      handlerTypes = apiAuthTypeMapperServant DOMAIN_HANDLER_DASHBOARD apiT <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
+      handlerTypes = apiAuthTypeMapperServant DOMAIN_HANDLER_DASHBOARD apiT <> showType <> [cTI _Environment "Flow" ~~ cT (T.unpack $ last allTypes)]
   delimiterComment $ T.unpack functionName
   TH.decsW $ do
     TH.sigDW (TH.mkNameT functionName) $ do
@@ -156,22 +180,24 @@ handlerFunctionDef clientFuncName apiT = do
               let reqParam = case findRequest apiUnits of
                     Just paramText -> vE paramText
                     Nothing -> error "Did not found request for validation"
-              TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
+              TH.noBindSW $ vEI _KernelUtilsValidation "runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
             vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
             let transactionWrapper clientCall = case apiT ^. apiType of
                   GET -> clientCall
                   _ -> do
-                    let apiName = "Domain.Types.Transaction" #. T.unpack moduleName' <> "API"
-                    let endpointName = "Dashboard.Common" #. T.unpack moduleName' #. (T.unpack (mkApiName apiT) <> "Endpoint")
+                    -- let apiName = "Domain.Types.Transaction" #. T.unpack moduleName' <> "API"
+                    let apiName = T.unpack moduleName' <> "API"
+                    -- let endpointName = "Dashboard.Common" #. T.unpack moduleName' #. (T.unpack (mkApiName apiT) <> "Endpoint")
+                    let endpointName = T.unpack (mkApiName apiT) <> "Endpoint"
                     vP "transaction"
-                      <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (cE apiName ~* cE endpointName)
-                      ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
-                      ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
+                      <-- vEI _SharedLogicTransaction "buildTransaction"
+                      ~* (cEI _DomainTypesTransaction apiName ~* cEI _DashboardCommonModule endpointName)
+                      ~* (cEI _KernelPrelude "Just" ~* mkServerName (apiT ^. authType))
+                      ~* (cEI _KernelPrelude "Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits (CaptureUnit "driverId")
                       ~* generateHandlerParam apiUnits (CaptureUnit "rideId")
                       ~* generateReqParam apiUnits
-                    TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
+                    TH.noBindSW $ vEI _SharedLogicTransaction "withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
 
             transactionWrapper $
               TH.noBindSW $ do
@@ -180,7 +206,7 @@ handlerFunctionDef clientFuncName apiT = do
                   then do
                     let clientCallWithBoundary =
                           if isJust (apiT ^. apiMultipartType)
-                            then (vE "Dashboard.Common.addMultipartBoundary" ~* strE "XXX00XXX") ~. vE clientCall
+                            then (vEI _DashboardCommon "addMultipartBoundary" ~* strE "XXX00XXX") ~. vE clientCall
                             else vE clientCall
                     TH.appendE $
                       vE clientFuncName
@@ -198,10 +224,10 @@ handlerFunctionDef clientFuncName apiT = do
 
     generateHandlerParam :: [ApiUnit] -> ApiUnit -> Q TH.Exp
     generateHandlerParam apiUnits param = case findParamText apiUnits param of
-      Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
-      Nothing -> cE "Kernel.Prelude.Nothing"
+      Just paramText -> cEI _KernelPrelude "Just" ~* vE paramText
+      Nothing -> cEI _KernelPrelude "Nothing"
 
     generateReqParam :: [ApiUnit] -> Q TH.Exp
     generateReqParam apiUnits = case findRequest apiUnits of
-      Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
-      Nothing -> cE "SharedLogic.Transaction.emptyRequest"
+      Just paramText -> cEI _KernelPrelude "Just" ~* vE paramText
+      Nothing -> cEI _SharedLogicTransaction "emptyRequest"

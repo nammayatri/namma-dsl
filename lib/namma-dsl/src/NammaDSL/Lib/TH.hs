@@ -28,8 +28,14 @@ instance Semigroup TH.Name where
 vE :: String -> Q r TH.Exp
 vE = pure . TH.VarE . TH.mkName
 
+vEI :: Import -> String -> Q r TH.Exp
+vEI i = pure . TH.VarE . TH.mkName . mkQualifiedName i
+
 cE :: String -> Q r TH.Exp
 cE = pure . TH.ConE . TH.mkName
+
+cEI :: Import -> String -> Q r TH.Exp
+cEI i = pure . TH.ConE . TH.mkName . mkQualifiedName i
 
 -- hack for record wild cards
 wildRecordsE :: String -> Q r TH.Exp
@@ -47,6 +53,9 @@ vT = pure . TH.VarT . TH.mkName
 
 cT :: String -> Q r TH.Type
 cT = pure . TH.ConT . TH.mkName
+
+cTI :: Import -> String -> Q r TH.Type
+cTI i = pure . TH.ConT . TH.mkName . mkQualifiedName i
 
 cT' :: String -> Q r TH.Type
 cT' = pure . TH.ConT . TH.mkName . ("'" <>)
@@ -382,3 +391,6 @@ commentW str = tell [CodeComment (Comment str)]
 
 addNewLineW :: Writer r CodeUnit
 addNewLineW = tell [CodeComment AddNewLine]
+
+importW :: Import -> Writer r CodeUnit
+importW i = tell [CodeImport i]
