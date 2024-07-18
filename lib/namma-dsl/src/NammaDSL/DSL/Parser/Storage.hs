@@ -366,7 +366,7 @@ parseQueries = do
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
             params = addDefaultUpdatedAtToQueryParams kvFunction fields $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (makeQueryParam fields bFields)))
             whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause (makeQueryParam fields bFields) "eq"))
-            orderBy = fromMaybe defaultOrderBy (queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields))
+            orderBy = queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields)
             takeFullObjectAsParam = fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
             typeConstraint = queryDataObj ^? ix acc_typeConstraint . _String
          in QueryDef queryName kvFunction params whereClause orderBy takeFullObjectAsParam typeConstraint
@@ -897,7 +897,7 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                       ( QueryParam {qpName = fieldName, qpType = haskellType, qpExtParam = Nothing, qpIsBeam = False},
                         Just Eq
                       ),
-                  orderBy = defaultOrderBy,
+                  orderBy = Just defaultOrderBy,
                   takeFullObjectAsInput = False,
                   typeConstraint = Nothing
                 },
@@ -910,7 +910,7 @@ modifyRelationalTableDef allTableDefs tableDef@TableDef {..} = do
                       ( QueryParam {qpName = fieldName, qpType = haskellType, qpExtParam = Nothing, qpIsBeam = False},
                         Just Eq
                       ),
-                  orderBy = defaultOrderBy,
+                  orderBy = Just defaultOrderBy,
                   takeFullObjectAsInput = False,
                   typeConstraint = Nothing
                 }
@@ -1238,7 +1238,7 @@ getAllFieldsUsedInQueries queries = do
   pure $ L.nub $ concatMap (getAllFieldsInQuery fields) queries
   where
     getAllFieldsInQuery :: [FieldDef] -> QueryDef -> [String]
-    getAllFieldsInQuery fdefs (QueryDef {..}) = L.nub ((fst orderBy) : (concatMap (getAllBeamFieldsUsedInQueryParam fdefs) (params <> allWhereClauseQueryParams whereClause)))
+    getAllFieldsInQuery fdefs (QueryDef {..}) = L.nub ((maybe [] fst orderBy) : (concatMap (getAllBeamFieldsUsedInQueryParam fdefs) (params <> allWhereClauseQueryParams whereClause)))
 
     allWhereClauseQueryParams :: WhereClause -> [QueryParam]
     allWhereClauseQueryParams = \case
