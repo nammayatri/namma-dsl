@@ -70,6 +70,7 @@ interpretSplice (Splice e) = "$(" <> pprint' e <> ")" <> "\n\n"
 
 interpretComment :: Comment -> String
 interpretComment (Comment str) = "--" <> str <> "\n"
+interpretComment AddNewLine = "\n"
 
 myStyle :: Pretty.Style
 myStyle = Pretty.style {Pretty.lineLength = 300}

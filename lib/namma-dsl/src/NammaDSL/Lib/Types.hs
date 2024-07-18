@@ -25,7 +25,8 @@ data CodeUnit = CodeDec [TH.Dec] | CodeSplice Splice | CodeComment Comment
 
 newtype Splice = Splice TH.Exp deriving (Eq)
 
-newtype Comment = Comment String
+-- sometimes extra new line required after comment
+data Comment = Comment String | AddNewLine
 
 type Writer r w = WriterT [w] (Q r) ()
 
