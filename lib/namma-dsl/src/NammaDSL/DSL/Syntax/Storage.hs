@@ -120,7 +120,7 @@ data QueryDef = QueryDef
     kvFunction :: String,
     params :: [QueryParam],
     whereClause :: WhereClause,
-    orderBy :: (String, Order),
+    orderBy :: Maybe (String, Order),
     takeFullObjectAsInput :: Bool,
     typeConstraint :: Maybe String
   }

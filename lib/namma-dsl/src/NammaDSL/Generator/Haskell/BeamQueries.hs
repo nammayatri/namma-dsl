@@ -581,9 +581,14 @@ orderAndLimit :: QueryDef -> [Q TH.Exp]
 orderAndLimit query = do
   if query.kvFunction `elem` ["findAllWithOptionsKV", "findAllWithOptionsKV'", "findAllWithOptionsKVScheduler", "findAllWithOptionsDb"]
     then do
-      let order = cE ("Se." <> show (snd query.orderBy)) ~* vE ("Beam." <> (fst query.orderBy))
+      let order = cE ("Se." <> show (maybe (snd defaultOrderBy) snd query.orderBy)) ~* vE ("Beam." <> (maybe (fst defaultOrderBy) fst query.orderBy))
       [order, vE "limit", vE "offset"]
-    else []
+    else
+      if query.kvFunction `elem` ["findAllWithKVAndConditionalDB"]
+        then do
+          let order = maybe (vE "Nothing") (\qob -> vE "Just" ~* parenE (cE ("Se." <> show (snd qob)) ~* vE ("Beam." <> (fst qob)))) query.orderBy
+          [order]
+        else []
 
 withFunctionSignature :: StorageRead -> QueryDef -> String -> Writer TH.Stmt -> Writer CodeUnit
 withFunctionSignature storageRead query tableNameHaskell stmts = do
@@ -812,8 +817,8 @@ operator = \case
 
 defaultQueryDefs :: TableDef -> [QueryDef]
 defaultQueryDefs tableDef =
-  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimaryKeyWhereClause defaultOrderBy False tableDef.defaultQueryTypeConstraint,
-    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimaryKeyWhereClause defaultOrderBy True tableDef.defaultQueryTypeConstraint
+  [ QueryDef "findByPrimaryKey" "findOneWithKV" [] findByPrimaryKeyWhereClause (Just defaultOrderBy) False tableDef.defaultQueryTypeConstraint,
+    QueryDef "updateByPrimaryKey" "updateWithKV" (getAllFieldNamesWithTypesExcludingPks (primaryKey tableDef) (fields tableDef)) findByPrimaryKeyWhereClause (Just defaultOrderBy) True tableDef.defaultQueryTypeConstraint
   ]
   where
     getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [QueryParam]
