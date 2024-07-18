@@ -2,7 +2,7 @@ module NammaDSL.Lib.Interpreter where
 
 import Control.Monad.Writer hiding (Writer)
 import Data.Functor ((<&>))
-import qualified Data.List as L
+-- import qualified Data.List as L
 import qualified Language.Haskell.TH as TH
 import qualified Language.Haskell.TH.Ppr as Ppr
 import qualified Language.Haskell.TH.PprLib as Ppr
@@ -14,19 +14,19 @@ interpreter :: r -> Writer r CodeUnit -> Maybe String
 interpreter env unitW = do
   let codeUnits = runQ env . execWriterT $ unitW
   let codeStringDecs =
-        L.intercalate "\n\n" $
+        concat $
           codeUnits <&> \case
             CodeDec codeDecs -> interpretDecs codeDecs
             CodeSplice _ -> mempty
             CodeComment comment -> interpretComment comment
   -- splices should be in the end of module
   let codeStringSplices =
-        L.intercalate "\n\n" $
+        concat $
           codeUnits <&> \case
             CodeDec _ -> mempty
             CodeSplice splice -> interpretSplice splice
             CodeComment _ -> mempty
-  let codeString = L.intercalate "\n\n" [codeStringDecs, codeStringSplices]
+  let codeString = codeStringDecs <> codeStringSplices
   if codeString == mempty
     then Nothing
     else Just codeString
@@ -55,7 +55,7 @@ interpreter env unitW = do
 --     <> "\n\n"
 
 interpretDecs :: [TH.Dec] -> String
-interpretDecs = pprint'
+interpretDecs = (<> "\n\n") . pprint'
 
 -- interpretImport :: Import -> String
 -- interpretImport (Import m) = "import " <> m
@@ -66,10 +66,10 @@ interpretDecs = pprint'
 -- interpretExtension (Extension e) = "{-# LANGUAGE " <> e <> " #-}"
 
 interpretSplice :: Splice -> String
-interpretSplice (Splice e) = "$(" <> pprint' e <> ")"
+interpretSplice (Splice e) = "$(" <> pprint' e <> ")" <> "\n\n"
 
 interpretComment :: Comment -> String
-interpretComment (Comment str) = "--" <> str
+interpretComment (Comment str) = "--" <> str <> "\n"
 
 myStyle :: Pretty.Style
 myStyle = Pretty.style {Pretty.lineLength = 300}
