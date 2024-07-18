@@ -428,3 +428,6 @@ matchWOD patQ bodyQ = do
 
 commentW :: String -> Writer r CodeUnit
 commentW str = tell [CodeComment (Comment str)]
+
+addNewLineW :: Writer r CodeUnit
+addNewLineW = tell [CodeComment AddNewLine]
