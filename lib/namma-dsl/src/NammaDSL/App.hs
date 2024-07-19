@@ -8,15 +8,20 @@ import Control.Monad.Extra (whenJust)
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.Text as T
+import Dhall (inputFile)
+import Dhall.Marshal.Decode (auto)
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
+import NammaDSL.DSL.Parser.TechDesign (techDesignParser)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common as ReExport
 import NammaDSL.DSL.Syntax.Storage
+import NammaDSL.DSL.Syntax.TechDesign (TechDRead (..))
 import NammaDSL.Generator.Haskell
 import NammaDSL.Generator.Haskell.ApiTypes
 import NammaDSL.Generator.Purs
+import NammaDSL.Generator.Purs.TechDesign (applyTechDesignChanges)
 import NammaDSL.Generator.SQL
 import NammaDSL.Utils
 import System.Directory
@@ -25,7 +30,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.64"
+version = "1.0.65"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -80,6 +85,15 @@ runApiGenerator configPath yamlPath = do
       (DOMAIN_HANDLER, mkDomainHandler),
       (PURE_SCRIPT_FRONTEND, mkFrontendAPIIntegration)
     ]
+
+runTechDesign :: FilePath -> FilePath -> IO ()
+runTechDesign configPath yamlPath = do
+  config <- (inputFile auto configPath)
+  let moduleMaps = _defaultModuleMapper config
+      rPaths = config ^. tdRootPaths
+      techDesignRead = TechDRead rPaths moduleMaps mempty
+  tDChanges <- techDesignParser techDesignRead yamlPath
+  applyTechDesignChanges tDChanges
 
 getHashObjectAtHEAD :: FilePath -> IO (Maybe String)
 getHashObjectAtHEAD filePath = do
