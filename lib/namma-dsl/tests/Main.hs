@@ -6,6 +6,8 @@ module Main where
 import NammaDSL.App
 import Prelude
 
+--import qualified Data.Text as T
+
 storageYamlFilePath :: FilePath
 storageYamlFilePath = "./tests/storage.yaml"
 
@@ -16,28 +18,9 @@ generateAllExample :: IO ()
 generateAllExample = do
   runStorageGenerator "./tests/dsl-config.dhall" storageYamlFilePath
   runApiGenerator "./tests/dsl-config.dhall" apiYamlFilePath
-
--- runningTheAnalysis :: IO ()
--- runningTheAnalysis = do
---   let initialState =
---         AnalysisState
---           { rootPathPrefix = ["/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src"],
---             extImports = KM.fromList [("A.B.BLA", "Kernel.Prelude.BBB2")],
---             haskellImports = KM.fromList [("BLA", "Kernel.Prelude.Bla2")],
---             dTypes = [],
---             alreadyNoticedDeepA = mempty,
---             currentQualifiedImports = [],
---             primitives = pursTypePrimitive,
---             tpTinkerer = id,
---             remaining = [("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE_2"), ("NammaDSL.DSL.Syntax.Storage", "PROXY_API_TYPE")],
---             remainingEXT_TO = [],
---             result = []
---           }
---   rr <- execStateT deepAnalysis initialState
---   print (result rr)
-
--- sql :: String -> SQL_MANIPULATION
--- sql = sqlCleanedLineParser
+  runTechDesign "./tests/tech-design-config.yaml" "./tests/tech-design.yaml"
 
 main :: IO ()
-main = generateAllExample
+main = pure ()
+
+-- runTechDesign "./tests/tech-design-config.dhall" "./tests/tech-design.yaml"

@@ -11,6 +11,9 @@
           imports = [
             # inputs.shared-kernel.haskellFlakeProjectModules.output
           ];
+          settings = {
+            cheapskate.broken = false;
+          };
           autoWire = [ "packages" "checks" ];
         };
         process-compose = { };

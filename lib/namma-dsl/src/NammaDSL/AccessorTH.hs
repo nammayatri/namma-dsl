@@ -60,5 +60,7 @@ $( makeAccKeysTH
     paramsOrder
     queryType
     extImports
+    moduleMapper
+    tdComments
     |]
  )

@@ -1,0 +1,16 @@
+moduleMapper:
+  Reels: UI.Frontend.Reels
+  feedbackBasedOnRatingView: UI.Frontend.Back
+
+Reels:
+    abc: Array Int
+
+animConfig:
+  tdComments:
+    - Comment !!!!
+  abc: "0.23"
+
+feedbackBasedOnRatingView:
+   tdComments:
+    - Hello this is a comment
+    - This is another one
