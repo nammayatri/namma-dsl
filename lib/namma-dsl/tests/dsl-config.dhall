@@ -1,5 +1,5 @@
 let outputPrefix =
-      "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/tests/src-read-only/"
+      "/Users/arjunashok/repos/namma-dsl/lib/namma-dsl/tests/src-read-only/"
 
 let sqlOutputPaths =
       [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" }
@@ -158,8 +158,7 @@ let defaultImports =
       ]
 
 in  { _output = outputPath
-    , _rootPaths =
-      [ "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/src/" ]
+    , _rootPaths = [ "/Users/arjunashok/repos/namma-dsl/lib/namma-dsl/src/" ]
     , _storageConfig =
       { _sqlTypeMapper = sqlMapper
       , _extraDefaultFields = extraDefaultFields

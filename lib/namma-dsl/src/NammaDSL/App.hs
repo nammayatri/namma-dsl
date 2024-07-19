@@ -27,6 +27,9 @@ import Prelude
 version :: String
 version = "1.0.57"
 
+runPursGenerator :: FilePath -> IO ()
+runPursGenerator = pursParser'
+
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
   config <- fetchDhallConfig configPath

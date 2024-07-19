@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module NammaDSL.DSL.Syntax.API where
 
@@ -10,7 +11,11 @@ import Data.Map (Map)
 import Data.Text (Text)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
+import Prettyprinter
 import Prelude
+
+-- import qualified Data.Text as T
+-- import Data.List (map)
 
 data UrlParts
   = UnitPath Text
@@ -47,7 +52,30 @@ data ApiTT = ApiTT
 
 $(makeLenses ''ApiTT)
 
+data Constructor = Constructor
+  { constructorName :: Text,
+    constructorArgs :: [Text]
+  }
+  deriving (Show, Eq)
+
+data Field = Field
+  { fieldName :: Text,
+    fieldType :: Text
+  }
+  deriving (Show, Eq)
+
 data TypeObject = TypeObject RecordType (Text, ([(Text, Text)], [Text])) deriving (Show)
+
+type RecordName = String
+
+data RecordObject
+  = SumType RecordType RecordName Constructor
+  | RecordTypeDeclaration RecordType RecordName String [Field]
+  deriving (Show, Eq)
+
+data Junk = Junk Text deriving (Show)
+
+data Declaration = Declaration RecordObject | Junk' Text deriving (Show)
 
 data TypesInfo = TypesInfo
   { _typeImports :: [Text],
@@ -65,6 +93,17 @@ data Apis = Apis
     _apiTypes :: TypesInfo,
     _hsImports :: Object,
     _extImports :: Object
+  }
+  deriving (Show)
+
+data PursModule = PursModule
+  { _decl :: [Declaration]
+  }
+  deriving (Show)
+
+data PursModule' = PursModule'
+  { _decl' :: [RecordObject],
+    _junk' :: Text
   }
   deriving (Show)
 
@@ -91,6 +130,11 @@ data ApiState = ApiState
     _extraParseInfo :: ExtraParseInfo
   }
 
+data PursState = PursState
+  { _datatypes :: [RecordObject],
+    _junk :: Text
+  }
+
 $(makeLenses ''ApiState)
 
 instance Default ExtraParseInfo where
@@ -110,7 +154,56 @@ instance Default Apis where
 
 type ApiParserM = ParserM ApiRead ApiState
 
--- For testing--
--- data API_OBJ = API_OBJ {
---   aaa :: String,
---   bbb :: String} deriving (Show)
+type PursParserM = ParserM ApiRead PursState
+
+getRecordName :: RecordObject -> RecordName
+getRecordName rO = case rO of
+  SumType _ recName _ -> recName
+  RecordTypeDeclaration _ recName _ _ -> recName
+
+hasFields :: RecordObject -> Bool
+hasFields rO = case rO of
+  RecordTypeDeclaration _ _ _ _ -> True
+  _ -> False
+
+getFields :: RecordObject -> [Field]
+getFields rO = case rO of
+  RecordTypeDeclaration _ _ _ x -> x
+  _ -> []
+
+replaceFields :: RecordObject -> [Field] -> RecordObject
+replaceFields (RecordTypeDeclaration recType recName consName _) fields =
+  RecordTypeDeclaration recType recName consName fields
+replaceFields a _ = a
+
+replaceElement :: RecordObject -> RecordObject -> [RecordObject] -> [RecordObject]
+replaceElement _ _ [] = []
+replaceElement old new (x : xs)
+  | x == old = new : xs
+  | otherwise = x : replaceElement old new xs
+
+instance Pretty RecordType where
+  pretty = \case
+    NewType -> "newtype"
+    Data -> "data"
+    Type -> "type"
+
+instance Pretty Constructor where
+  pretty (Constructor name args) = pretty name <+> (cat $ (punctuate (" ") (pretty <$> args)))
+
+instance Pretty Field where
+  pretty (Field name types') = Prettyprinter.line <> pretty name <+> "::" <+> pretty types'
+
+instance Pretty RecordObject where
+  pretty (SumType recordType recordName constructor) =
+    pretty recordType <+> pretty recordName <+> "=" <+> pretty constructor
+  pretty (RecordTypeDeclaration recordType recordName consName fields) =
+    pretty recordType <+> pretty recordName <+> "=" <+> pretty consName <+> (align . bracesList . fmap pretty $ fields)
+
+instance Pretty PursModule' where
+  pretty (PursModule' decl junk) = vsep (pretty <$> decl) <> Prettyprinter.line <> pretty junk
+
+bracesList :: [Doc ann] -> Doc ann
+bracesList xs = "{" <+> (vsep (punctuate (", ") xs)) <+> " }"
+
+-- group $ flatAlt "{ " "{" <> align (vsep (punctuate (", ") xs)) <> flatAlt " }" "}"

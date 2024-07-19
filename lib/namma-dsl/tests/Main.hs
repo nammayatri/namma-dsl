@@ -12,10 +12,18 @@ storageYamlFilePath = "./tests/storage.yaml"
 apiYamlFilePath :: FilePath
 apiYamlFilePath = "./tests/api.yaml"
 
+pursFilePath :: FilePath
+pursFilePath = "./tests/purs.yaml"
+
 generateAllExample :: IO ()
 generateAllExample = do
   runStorageGenerator "./tests/dsl-config.dhall" storageYamlFilePath
   runApiGenerator "./tests/dsl-config.dhall" apiYamlFilePath
+
+testGenerator :: IO ()
+testGenerator = do
+  runPursGenerator pursFilePath
+  putStrLn "Testing this"
 
 -- runningTheAnalysis :: IO ()
 -- runningTheAnalysis = do
@@ -40,4 +48,4 @@ generateAllExample = do
 -- sql = sqlCleanedLineParser
 
 main :: IO ()
-main = generateAllExample
+main = testGenerator

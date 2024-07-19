@@ -1,0 +1,12 @@
+Qwe wqe
+
+data Qwe = Qwe
+
+data Abc = Abc {
+  id :: Text,
+  qty :: Int
+}
+
+
+
+

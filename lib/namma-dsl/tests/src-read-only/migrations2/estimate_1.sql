@@ -1,0 +1,23 @@
+CREATE TABLE atlas_driver.estimate_1 ();
+
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN created_at timestamp with time zone NOT NULL default CURRENT_TIMESTAMP;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN currency text ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN estimated_distance integer ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN fare_params_id character varying(36) NOT NULL;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN fare_policy_id character varying(36) ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN id character varying(36) NOT NULL;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN is_blocked_route boolean ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN is_customer_preffered_search_route boolean ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN is_scheduled boolean ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN max_fare integer NOT NULL;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN max_fare_amount double precision ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN min_fare integer NOT NULL;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN min_fare_amount double precision ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN request_id character varying(36) NOT NULL;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN special_location_tag text ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN toll_names text[] ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN trip_category text ;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN updated_at timestamp with time zone  default CURRENT_TIMESTAMP;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN vehicle_variant text NOT NULL;
+ALTER TABLE atlas_driver.estimate_1 ADD COLUMN vehicle_service_tier_name text ;
+ALTER TABLE atlas_driver.estimate_1 ADD PRIMARY KEY ( id);

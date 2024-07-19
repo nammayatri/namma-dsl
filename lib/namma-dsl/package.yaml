@@ -97,6 +97,7 @@ dependencies:
   - haskell-src-exts
   - interpolate
   - pcre-heavy
+  - prettyprinter
 
 ghc-options:
   - -Wall

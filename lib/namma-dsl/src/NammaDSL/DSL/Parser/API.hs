@@ -7,6 +7,7 @@
 module NammaDSL.DSL.Parser.API where
 
 import Control.Lens hiding (noneOf)
+import Control.Monad.Extra (whenJust)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromText, toText)
@@ -15,7 +16,9 @@ import Data.Aeson.Lens (_Array, _Object, _String, _Value)
 import Data.Bifunctor
 import Data.Bool
 import qualified Data.ByteString as BS
+import Data.Char (isSpace)
 import Data.Default
+import Data.List (find)
 import Data.List.Split (splitWhen)
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe)
@@ -27,7 +30,15 @@ import NammaDSL.AccessorTH
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import qualified NammaDSL.Utils as U
-import Prelude
+import qualified Prettyprinter as Pretty
+import Text.Parsec (Parsec, choice, getState, many, many1, modifyState, parse, runParser, sepBy1, skipMany, skipMany1, try, (<|>))
+import Text.Parsec.Char
+import Text.Parsec.String
+import Prelude as P
+
+-- import qualified Control.Monad.State as CMS
+
+type ParserS = Parsec String PursState
 
 parseApis' :: ApiParserM ()
 parseApis' = do
@@ -160,6 +171,225 @@ apiParser' apiRead filepath = do
       let extraParseInfo = ExtraParseInfo yml []
           apiState = ApiState def extraParseInfo
       _apisRes <$> evalParser parseApis' apiRead apiState
+
+whiteSpace :: Parser ()
+whiteSpace = skipMany (space <|> tab <|> newline)
+
+whiteSpace' :: ParserS ()
+whiteSpace' = skipMany (space <|> tab <|> newline)
+
+spaces' :: ParserS ()
+spaces' = skipMany1 (satisfy (== ' '))
+
+-- pursFile :: Parser PursModule
+-- pursFile = do
+--   whiteSpace
+--   dataTypes <- many1 (try recordType)
+--   junk <- many1 anyChar
+--   pure $ PursModule dataTypes (Junk $ T.pack junk)
+
+pursFile :: Parser PursModule
+pursFile = do
+  whiteSpace
+  dataTypes <- many1 $ choice [try parseDataDeclaration, parseJunk]
+  pure $ PursModule dataTypes
+
+pursFile' :: ParserS PursModule'
+pursFile' = do
+  _ <- whiteSpace'
+  _ <- many (try parseDataDeclaration' <|> try parseJunk')
+  _ <- addField "Abc" (Field "name" "Text")
+  state' <- getState
+  let decls' = reverse $ _datatypes state'
+  let otherCode = _junk state'
+  pure $ PursModule' decls' otherCode
+
+parseJunk :: Parser Declaration
+parseJunk = do
+  text <- many1 (letter)
+  pure $ Junk' (T.pack text)
+
+captureWhiteSpace :: ParserS String
+captureWhiteSpace = many (satisfy isSpace)
+
+parseJunk' :: ParserS ()
+parseJunk' = do
+  -- modifyState (\s -> s { _datatypes = Junk' (T.pack "1") : _datatypes s })
+  text <- many1 (letter)
+  ws <- captureWhiteSpace
+  -- let junk' = Junk' (T.pack (text ++ ws))
+  let junk' = T.pack (text <> ws)
+  modifyState (\s -> s {_junk = _junk s <> junk'})
+
+parseDataType :: Parser RecordType
+parseDataType = do
+  _ <- whiteSpace
+  recType <-
+    many letter
+      >>= ( \case
+              "data" -> pure Data
+              _ -> fail "Not a valid data"
+          )
+  _ <- whiteSpace
+  pure recType
+
+parseNewType :: Parser RecordType
+parseNewType = do
+  _ <- whiteSpace
+  recType <-
+    many letter
+      >>= ( \case
+              "newtype" -> pure NewType
+              _ -> fail "Not a valid newtype"
+          )
+  _ <- whiteSpace
+  pure recType
+
+equalTo :: Parser Char
+equalTo = char '='
+
+equalTo' :: ParserS Char
+equalTo' = char '=' <* whiteSpace'
+
+identifier :: Parser String
+identifier = (:) <$> letter <*> many (alphaNum <|> char '_')
+
+identifier' :: ParserS String
+identifier' = (:) <$> letter <*> many (alphaNum <|> char '_')
+
+parseDataDeclaration :: Parser Declaration
+parseDataDeclaration = do
+  rectype <- recordType
+  _ <- whiteSpace
+  dName <- identifier
+  _ <- whiteSpace
+  _ <- equalTo
+  _ <- whiteSpace
+  cName <- constructor
+  pure $ Declaration (SumType rectype dName cName)
+
+-- pure $ Declaration (RecordObject rectype (T.pack dName) (T.pack cName))
+
+field :: ParserS Field
+field = do
+  whiteSpace'
+  name <- identifier'
+  whiteSpace'
+  _ <- string "::"
+  whiteSpace'
+  ftype <- many1 (alphaNum <|> char '[' <|> char ']' <|> char ' ' <|> char '_')
+  whiteSpace'
+  return $ Field (T.pack name) (T.pack ftype)
+
+constructor :: Parser Constructor
+constructor = do
+  name <- identifier
+  types <- many (whiteSpace *> identifier)
+  return $ Constructor (T.pack name) (T.pack <$> types)
+
+constructor' :: ParserS Constructor
+constructor' = do
+  name <- identifier'
+  types <- many (spaces' *> identifier')
+  _ <- whiteSpace'
+  return $ Constructor (T.pack name) (T.pack <$> types)
+
+parseDataDeclaration' :: ParserS ()
+parseDataDeclaration' = try parseRecordTypeDeclaration' <|> try parseSumTypeDeclaration'
+
+parseRecord :: ParserS [Field]
+parseRecord = do
+  _ <- char '{'
+  whiteSpace'
+  fields <- field `sepBy1` (char ',' >> whiteSpace')
+  whiteSpace'
+  _ <- char '}'
+  return fields
+
+parseRecordTypeDeclaration' :: ParserS ()
+parseRecordTypeDeclaration' = do
+  rectype <- recordType'
+  dName <- identifier' <* whiteSpace'
+  _ <- equalTo' <* whiteSpace'
+  rName <- identifier' <* whiteSpace'
+  record <- parseRecord <* whiteSpace'
+  let decl = RecordTypeDeclaration rectype dName rName record -- (Constructor "" [""])
+  modifyState (\s -> s {_datatypes = decl : _datatypes s})
+
+parseSumTypeDeclaration' :: ParserS ()
+parseSumTypeDeclaration' = do
+  rectype <- recordType'
+  dName <- identifier'
+  _ <- whiteSpace'
+  _ <- equalTo'
+  cons <- constructor'
+  let decl = SumType rectype dName cons -- (Constructor "" [""])
+  modifyState (\s -> s {_datatypes = decl : _datatypes s})
+
+-- pure $ Declaration (RecordObject rectype (T.pack dName) (T.pack cName))
+
+-- runParserWithState :: ParserS PursModule' -> String -> Either ParseError PursModule'
+-- runParserWithState p input = runParser (CMS.evalStateT p initialState) () "" input
+--   where
+--     initialState = PursState []
+
+-- dataType :: Parser
+recordType :: Parser RecordType
+recordType = do
+  _ <- whiteSpace
+  recType <-
+    many1 letter
+      >>= ( \case
+              "newtype" -> pure NewType
+              "data" -> pure Data
+              "type" -> pure Type
+              _ -> fail "Not record"
+          )
+  _ <- whiteSpace
+  pure recType
+
+recordType' :: ParserS RecordType
+recordType' = do
+  _ <- whiteSpace'
+  recType <-
+    many1 letter
+      >>= ( \case
+              "newtype" -> pure NewType
+              "data" -> pure Data
+              "type" -> pure Type
+              _ -> fail "Not record"
+          )
+  _ <- whiteSpace'
+  pure recType
+
+pursParser :: FilePath -> IO ()
+pursParser filepath = do
+  contents <- readFile filepath
+  case parse pursFile "" contents of
+    Left err -> putStrLn $ "Left:" <> (show err)
+    Right m -> putStrLn $ "Right:" <> (show m)
+  pure ()
+
+pursParser' :: FilePath -> IO ()
+pursParser' filepath = do
+  contents <- readFile filepath
+  case runParser (pursFile') (PursState [] "") "" contents of
+    Left err -> putStrLn $ "Left:" <> (show err)
+    Right m -> do
+      putStrLn $ "Right:" <> (show m)
+      putStrLn $ "Pretty printing output: \n" <> (show $ Pretty.pretty m)
+  pure ()
+
+addField :: RecordName -> Field -> ParserS ()
+addField recName newField = do
+  state <- getState
+  let dTypes = _datatypes state
+      targetDType = find (\dType -> (getRecordName dType == recName) && hasFields dType) dTypes
+  whenJust targetDType \dType -> do
+    let newFields = getFields dType <> [newField]
+        newDType = replaceFields dType newFields
+        newDTypes = replaceElement dType newDType dTypes
+    modifyState (\s -> s {_datatypes = newDTypes})
 
 makeApiTTPartsQualified' :: ApiParserM ()
 makeApiTTPartsQualified' = do
