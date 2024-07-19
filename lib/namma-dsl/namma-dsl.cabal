@@ -48,6 +48,7 @@ library
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
       NammaDSL.Generator.Purs.CST
+      NammaDSL.Generator.Purs.TechDesign
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
@@ -170,6 +171,7 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
       NammaDSL.Generator.Purs.CST
+      NammaDSL.Generator.Purs.TechDesign
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore

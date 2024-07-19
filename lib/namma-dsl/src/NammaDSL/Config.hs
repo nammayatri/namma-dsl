@@ -5,10 +5,10 @@
 module NammaDSL.Config where
 
 import Control.Lens
+import Data.Text (Text)
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
---import Data.Text (Text)
 import Prelude
 
 data GenerationType
@@ -75,3 +75,11 @@ data AppConfigs = AppConfigs
   deriving (Generic, Show, FromDhall)
 
 $(makeLenses ''AppConfigs)
+
+data TechDesignConfig = TechDesignConfig
+  { _tdRootPaths :: [FilePath],
+    _defaultModuleMapper :: [(Text, Text)]
+  }
+  deriving (Generic, Show, FromDhall)
+
+$(makeLenses ''TechDesignConfig)

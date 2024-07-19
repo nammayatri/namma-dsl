@@ -1,7 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module NammaDSL.Generator.Purs.CST where
+module NammaDSL.Generator.Purs.CST (module NammaDSL.Generator.Purs.CST, module ReExport) where
 
 import Control.Arrow ((&&&))
 --import Debug.Trace (traceShowId)
@@ -16,7 +16,7 @@ import Language.PureScript.CST.Types
 import Language.PureScript.Names (ModuleName (..), ProperName (..), runModuleName)
 import Language.PureScript.PSString (mkString)
 import qualified Language.PureScript.PSString as PS
-import NammaDSL.DSL.Syntax.TechDesign
+import NammaDSL.DSL.Syntax.TechDesign as ReExport
 import Prelude
 
 doCSTChanges :: FilePath -> [(Module () -> Module ())] -> IO ()

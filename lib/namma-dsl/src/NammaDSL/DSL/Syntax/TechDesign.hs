@@ -1,13 +1,16 @@
 module NammaDSL.DSL.Syntax.TechDesign where
 
-import Data.Maybe
+import Data.Aeson
+import Data.Default
 import Data.Text
 import Data.Void (Void)
 import Language.PureScript.CST.Types
+import NammaDSL.DSL.Syntax.Common
 import Prelude
 
 data TechDesign = TechDesign
-  { changes :: [Ann Change]
+  { changes :: [Ann Change],
+    moduleMapper :: [(Text, Text)]
   }
   deriving (Show, Eq, Ord)
 
@@ -21,11 +24,26 @@ data PImportType = Simple | Qualified deriving (Show, Eq, Ord)
 
 data PImport = PImport Text PImportType deriving (Show, Eq, Ord)
 
-data Change = AddField Text Text | AddImport PImport | AddComment DeclSig Text deriving (Show, Eq, Ord)
+data Change = AddField DeclSig Text Text | AddImport PImport | AddComment DeclSig Text deriving (Show, Eq, Ord)
+
+data TechDRead = TechDRead
+  { tdPathPrefixes :: [FilePath],
+    defaultModuleMapper :: [(Text, Text)],
+    yamlObject :: Object
+  }
+  deriving (Show, Eq, Ord)
+
+instance Default TechDRead where
+  def = TechDRead [] [] mempty
+
+type TechDM = ParserM TechDRead TechDesign
 
 data Ann a = Ann
   { change :: a,
     mdl :: Text,
-    path :: Maybe Text
+    path :: FilePath
   }
   deriving (Show, Eq, Ord)
+
+instance Default TechDesign where
+  def = TechDesign [] mempty
