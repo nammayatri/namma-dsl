@@ -93,6 +93,9 @@ dependencies:
   - haskell-src-meta
   - regex-compat
   - haskell-src-exts
+  - interpolate
+  - pcre-heavy
+  - purescript
 
 ghc-options:
   - -Wall

@@ -7,6 +7,8 @@ import NammaDSL.App
 import NammaDSL.DSL.Parser.Storage (SQL_MANIPULATION, sqlCleanedLineParser)
 import Prelude
 
+--import qualified Data.Text as T
+
 storageYamlFilePath :: FilePath
 storageYamlFilePath = "./tests/storage.yaml"
 
@@ -21,6 +23,7 @@ generateAllExample = do
   runStorageGenerator "./tests/dsl-config.dhall" storageYamlFilePath
   runApiGenerator "./tests/dsl-config.dhall" apiYamlFilePath
   runApiGenerator "./tests/dsl-config.dhall" dashboardApiYamlFilePath
+  runTechDesign "./tests/tech-design-config.dhall" "./tests/tech-design.yaml"
 
 sql :: String -> SQL_MANIPULATION -- Just for quick testing
 sql = sqlCleanedLineParser

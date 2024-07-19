@@ -64,5 +64,8 @@ $( makeAccKeysTH
     helperApi
     apiPrefix
     helperApiPrefix
+    extImports
+    moduleMapper
+    tdComments
     |]
  )
