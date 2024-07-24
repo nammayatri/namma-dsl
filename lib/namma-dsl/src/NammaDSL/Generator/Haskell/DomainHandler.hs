@@ -37,7 +37,7 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _) 
         { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = domainHandlerModulePrefix <> T.unpack (_moduleName input),
-          _moduleExports = Nothing,
+          _moduleExports = Just $ T.unpack . handlerFunctionText <$> input ^. apis,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
@@ -82,7 +82,9 @@ generateHandlerFunction :: ApiKind -> ApiTT -> Writer CodeUnit
 generateHandlerFunction apiKind apiT = decsW $ do
   let functionName = handlerFunctionText apiT
       authToType = apiAuthTypeMapperDomainHandler apiT
-      signatureUnits = mkApiSignatureUnits apiT
+      signatureUnits = case apiKind of
+        DASHBOARD -> mkApiSignatureUnitsHelper apiT
+        UI -> mkApiSignatureUnits apiT
       allTypes = map apiSignatureType signatureUnits
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
@@ -101,9 +103,9 @@ generateHandlerFunction apiKind apiT = decsW $ do
             UI -> noBindSW $ vE "error" ~* strE "Logic yet to be decided"
             DASHBOARD -> do
               whenJust (apiT ^. requestValidation) $ \validationFunc -> do
-                let reqParam = case findHandlerParam apiUnits ReqParam of
+                let reqParam = case findRequest apiUnits of
                       Just paramText -> vE paramText
-                      Nothing -> error "Did not found request for validation"
+                      Nothing -> error $ "Did not found request for validation: " <> T.unpack functionName
                 TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
               noBindSW $ appendE $ vE "error" NE.:| strE "Logic yet to be decided" : generateParamsExp apiUnits -- just for avoid unused vars error
 

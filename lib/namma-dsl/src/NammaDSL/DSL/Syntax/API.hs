@@ -71,19 +71,33 @@ data ApiParts = ApiTU ApiType [UrlParts] | HeaderT HeaderType | Auth (Maybe Auth
 data ApiTT = ApiTT
   { _urlParts :: [UrlParts],
     _apiType :: ApiType,
+    _apiName :: Maybe Text,
     _authType :: Maybe AuthType,
     _header :: [HeaderType],
+    _apiMultipartType :: Maybe ApiMultipart,
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
+    _apiHelperApi :: Maybe HelperApiTT,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text
   }
   deriving (Show)
 
+newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
+  deriving (Show)
+
+newtype ApiMultipart = ApiMultipart Text
+  deriving (Show)
+
 $(makeLenses ''ApiTT)
 
-data TypeObject = TypeObject RecordType (Text, ([(Text, Text)], [Text])) deriving (Show)
+$(makeLenses ''HelperApiTT)
+
+type OverrideDefaultDerive = Bool
+
+data TypeObject = TypeObject RecordType (Text, ([(Text, Text)], [Text])) OverrideDefaultDerive
+  deriving (Show)
 
 data TypesInfo = TypesInfo
   { _typeImports :: [Text],
@@ -95,6 +109,8 @@ $(makeLenses ''TypesInfo)
 
 data Apis = Apis
   { _moduleName :: Text,
+    _apiPrefix :: Maybe Text,
+    _helperApiPrefix :: Maybe Text,
     _apis :: [ApiTT],
     _imports :: [Text],
     _importPackageOverrides :: Map String String,
@@ -120,6 +136,7 @@ data ApiRead = ApiRead
     apiServantImportPrefix :: String,
     apiServantDashboardImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,
+    apiDomainHandlerDashboardImportPrefix :: String,
     apiDefaultTypeImportMapper :: [(String, String)],
     apiClientFunction :: Maybe String,
     apiReadKind :: ApiKind
@@ -151,9 +168,9 @@ instance Default TypesInfo where
   def = TypesInfo [] []
 
 instance Default ApiRead where
-  def = ApiRead "" "" "" "" "" [] Nothing UI
+  def = ApiRead "" "" "" "" "" "" [] Nothing UI
 
 instance Default Apis where
-  def = Apis "" [] [] mempty def []
+  def = Apis "" Nothing Nothing [] [] mempty def []
 
 type ApiParserM = ParserM ApiRead ApiState

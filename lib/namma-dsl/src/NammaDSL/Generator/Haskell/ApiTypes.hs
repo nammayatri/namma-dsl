@@ -2,18 +2,20 @@ module NammaDSL.Generator.Haskell.ApiTypes (generateApiTypes) where
 
 import Control.Lens ((^.))
 import Control.Monad (when)
+import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
+import Data.Bool (bool)
 import Data.Foldable
 import Data.Functor ((<&>))
 import Data.List (isInfixOf, nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (DASHBOARD), DefaultImports (..), GenerationType (API_TYPES))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (API_TYPES))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
-import NammaDSL.Generator.Haskell.Common (apiTTToText, checkForPackageOverrides, generateAPIType, handlerFunctionText, handlerSignature, mkApiName)
+import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -52,10 +54,28 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
       nub $
         preventSameModuleImports $
           (T.unpack <$> input ^. apiTypes . typeImports)
+            <> figureOutImports allHandlersSignatures
             <> qualifiedImp
+            <> multipartImports
+            <> hideSecretsImports
+
+    allHandlersSignatures :: [String]
+    allHandlersSignatures = case apiReadKind apiRead of
+      UI -> []
+      DASHBOARD -> T.unpack <$> (concatMap handlerSignature (_apis input) <> concatMap handlerSignatureHelper (_apis input))
 
     preventSameModuleImports :: [String] -> [String]
     preventSameModuleImports = filter (\x -> not (qualifiedModuleName `isInfixOf` x))
+
+    multipartImports :: [String]
+    multipartImports = do
+      if apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)
+        then ["Kernel.ServantMultipart", "Data.ByteString.Lazy"]
+        else []
+
+    hideSecretsImports :: [String]
+    hideSecretsImports = do
+      ["Kernel.Types.HideSecrets" | apiReadKind apiRead == DASHBOARD && any isHideSecretsInstanceDerived (input ^. apiTypes ^. types)]
 
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
@@ -64,44 +84,63 @@ mkCodeBody apiRead = do
     interpreter input $ do
       generateHaskellTypes (input ^. apiTypes . types)
       when (apiReadKind apiRead == DASHBOARD) $ do
-        generateAPIType API_TYPES apiRead
+        generateAPITypeHelper API_TYPES apiRead
         generateServantApiType `mapM_` (input ^. apis)
         generateClientsType
         generateMkClientsType
 
+isHideSecretsInstanceDerived :: TypeObject -> Bool
+isHideSecretsInstanceDerived (TypeObject _ (_, (_, derive)) _) = "'HideSecrets" `elem` derive
+
+getDerivingStrategy :: Text -> TH.DerivStrategy
+getDerivingStrategy derive = do
+  let stockDerives = ["Eq", "Ord", "Show", "Read", "Enum", "Bounded", "Ix"]
+  let stockDerivesWithExtension = ["Functor", "Foldable", "Traversable", "Generic", "Generic1", "Data", "Lift"] -- TODO generate extension also
+  if any (\stockDerive -> stockDerive == derive || ("." <> stockDerive) `T.isSuffixOf` derive) $ stockDerives <> stockDerivesWithExtension
+    then TH.StockStrategy
+    else TH.AnyclassStrategy
+
 generateHaskellTypes :: [TypeObject] -> Writer CodeUnit
-generateHaskellTypes typeObj = traverse_ processType typeObj
+generateHaskellTypes = traverse_ processType
   where
     processType :: TypeObject -> Writer CodeUnit
-    processType (TypeObject recType (typeName, (fields, _)))
-      | isEnum fields = generateEnum recType typeName fields
-      | otherwise = generateDataStructure recType typeName fields
+    processType typeObj@(TypeObject _ (_, (fields, _)) _) = case fields of
+      [("enum", values)] -> generateEnum typeObj values
+      _ -> generateDataStructure typeObj
 
-    isEnum :: [(Text, Text)] -> Bool
-    isEnum [("enum", _)] = True
-    isEnum _ = False
-
-    generateEnum :: RecordType -> Text -> [(Text, Text)] -> Writer CodeUnit
-    generateEnum recType typeName [("enum", values)] = do
+    generateEnum :: TypeObject -> Text -> Writer CodeUnit
+    generateEnum typeObj@(TypeObject recType (typeName, _) overrideDefaultDerive) values = do
       let enumValues = T.splitOn "," values -- TODO move to parsing
       let _thTypeName = vE $ "''" <> T.unpack typeName
       TH.decW . pure $ do
-        let restDerivations = addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj)
-        let derives = TH.DerivClause Nothing (TH.ConT <$> ["Eq", "Show", "Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
+        let enumWithNestedTypes = any ((> 1) . length . T.words) enumValues
+        let defaultStockDerives = bool (if enumWithNestedTypes then ["Generic"] else ["Eq", "Show", "Generic"]) [] overrideDefaultDerive
+        let stockDerives = mkDerivClause TH.StockStrategy $ defaultStockDerives <> addRestDerivations TH.StockStrategy typeObj
+        let defaultAnyclassDerives = bool ["ToJSON", "FromJSON", "ToSchema"] [] overrideDefaultDerive
+        let anyclassDerives = mkDerivClause AnyclassStrategy $ defaultAnyclassDerives <> addRestDerivations TH.AnyclassStrategy typeObj
         case recType of
           NewType -> error "Generate haskell domain types: expected Data but got NewType" -- can be newtype here?
-          Data -> TH.DataD [] (mkNameT typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (mkNameT enumValue) [])) [derives]
+          Data -> TH.DataD [] (mkNameT typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (mkNameT enumValue) [])) $ catMaybes [stockDerives, anyclassDerives]
           Type -> error "Generate haskell domain types: expected Data but got Type"
-    generateEnum _ _ _ = error "Invalid enum definition"
+      generateHideSecretsDefaultInstance typeObj
 
-    addRestDerivations :: [Text] -> [TH.Name]
-    addRestDerivations derivations = map mkNameT $ filter (\x -> not $ T.isPrefixOf "'" x) $ derivations
+    mkDerivClause :: TH.DerivStrategy -> [TH.Name] -> Maybe TH.DerivClause
+    mkDerivClause _ [] = Nothing
+    mkDerivClause strategy names = Just $ TH.DerivClause (Just strategy) (TH.ConT <$> names)
 
-    generateDataStructure :: RecordType -> Text -> [(Text, Text)] -> Writer CodeUnit
-    generateDataStructure recType typeName fields =
+    addRestDerivations :: TH.DerivStrategy -> TypeObject -> [TH.Name]
+    addRestDerivations strategy (TypeObject _ (_, (_, derivations)) _) =
+      map mkNameT $
+        filter ((== strategy) . getDerivingStrategy) $
+          filter (not . T.isPrefixOf "'") derivations
+
+    generateDataStructure :: TypeObject -> Writer CodeUnit
+    generateDataStructure typeObj@(TypeObject recType (typeName, (fields, _)) overrideDefaultDerive) = do
       TH.decW . pure $ do
-        let restDerivations = addRestDerivations (concatMap (\(TypeObject _ (tname, (_, d))) -> if tname == typeName then d else []) typeObj)
-        let derives = TH.DerivClause Nothing (TH.ConT <$> ["Generic", "ToJSON", "FromJSON", "ToSchema"] <> restDerivations)
+        let defaultStockDerives = bool ["Generic"] [] overrideDefaultDerive
+        let stockDerives = mkDerivClause TH.StockStrategy $ defaultStockDerives <> addRestDerivations TH.StockStrategy typeObj
+        let defaultAnyclassDerives = bool ["ToJSON", "FromJSON", "ToSchema"] [] overrideDefaultDerive
+        let anyclassDerives = mkDerivClause TH.AnyclassStrategy $ defaultAnyclassDerives <> addRestDerivations TH.AnyclassStrategy typeObj
 
         let thTypeName = mkNameT typeName
         case recType of
@@ -110,15 +149,28 @@ generateHaskellTypes typeObj = traverse_ processType typeObj
                   [field] -> field
                   _ -> error $ "Generate data structure: expected exactly one record for NewType but got: " <> show fields
 
-            TH.NewtypeD [] thTypeName [] Nothing (TH.RecC thTypeName [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) [derives]
-          Data -> TH.DataD [] thTypeName [] Nothing [TH.RecC thTypeName (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] [derives]
-          Type -> error "Generate data structure: expected Data but got Type"
+            TH.NewtypeD [] thTypeName [] Nothing (TH.RecC thTypeName [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) $ catMaybes [stockDerives, anyclassDerives]
+          Data -> TH.DataD [] thTypeName [] Nothing [TH.RecC thTypeName (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] $ catMaybes [stockDerives, anyclassDerives]
+          Type -> case fields of -- FIXME refactor this in more type safe way
+            [("type", t)] -> TH.TySynD (mkNameT typeName) [] (TH.ConT $ mkNameT t)
+            _ -> error "Generate data structure: Type synonym definition should contain single \"type\" field"
+      generateHideSecretsDefaultInstance typeObj
+
+    generateHideSecretsDefaultInstance :: TypeObject -> Writer CodeUnit
+    generateHideSecretsDefaultInstance typeObj@(TypeObject _ (typeName, (_, _)) _) =
+      when (isHideSecretsInstanceDerived typeObj) $
+        instanceDW emptyContext (cT "Kernel.Types.HideSecrets.HideSecrets" ~~ cT (T.unpack typeName)) $
+          TH.funDW "hideSecrets" $
+            TH.clauseW [] $ TH.normalB (vE "Kernel.Prelude.identity")
 
 -- used in dashboard common apis
 generateServantApiType :: ApiTT -> Writer CodeUnit
 generateServantApiType api = do
   tySynDW (TH.mkNameT $ mkApiName api) [] $ do
     apiTTToText API_TYPES api
+  whenJust (api ^. apiHelperApi) $ \_ -> do
+    tySynDW (TH.mkNameT $ mkApiNameHelper api) [] $ do
+      apiTTToTextHelper API_TYPES api
 
 generateClientsType :: Writer CodeUnit
 generateClientsType = do
@@ -133,10 +185,10 @@ generateClientsType = do
         do
           recCW name $ do
             forM_ apiTTs $ \apiT -> do
-              let allTypes = handlerSignature apiT
-                  showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
+              let allTypes = handlerSignatureClientHelper apiT
+                  showType = init allTypes
                   handlerName = TH.mkNameT $ handlerFunctionText apiT
-                  handlerType = showType <> [cT "EulerHS.Types.EulerClient" ~~ cT (T.unpack $ last allTypes)]
+                  handlerType = showType <> [cT "EulerHS.Types.EulerClient" ~~ last allTypes]
               TH.fieldDecW handlerName $ TH.appendArrow $ NE.fromList handlerType
         (pure ())
 

@@ -9,6 +9,7 @@ module NammaDSL.DSL.Parser.API where
 import Control.Lens hiding (noneOf)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
+import qualified Data.Aeson as A
 import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (_Array, _Object, _String, _Value)
@@ -34,6 +35,7 @@ import Prelude
 parseApis' :: ApiParserM ()
 parseApis' = do
   parseModule'
+  parseApiPrefix'
   parseTypes'
   parseAllApis'
   makeApiTTPartsQualified'
@@ -45,6 +47,14 @@ parseModule' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   let parsedModuleName = fromMaybe (error "Required module name") $ obj ^? ix acc_module . _String
   modify $ \s -> s & apisRes . moduleName .~ parsedModuleName
+
+parseApiPrefix' :: ApiParserM ()
+parseApiPrefix' = do
+  obj <- gets (^. extraParseInfo . yamlObj)
+  let parsedApiPrefix = obj ^? ix acc_apiPrefix . _String
+  modify $ \s -> s & apisRes . apiPrefix .~ parsedApiPrefix
+  let parsedHelperApiPrefix = obj ^? ix acc_helperApiPrefix . _String
+  modify $ \s -> s & apisRes . helperApiPrefix .~ parsedHelperApiPrefix
 
 parseExtraOperations' :: ApiParserM ()
 parseExtraOperations' = do
@@ -59,7 +69,7 @@ parseTypes' = do
   defaultImportModule <- asks apiTypesImportPrefix
   defaultTypeImportMap <- asks apiDefaultTypeImportMapper
   let parsedTypeObjects = typesToTypeObject (obj ^? ix acc_types . _Value)
-      parsedTypesDataNames' = map (\(TypeObject _ (nm, _)) -> T.unpack nm) parsedTypeObjects
+      parsedTypesDataNames' = map (\(TypeObject _ (nm, _) _) -> T.unpack nm) parsedTypeObjects
       parsedTypeData = makeQualifiedTypesInTypes defaultTypeImportMap moduleName (T.pack defaultImportModule) parsedTypeObjects obj
   modify $ \s ->
     s
@@ -71,11 +81,11 @@ parseAllApis' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   moduleName <- gets (^. apisRes . moduleName)
   apiKind <- asks apiReadKind
-  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM (parseSingleApi moduleName apiKind)
+  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM (parseSingleApi False moduleName apiKind)
   modify $ \s -> s & apisRes . apis .~ allApis
   where
-    parseSingleApi :: Text -> ApiKind -> Value -> Maybe ApiTT
-    parseSingleApi moduleName apiKind (Object ob) = do
+    parseSingleApi :: Bool -> Text -> ApiKind -> Value -> Maybe ApiTT
+    parseSingleApi isHelperApi moduleName apiKind (Object ob) = do
       let (key, val) = head $ KM.toList ob
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
@@ -83,25 +93,49 @@ parseAllApis' = do
           endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
           auth = getAuthType <$> preview (ix acc_auth . _String) obj
 
-          requestObj = preview (ix acc_request . _Object) obj
-          requestTp = requestObj >>= preview (ix acc_type . _String)
-          requestFmt = Just $ fromMaybe "JSON" $ requestObj >>= preview (ix acc_format . _String)
-          req = ApiReq <$> requestTp <*> requestFmt
+          req = parseRequest obj
+          res = parseResponse obj
 
-          responseObj = fromMaybe (error "Response Object is required") $ preview (ix acc_response . _Object) obj
-          responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
-          responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
-          res = ApiRes responseTp responseFmt
-
-          query = fromMaybe [] $ preview (ix acc_query . _Value . to mkList . to (map (\(a, b) -> QueryParam a b False))) obj
-          mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkList . to (map (\(a, b) -> QueryParam a b True))) obj
+          query = fromMaybe [] $ preview (ix acc_query . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParam a b False))) obj
+          mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParam a b True))) obj
           allApiParts = endpoint <> query <> mQuery
 
           headers = fromMaybe [] (preview (ix acc_headers ._Array . to (mkHeaderList . V.toList)) obj)
 
           requestValidation = preview (ix acc_validation . _String) obj
-      return $ ApiTT allApiParts apiTp auth headers req res apiKind moduleName requestValidation
-    parseSingleApi _ _ _ = error "Api specs missing"
+
+          multipartObj = preview (ix acc_multipart . _Object) obj
+          multipartTp = multipartObj >>= preview (ix acc_type . _String)
+          multipart = ApiMultipart <$> multipartTp
+
+          apiName = preview (ix acc_name . _String) obj
+
+          helperApi =
+            HelperApiTT
+              <$> if isHelperApi
+                then Nothing -- shouldn't be helperApi inside of helperApi
+                else
+                  preview (ix acc_helperApi . _Array . to V.toList) obj >>= \case
+                    [] -> Nothing
+                    [helperApiVal] -> parseSingleApi True moduleName apiKind helperApiVal
+                    _vs -> error "More than one helper api not supported"
+
+      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation
+    parseSingleApi _ _ _ _ = error "Api specs missing"
+
+    parseRequest :: A.Object -> Maybe ApiReq
+    parseRequest obj = do
+      let requestObj = preview (ix acc_request . _Object) obj
+          requestTp = requestObj >>= preview (ix acc_type . _String)
+          requestFmt = Just $ fromMaybe "JSON" $ requestObj >>= preview (ix acc_format . _String)
+      ApiReq <$> requestTp <*> requestFmt
+
+    parseResponse :: A.Object -> ApiRes
+    parseResponse obj = do
+      let responseObj = fromMaybe (error "Response Object is required") $ preview (ix acc_response . _Object) obj
+          responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
+          responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
+      ApiRes responseTp responseFmt
 
 parseImports' :: ApiParserM ()
 parseImports' = do
@@ -138,10 +172,10 @@ extractComplexTypeImports' = do
   modify $ \s -> s & apisRes . apiTypes . typeImports .~ complexTypeImports
   where
     isEnumType :: TypeObject -> Bool
-    isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+    isEnumType (TypeObject _ (_, (arrOfFields, _)) _) = any (\(k, _) -> k == "enum") arrOfFields
 
     figureOutImports' :: TypeObject -> [Text]
-    figureOutImports' tobj@(TypeObject _ (_, (tps, _))) =
+    figureOutImports' tobj@(TypeObject _ (_, (tps, _)) _) =
       let isEnum = isEnumType tobj
        in concatMap
             ( ( \potentialImport ->
@@ -171,6 +205,7 @@ makeApiTTPartsQualified' = do
   moduleName <- gets (^. apisRes . moduleName)
   parsedTypeDataNames <- gets (^. extraParseInfo . parsedTypesDataNames)
   let mkQualified = T.pack . U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just parsedTypeDataNames) Nothing defaultImportModule obj . T.unpack
+      mkQApiMultipart (ApiMultipart t1) = ApiMultipart (mkQualified t1)
       mkQApiReq (ApiReq t1 t2) = ApiReq (mkQualified t1) t2
       mkQApiRes (ApiRes t1 t2) = ApiRes (mkQualified t1) t2
       mkQUrlParts (Capture t1 t2) = Capture t1 (mkQualified t2)
@@ -179,16 +214,18 @@ makeApiTTPartsQualified' = do
       mkQHeaders (Header t1 t2) = Header t1 (mkQualified t2)
       mkQUrlApiTT apiTT =
         apiTT
+          & apiMultipartType . _Just %~ mkQApiMultipart
           & apiReqType . _Just %~ mkQApiReq
           & apiResType %~ mkQApiRes
           & urlParts . traverse %~ mkQUrlParts
           & header . traverse %~ mkQHeaders
   modify $ \s -> s & apisRes . apis . traverse %~ mkQUrlApiTT
+  modify $ \s -> s & apisRes . apis . traverse . apiHelperApi . _Just . getHelperAPI %~ mkQUrlApiTT
 
 makeQualifiedTypesInTypes :: [(String, String)] -> Text -> Text -> [TypeObject] -> Object -> [TypeObject]
 makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModule input obj =
   map
-    ( \(TypeObject rt (x, (y, z))) ->
+    ( \(TypeObject rt (x, (y, z)) overrideDerives) ->
         TypeObject
           rt
           ( x,
@@ -204,10 +241,11 @@ makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModul
               z
             )
           )
+          overrideDerives
     )
     input
   where
-    dataNames = map (\(TypeObject _ (nm, _)) -> T.unpack nm) input
+    dataNames = map (\(TypeObject _ (nm, _) _) -> T.unpack nm) input
     mkEnumTypeQualified :: [String] -> Text -> Text -> Text
     mkEnumTypeQualified excluded defaultTypeImportModule enumTp =
       let individualEnums = T.strip <$> T.splitOn "," enumTp
@@ -217,10 +255,10 @@ extractComplexTypeImports :: Apis -> [Text]
 extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
   where
     isEnumType :: TypeObject -> Bool
-    isEnumType (TypeObject _ (_, (arrOfFields, _))) = any (\(k, _) -> k == "enum") arrOfFields
+    isEnumType (TypeObject _ (_, (arrOfFields, _)) _) = any (\(k, _) -> k == "enum") arrOfFields
 
     figureOutImports' :: TypeObject -> [Text]
-    figureOutImports' tobj@(TypeObject _ (_, (tps, _))) =
+    figureOutImports' tobj@(TypeObject _ (_, (tps, _)) _) =
       let isEnum = isEnumType tobj
        in concatMap
             ( ( \potentialImport ->
@@ -238,6 +276,24 @@ mkList (Object obj) =
     String t -> [((toText k), t)]
     _ -> []
 mkList _ = []
+
+mkListFromSingleton :: Value -> [(Text, Text)]
+mkListFromSingleton (Object obj) =
+  -- TODO remove case with Object, because it sorts fields alphabetically
+  KM.toList obj >>= \(k, v) -> [(toText k, extractString v)]
+mkListFromSingleton (Array arr) = do
+  V.toList arr <&> \case
+    Object obj -> case KM.toList obj of
+      [(k, v)] -> (toText k, extractString v)
+      _ -> error $ "Only one field in object expected: " <> show obj
+    field -> error $ "Object expected: " <> show field
+
+extractString :: Value -> T.Text
+extractString (String t) = t
+extractString (Array arr) = case V.toList arr of
+  [String t] -> "[" <> t <> "]"
+  _ -> error $ "Unexpected type in array: " <> show arr
+extractString v = error $ "Non-string type found in field definition: " <> show v
 
 mkHeaderList :: [Value] -> [HeaderType]
 mkHeaderList val =
@@ -307,42 +363,39 @@ typesToTypeObject :: Maybe Value -> [TypeObject]
 typesToTypeObject (Just (Object obj)) =
   map processType1 (KM.toList obj)
   where
-    extractRecordType :: Object -> RecordType
-    extractRecordType =
-      (fromMaybe Data)
-        . ( preview
-              ( ix acc_recordType . _String
-                  . to
-                    ( \case
-                        "NewType" -> NewType
-                        "Data" -> Data
-                        "Type" -> Type
-                        _ -> error "Not a valid"
-                    )
-              )
-          )
+    extractRecordType :: [(Text, Text)] -> RecordType
+    extractRecordType = maybe Data parsePecordType . lookup "recordType"
 
-    extractFields :: KM.KeyMap Value -> [(T.Text, T.Text)]
-    extractFields = map (first toText) . KM.toList . fmap extractString
+    parsePecordType :: Text -> RecordType
+    parsePecordType = \case
+      "NewType" -> NewType
+      "Data" -> Data
+      "Type" -> Type
+      _ -> error "Not a valid"
 
-    extractString :: Value -> T.Text
-    extractString (String t) = t
-    extractString (Array arr) = case V.head arr of
-      String t -> "[" <> t <> "]"
-      _ -> error "Unexpected type in array: "
-    extractString _ = error "Non-string type found in field definition"
-
-    splitTypeAndDerivation :: [(Text, Text)] -> ([(Text, Text)], [Text])
-    splitTypeAndDerivation fields = (filter (\(k, _) -> not $ k `elem` ["derive", "recordType"]) fields, extractDerive fields)
+    splitTypeAndDerivation :: [(Text, Text)] -> ([(Text, Text)], [Text], OverrideDefaultDerive)
+    splitTypeAndDerivation fields = (filter (\(k, _) -> not $ k `elem` ["derive", "recordType", "derive'"]) fields, extractDerive fields, overrideDerives)
       where
+        overrideDerives = any (\(nm, _) -> nm == "derive'") fields
         extractDerive :: [(Text, Text)] -> [Text]
         extractDerive [] = []
         extractDerive ((k, value) : xs)
-          | k == "derive" = T.split (== ',') value
+          | k == "derive" || k == "derive'" = removeSurroundedSpaces <$> T.split (== ',') value
           | otherwise = extractDerive xs
 
     processType1 :: (Key, Value) -> TypeObject
-    processType1 (typeName, Object typeDef) =
-      TypeObject (extractRecordType typeDef) (toText typeName, splitTypeAndDerivation $ extractFields typeDef)
-    processType1 _ = error "Expected an object in fields"
+    processType1 (typeName, typeDef) = do
+      let fieldsList = mkListFromSingleton typeDef
+      let (fields, derivations, overrideDerives) = splitTypeAndDerivation fieldsList
+      TypeObject (extractRecordType fieldsList) (toText typeName, (fields, derivations)) overrideDerives
 typesToTypeObject _ = error "Expecting Object in Types"
+
+removeSurroundedSpaces :: Text -> Text
+removeSurroundedSpaces = removeSpacesBegin . removeSpacesEnd
+  where
+    removeSpacesBegin str = case T.uncons str of
+      Just (' ', subStr) -> removeSpacesBegin subStr
+      _ -> str
+    removeSpacesEnd str = case T.unsnoc str of
+      Just (subStr, ' ') -> removeSpacesEnd subStr
+      _ -> str
