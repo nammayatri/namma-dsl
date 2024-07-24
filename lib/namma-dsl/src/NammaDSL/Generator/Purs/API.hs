@@ -158,8 +158,8 @@ requestType apiTT =
   case _apiReqType apiTT of
     Just (ApiReq reqType _) -> determineType reqType
     Nothing -> do
-      let apiName = handlerFunctionName apiTT
-      (T.pack $ capitalize (T.unpack apiName) <> "Request", Nothing)
+      let apiName' = handlerFunctionName apiTT
+      (T.pack $ capitalize (T.unpack apiName') <> "Request", Nothing)
 
 responseType :: ApiTT -> (Text, Maybe Text)
 responseType apiTT =

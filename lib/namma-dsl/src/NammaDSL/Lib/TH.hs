@@ -138,6 +138,9 @@ instanceDW cxtQ tQ dW = do
   t <- lift tQ
   tell [CodeDec [TH.InstanceD Nothing cxt_ t ds]]
 
+emptyContext :: Q r TH.Cxt
+emptyContext = pure []
+
 sigDW :: TH.Name -> Q r TH.Type -> Writer r TH.Dec
 sigDW n tQ = do
   ts <- lift tQ

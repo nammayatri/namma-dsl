@@ -1,11 +1,12 @@
 module NammaDSL.Generator.Haskell.Common where
 
+import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
-import Data.List.Extra (snoc)
+import Data.List.Extra (find, nub, snoc)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map, lookup)
-import Data.Maybe (catMaybes, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, fromMaybe, maybeToList)
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -16,6 +17,7 @@ import NammaDSL.Lib
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils
+import Text.Casing (camel)
 import Prelude hiding (lookup)
 
 _Maybe :: TH.Q r TH.Type
@@ -55,6 +57,7 @@ apiAuthTypeMapperServant generationType apiT = case _authType apiT of
   Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> case generationType of
     SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
+    DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
   Just NoAuth -> []
@@ -72,11 +75,16 @@ getRecordType = \case
 checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => Map a a -> [a] -> [a]
 checkForPackageOverrides packageOverrides = map (\x -> maybe x (\a -> "\"" <> a <> "\" " <> x) (lookup (getImportSignature x) packageOverrides))
 
+mkApiNameHelper :: ApiTT -> Text
+mkApiNameHelper apiT = case apiT ^. apiHelperApi of
+  Just helperApi -> mkApiName (helperApi ^. getHelperAPI) <> "Helper"
+  Nothing -> mkApiName apiT
+
 mkApiName :: ApiTT -> Text
 mkApiName = headToUpper . handlerFunctionText
 
 handlerFunctionText :: ApiTT -> Text
-handlerFunctionText apiTT = do
+handlerFunctionText apiTT = flip fromMaybe (headToLower <$> apiTT ^. apiName) $ do
   let moduleName' = apiTT ^. apiModuleName
       apiKind' = apiTT ^. apiTypeKind
   let apiTypeText = T.toLower $ apiTypeToText (_apiType apiTT)
@@ -103,18 +111,25 @@ addAuthToApi generationType authtype = case authtype of
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
 
+type IsHelperApi = Bool
+
+apiTTToTextHelper :: GenerationType -> ApiTT -> Q r TH.Type
+apiTTToTextHelper generationType = withHelperApi (apiTTToText generationType)
+
 apiTTToText :: GenerationType -> ApiTT -> Q r TH.Type
 apiTTToText generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
-      apiReqText = apiReqToText <$> _apiReqType apiTT
-      apiResText = apiResToText apiTypeText (_apiResType apiTT)
+      apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
+      apiReqText = apiReqToText <$> apiTT ^. apiReqType
+      apiResText = apiResToText apiTypeText (apiTT ^. apiResType)
       headerText = map headerToText (_header apiTT)
 
   TH.appendInfixT ":>" . NE.fromList $
     maybeToList (addAuthToApi generationType $ _authType apiTT)
       <> urlPartsText
       <> headerText
+      <> maybeToList apiMultipartText
       <> maybeToList apiReqText
       <> [apiResText]
   where
@@ -125,6 +140,9 @@ apiTTToText generationType apiTT = do
       if isMandatory
         then cT "MandatoryQueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
         else cT "QueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
+
+    apiMultipartToText :: ApiMultipart -> Q r TH.Type
+    apiMultipartToText (ApiMultipart ty) = cT "Kernel.ServantMultipart.MultipartForm" ~~ cT "Kernel.ServantMultipart.Tmp" ~~ cT (T.unpack ty)
 
     apiReqToText :: ApiReq -> Q r TH.Type
     apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)
@@ -137,18 +155,30 @@ apiTTToText generationType apiTT = do
     headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ cT (T.unpack ty)
 
 generateAPIType :: GenerationType -> ApiRead -> Writer Apis CodeUnit
-generateAPIType generationType apiRead = do
+generateAPIType = generateAPIType' False
+
+generateAPITypeHelper :: GenerationType -> ApiRead -> Writer Apis CodeUnit
+generateAPITypeHelper = generateAPIType' True
+
+generateAPIType' :: IsHelperApi -> GenerationType -> ApiRead -> Writer Apis CodeUnit
+generateAPIType' isHelperApi generationType apiRead = do
   input <- ask
   let allApis = input ^. apis
   tySynDW "API" [] $ do
     case apiReadKind apiRead of
       UI -> do
-        let apiTTToText' = apiTTToText generationType
-        appendInfixT ":<|>" . NE.fromList $ apiTTToText' <$> allApis
+        let apiTTToText_ = apiTTToText generationType
+        appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
       DASHBOARD -> do
-        let apiTTToText' = cT . T.unpack . mkApiName
-        uInfixT (strT . T.unpack . headToLower $ input ^. moduleName) ":>" $
-          TH.parensT . appendInfixT ":<|>" . NE.fromList $ apiTTToText' <$> allApis
+        let apiTTToText_ = cT . T.unpack . (if isHelperApi then mkApiNameHelper else mkApiName)
+        let apiPrefix' =
+              T.unpack $
+                fromMaybe (headToLower $ input ^. moduleName) $
+                  if isHelperApi
+                    then input ^. helperApiPrefix <|> input ^. apiPrefix
+                    else input ^. apiPrefix
+        let apiTree = TH.parensT . appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
+        if null apiPrefix' then apiTree else uInfixT (strT apiPrefix') ":>" apiTree
 
 data ApiSignatureUnit = ApiSignatureUnit
   { apiSignatureUnit :: ApiUnit,
@@ -160,16 +190,41 @@ data ApiUnit
   | CaptureUnit Text
   | QueryParamUnit Text
   | MandatoryQueryParamUnit Text
+  | MultipartUnit
   | RequestUnit
   | ResponseUnit
+  deriving (Eq)
+
+--TODO add checks for identical params
+apiUnitToText :: ApiUnit -> String
+apiUnitToText apiUnit = camel $ T.unpack case apiUnit of
+  HeaderUnit name -> name
+  CaptureUnit name -> name
+  QueryParamUnit name -> name
+  MandatoryQueryParamUnit name -> name
+  MultipartUnit -> "req" -- shouldn't be both MultipartUnit and RequestUnit in the same api
+  RequestUnit -> "req"
+  ResponseUnit -> "resp"
+
+withHelperApi :: (ApiTT -> a) -> (ApiTT -> a)
+withHelperApi func apiTT = func $ maybe apiTT (^. getHelperAPI) (apiTT ^. apiHelperApi)
+
+mkApiSignatureUnitsHelper :: ApiTT -> [ApiSignatureUnit]
+mkApiSignatureUnitsHelper = withHelperApi mkApiSignatureUnits
 
 mkApiSignatureUnits :: ApiTT -> [ApiSignatureUnit]
-mkApiSignatureUnits input =
+mkApiSignatureUnits input = do
   let urlTypeText = map urlToText (_urlParts input)
       headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) ty) (_header input)
-      reqTypeText = reqTypeToText <$> _apiReqType input
-      resTypeText = respTypeToText $ _apiResType input
-   in snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList reqTypeText) resTypeText
+      reqTypeText = reqTypeToText <$> input ^. apiReqType
+      resTypeText = respTypeToText $ input ^. apiResType
+      multipartTypeText = multipartTypeToText <$> _apiMultipartType input
+
+  let signatureUnits = snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList multipartTypeText <> maybeToList reqTypeText) resTypeText
+  let apiUnits = apiUnitToText . apiSignatureUnit <$> signatureUnits
+  if length (nub apiUnits) /= length apiUnits
+    then error $ "Please remove duplicating unit names from api definition " <> T.unpack (handlerFunctionText input) <> ": " <> show apiUnits
+    else signatureUnits
   where
     urlToText :: UrlParts -> Maybe ApiSignatureUnit
     urlToText (Capture name ty) = Just $ ApiSignatureUnit (CaptureUnit name) ty
@@ -179,46 +234,40 @@ mkApiSignatureUnits input =
         else Just $ ApiSignatureUnit (QueryParamUnit name) $ "Kernel.Prelude.Maybe (" <> ty <> ")"
     urlToText _ = Nothing
 
+    multipartTypeToText :: ApiMultipart -> ApiSignatureUnit
+    multipartTypeToText (ApiMultipart ty) = ApiSignatureUnit MultipartUnit ty
+
     reqTypeToText :: ApiReq -> ApiSignatureUnit
     reqTypeToText (ApiReq ty _) = ApiSignatureUnit RequestUnit ty
 
     respTypeToText :: ApiRes -> ApiSignatureUnit
     respTypeToText = ApiSignatureUnit ResponseUnit . _apiResTypeName
 
+handlerSignatureHelper :: ApiTT -> [Text]
+handlerSignatureHelper = withHelperApi handlerSignature
+
 handlerSignature :: ApiTT -> [Text]
 handlerSignature = fmap apiSignatureType . mkApiSignatureUnits
 
+handlerSignatureClientHelper :: ApiTT -> [Q r TH.Type]
+handlerSignatureClientHelper = fmap apiSignatureTypeClient . mkApiSignatureUnitsHelper
+  where
+    apiSignatureTypeClient (ApiSignatureUnit MultipartUnit ty) = tupleT 2 ~~ cT "Data.ByteString.Lazy.ByteString" ~~ cT (T.unpack ty)
+    apiSignatureTypeClient apiSignatureUnit = cT . T.unpack $ apiSignatureType apiSignatureUnit
+
 -- Last one is response, so no need to generate param
 generateParamsPat :: [ApiUnit] -> [Q r TH.Pat]
-generateParamsPat apiUnits = zipWith (\apiUnit n -> vP $ generateParamText n apiUnit) apiUnits [1, 2 .. length apiUnits - 1]
+generateParamsPat apiUnits = init $ vP . apiUnitToText <$> apiUnits
 
 -- Last one is response, so no need to generate param
 generateParamsExp :: [ApiUnit] -> [Q r TH.Exp]
-generateParamsExp apiUnits = zipWith (\apiUnit n -> vE $ generateParamText n apiUnit) apiUnits [1, 2 .. length apiUnits - 1]
+generateParamsExp apiUnits = init $ vE . apiUnitToText <$> apiUnits
 
-generateParamText :: Int -> ApiUnit -> String
-generateParamText n apiUnit = case mapMaybe (handlerParamMapper apiUnit) possibleHandlerParams of
-  [paramText] -> paramText
-  [] -> "a" <> show n
-  _ -> error "Impossible error: parsing more than one param at once"
+findParamText :: [ApiUnit] -> ApiUnit -> Maybe String
+findParamText units unit = apiUnitToText <$> find (== unit) units
 
--- driverId and rideId parsing required for correct transaction store and should have proper type
-data HandlerParam = DriverIdParam | RideIdParam | ReqParam
-
-possibleHandlerParams :: [HandlerParam]
-possibleHandlerParams = [DriverIdParam, RideIdParam, ReqParam]
-
-handlerParamMapper :: ApiUnit -> HandlerParam -> Maybe String
-handlerParamMapper (CaptureUnit "driverId") DriverIdParam = Just "driverId"
-handlerParamMapper (CaptureUnit "rideId") RideIdParam = Just "rideId"
-handlerParamMapper RequestUnit ReqParam = Just "req"
-handlerParamMapper _ _ = Nothing
-
-findHandlerParam :: [ApiUnit] -> HandlerParam -> Maybe String
-findHandlerParam apiUnits params = case flip handlerParamMapper params `mapMaybe` apiUnits of
-  [paramText] -> Just paramText
-  [] -> Nothing
-  _ -> error "Impossible error: find more than one param at once"
+findRequest :: [ApiUnit] -> Maybe String
+findRequest units = findParamText units RequestUnit <|> findParamText units MultipartUnit
 
 class Importable a where
   getImportSignature :: a -> a

@@ -1032,7 +1032,7 @@ parseTypes = do
             Object typeDef -> extractFields typeDef
             Array arr -> concatMap mkList $ V.toList arr
             _ -> error "Expected an object or array in type definition"
-      let (fields, derivations, overrideDerives) = splitTypeAndDerivation $ extractedFields
+      let (fields, derivations, overrideDerives) = splitTypeAndDerivation extractedFields
       TypeObject (extractRecordType extractedFields) (TypeName $ toString typeName) fields derivations overrideDerives
 
 beamFieldsWithExtractors :: String -> String -> [String] -> StorageParserM [(String, String, [String])]

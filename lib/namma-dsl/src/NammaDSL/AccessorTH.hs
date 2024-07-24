@@ -60,5 +60,9 @@ $( makeAccKeysTH
     paramsOrder
     queryType
     validation
+    multipart
+    helperApi
+    apiPrefix
+    helperApiPrefix
     |]
  )

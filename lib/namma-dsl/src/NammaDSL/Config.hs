@@ -15,6 +15,7 @@ data GenerationType
   | SERVANT_API_DASHBOARD
   | API_TYPES
   | DOMAIN_HANDLER
+  | DOMAIN_HANDLER_DASHBOARD
   | BEAM_QUERIES
   | CACHED_QUERIES
   | BEAM_TABLE
@@ -40,6 +41,7 @@ data OutputPath = OutputPath
     _extraCachedQueries :: FilePath,
     _beamTable :: FilePath,
     _domainHandler :: FilePath,
+    _domainHandlerDashboard :: FilePath,
     _domainType :: FilePath,
     _servantApi :: FilePath,
     _servantApiDashboard :: FilePath,

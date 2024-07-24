@@ -53,13 +53,13 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
           <> domainHandlerModulePrefix
           <> T.unpack (_moduleName input)
       ]
-        <> ( nub $
-               qualifiedImp
-                 <> ( figureOutImports
-                        (T.unpack <$> concatMap handlerSignature (_apis input))
-                    )
-           )
+        <> nub (qualifiedImp <> figureOutImports allHandlersSignatures <> apiTypesImport)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
+
+    allHandlersSignatures :: [String]
+    allHandlersSignatures = case apiReadKind apiRead of
+      UI -> T.unpack <$> concatMap handlerSignature (_apis input)
+      DASHBOARD -> T.unpack <$> concatMap handlerSignatureHelper (_apis input)
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -67,6 +67,8 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
         <> simpleImp
 
+    apiTypesImport :: [String]
+    apiTypesImport = [apiTypesImportPrefix apiRead #. T.unpack (_moduleName input) | apiReadKind apiRead == DASHBOARD] -- we need API type for reexport
     ifNotDashboard :: Bool
     ifNotDashboard =
       any
@@ -180,7 +182,9 @@ generateAPIHandler apiRead = do
     handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
     handlerFunctionDef moduleName' apiT = do
       let functionName = handlerFunctionText apiT
-          allTypes = handlerSignature apiT
+          allTypes = case apiReadKind apiRead of
+            UI -> handlerSignature apiT
+            DASHBOARD -> handlerSignatureHelper apiT
           showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
           handlerTypes = apiAuthTypeMapperServant SERVANT_API apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
       TH.decsW $ do
