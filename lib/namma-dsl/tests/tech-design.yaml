@@ -2,8 +2,14 @@ moduleMapper:
   Reels: UI.Frontend.Reels
   feedbackBasedOnRatingView: UI.Frontend.Back
 
+UI.Frontend.Reels.Reels2:
+    declType: newtype
+    abc: Abba.Array Int
+    bcd: Array String
+    cde: Array Float
+
 Reels:
-    abc: Array Int
+  abc: Array Int
 
 animConfig:
   tdComments:

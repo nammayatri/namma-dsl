@@ -18,10 +18,12 @@ import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (_Array, _Value)
 import Data.Bool
 import qualified Data.ByteString as BS
+--import Debug.Trace (traceShowId)
 import Data.Char (isUpper)
 import Data.Default
 import qualified Data.List as L
-import Data.List.Split (wordsBy)
+import Data.List.Extra
+import Data.List.Split (splitWhen)
 import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -59,12 +61,21 @@ parseChangeEntity (dName, changeObj) = do
   let !qDName = maybe (if '.' `T.elem` dName then dName else errorT ("Module not found for " <> dName)) (\m -> m <> "." <> dName) (lookup dName mdlmap)
       (md, accDName) = getMdAndDname qDName
       allCommentChanges = changeObj ^. ix acc_tdComments . _Array . to V.toList . to (map (mkCommentChange accDName))
-      allFieldChanges = (mkList $ Object changeObj) & map \(f, v) -> AddField accDName f v
+      allNewTypeChange = case L.find ((\f -> f == "declType") . fst) (mkList $ Object changeObj :: [(Text, Text)]) of
+        Just (_, t) -> [AddRecord (getRequiredDeclType t) accDName]
+        _ -> []
+      allFieldChanges = (mkList $ Object changeObj) & filter (\(f, _) -> f /= "declType") & map \(f, v) -> AddField accDName f v
       extraChange = concatMap extraChanges allFieldChanges
   potentialFilePaths <- mapM (\pfx -> getModuleFilePath pfx (T.unpack md)) tdPathPrefixes
   let correctFilePath = fromMaybe (errorT $ "No File path found for module: " <> md) $ (listToMaybe . catMaybes) potentialFilePaths
-  let annotatedChanges = map (mkAnnotated md correctFilePath) (allCommentChanges ++ allFieldChanges ++ extraChange)
+  let annotatedChanges = map (mkAnnotated md correctFilePath) (allNewTypeChange ++ allCommentChanges ++ allFieldChanges ++ extraChange)
   modify $ \s -> s {changes = changes s ++ annotatedChanges}
+
+getRequiredDeclType :: Text -> PRecordType
+getRequiredDeclType = \case
+  "newtype" -> PNEWTYPE
+  "type" -> PTYPE
+  _ -> errorT "Invalid DeclType"
 
 getModuleFilePath :: FilePath -> String -> TechDM (Maybe FilePath)
 getModuleFilePath rootPath moduleName = do
@@ -76,9 +87,20 @@ getModuleFilePath rootPath moduleName = do
 extraChanges :: Change -> [Change]
 extraChanges = \case
   (AddField _ _ tv) -> do
-    let imps = filter checkIfCorrectImp $ T.pack <$> figureOutImports [T.unpack tv] -- TODO: Implement this
+    let imps = filter checkIfCorrectImp $ T.pack <$> (etImp [T.unpack tv])
     (\imp -> AddImport $ PImport imp Qualified) <$> imps
   _ -> []
+
+etImp :: [String] -> [String]
+etImp fieldTypes =
+  nub $ filter (not . null) $ concatMap (map extractUptoLastDot) extractWords
+  where
+    extractWords = splitWhen (`elem` (typeDelimiter ++ ",")) <$> fieldTypes
+    extractUptoLastDot str =
+      let pp = splitOn "." str
+       in if length pp > 1
+            then intercalate "." (init pp)
+            else ""
 
 checkIfCorrectImp :: Text -> Bool
 checkIfCorrectImp imp =

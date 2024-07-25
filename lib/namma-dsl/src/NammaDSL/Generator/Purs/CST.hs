@@ -132,7 +132,11 @@ findDeclWithName :: Text -> [Declaration a] -> Maybe (Declaration a)
 findDeclWithName searchName decls = L.find (isDeclWithName searchName) decls
 
 addLabelToRow :: Labeled Label (Type a) -> Row a -> Row a
-addLabelToRow lbl row = row {rowLabels = addLabelToSeperated lbl <$> (rowLabels row)}
+addLabelToRow lbl row = row {rowLabels =
+   case (rowLabels row) of
+    sep@(Just _) -> addLabelToSeperated lbl <$> sep
+    Nothing -> Just (Separated {sepHead = frontFeed [Line LF, Space 4] lbl, sepTail = []})
+  }
 
 addLabelToSeperated :: Labeled Label (Type a) -> Separated (Labeled Label (Type a)) -> Separated (Labeled Label (Type a))
 addLabelToSeperated lbl sep = sep {sepTail = sepTail sep ++ [fieldWithComma]}
@@ -190,9 +194,9 @@ addLabelToTypeRecord lbl = \case
   ty@_ -> ty
 
 pLabeled :: LC -> EC -> Text -> Type a -> Labeled Label (Type a)
-pLabeled lc ec lblName typ =
+pLabeled lc _ec lblName typ =
   Labeled
-    { lblLabel = pLabel lc ec lblName,
+    { lblLabel = pLabel lc [Space 1] lblName,
       lblSep = pSourceToken [] [] (TokDoubleColon ASCII),
       lblValue = typ
     }
@@ -379,5 +383,49 @@ instance GetFields (Declaration a) where
     DeclValue _ vbf -> getFields vbf
     _ -> []
 
+class FrontFeed a where
+  frontFeed :: LC -> a -> a
+
+instance FrontFeed a => FrontFeed (Labeled a b) where
+  frontFeed cmt lbl = lbl {lblLabel = frontFeed cmt (lblLabel lbl)}
+
+instance FrontFeed Label where
+  frontFeed cmt lbl = lbl {lblTok = cmtUp cmt (lblTok lbl)}
+
+instance FrontFeed SourceToken where
+  frontFeed cmt srcTok = srcTok {tokAnn = cmtUp cmt (tokAnn srcTok)}
+
+instance FrontFeed TokenAnn where
+  frontFeed cmt tokAnn = tokAnn {tokLeadingComments = cmt ++ (tokLeadingComments tokAnn)}
+
+
+
 addCmtUpDeclSig :: Text -> LC -> [Declaration ()] -> [Declaration ()]
 addCmtUpDeclSig searchName cmt decls = findAndApply (\dec -> isDeclWithName searchName dec && isDeclSignature dec) (cmtUp cmt) decls
+
+
+-- making new data types --
+instance Default (Wrapped (Row a)) where
+  def = Wrapped {wrpOpen = pSourceToken [] [] TokLeftBrace , wrpValue = Row {rowLabels = Nothing, rowTail = Nothing}, wrpClose = pSourceToken [] [] TokRightBrace}
+
+instance Default (Type ()) where
+  def = TypeRecord () def
+
+pDataHead :: PRecordType -> RecordName -> DataHead ()
+pDataHead recType recName = DataHead {
+    dataHdKeyword = pSourceToken [Line LF,Line LF] [Space 1] (TokLowerName [] (case recType of
+      PNEWTYPE -> "newtype"
+      PTYPE -> "type")),
+    dataHdName = pName [] [Space 1] (pToken recName) (ProperName recName),
+    dataHdVars = []
+ }
+
+addNewDecl :: PRecordType -> RecordName -> Declaration ()
+addNewDecl recType recName =
+  let
+    dh = pDataHead recType recName
+    eqTok = pSourceToken [] [Space 1] TokEquals
+    consName = pName [] [Space 1] (pToken recName) (ProperName recName)
+   in case recType of
+    PNEWTYPE -> DeclNewtype () dh eqTok consName def
+    PTYPE -> DeclType () dh eqTok def
