@@ -6,10 +6,12 @@ module NammaDSL.Generator.Purs.CST (module NammaDSL.Generator.Purs.CST, module R
 import Control.Arrow ((&&&))
 --import Debug.Trace (traceShowId)
 import Data.Bool (bool)
+import Data.Char (isDigit)
 import Data.Default
 import qualified Data.List as L
 import Data.Maybe
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Text.IO as T
 import qualified Language.PureScript.CST as P
 import Language.PureScript.CST.Types
@@ -132,11 +134,12 @@ findDeclWithName :: Text -> [Declaration a] -> Maybe (Declaration a)
 findDeclWithName searchName decls = L.find (isDeclWithName searchName) decls
 
 addLabelToRow :: Labeled Label (Type a) -> Row a -> Row a
-addLabelToRow lbl row = row {rowLabels =
-   case (rowLabels row) of
-    sep@(Just _) -> addLabelToSeperated lbl <$> sep
-    Nothing -> Just (Separated {sepHead = frontFeed [Line LF, Space 4] lbl, sepTail = []})
-  }
+addLabelToRow lbl row =
+  let newRL =
+        case (rowLabels row) of
+          sep@(Just _) -> addLabelToSeperated lbl <$> sep
+          Nothing -> Just (Separated {sepHead = cmtUp [Line LF, Space 4] lbl, sepTail = []})
+   in row {rowLabels = newRL}
 
 addLabelToSeperated :: Labeled Label (Type a) -> Separated (Labeled Label (Type a)) -> Separated (Labeled Label (Type a))
 addLabelToSeperated lbl sep = sep {sepTail = sepTail sep ++ [fieldWithComma]}
@@ -219,6 +222,18 @@ findAndApply isElementCondition functionTobeApplied (x : xs)
 class GetCLF a where
   getLC :: a -> LC
   getEC :: a -> EC
+
+instance GetCLF (Declaration a) where
+  getLC = \case
+    DeclSignature _ lbled -> getLC lbled
+    _ -> []
+  getEC = \case
+    DeclSignature _ lbled -> getEC lbled
+    _ -> []
+
+instance GetCLF (Name a) where
+  getLC = getLC . nameTok
+  getEC = getEC . nameTok
 
 instance GetCLF SourceToken where
   getLC = tokLeadingComments . tokAnn
@@ -303,22 +318,34 @@ instance Default SourceRange where
 
 class CmtUp a where
   cmtUp :: LC -> a -> a
+  cmtUpStrict :: LC -> a -> a
+
+instance CmtUp Label where
+  cmtUp cmt lbl = lbl {lblTok = cmtUp cmt (lblTok lbl)}
+  cmtUpStrict cmt lbl = lbl {lblTok = cmtUpStrict cmt (lblTok lbl)}
 
 instance CmtUp TokenAnn where
   cmtUp cmt tokAnn = tokAnn {tokLeadingComments = (tokLeadingComments tokAnn) ++ cmt}
+  cmtUpStrict cmt tokAnn = tokAnn {tokLeadingComments = cmt}
 
 instance CmtUp SourceToken where
   cmtUp cmt srcTok = srcTok {tokAnn = cmtUp cmt (tokAnn srcTok)}
+  cmtUpStrict cmt srcTok = srcTok {tokAnn = cmtUpStrict cmt (tokAnn srcTok)}
 
 instance CmtUp (Name a) where
   cmtUp cmt nm = nm {nameTok = cmtUp cmt (nameTok nm)}
+  cmtUpStrict cmt nm = nm {nameTok = cmtUpStrict cmt (nameTok nm)}
 
 instance CmtUp a => CmtUp (Labeled a b) where
   cmtUp cmt lbl = lbl {lblLabel = cmtUp cmt (lblLabel lbl)}
+  cmtUpStrict cmt lbl = lbl {lblLabel = cmtUpStrict cmt (lblLabel lbl)}
 
 instance CmtUp (Declaration a) where
   cmtUp cmt = \case
     DeclSignature ann lbled -> DeclSignature ann (cmtUp cmt lbled)
+    decl@_ -> decl
+  cmtUpStrict cmt = \case
+    DeclSignature ann lbled -> DeclSignature ann (cmtUpStrict cmt lbled)
     decl@_ -> decl
 
 class GetFields a where
@@ -383,49 +410,82 @@ instance GetFields (Declaration a) where
     DeclValue _ vbf -> getFields vbf
     _ -> []
 
-class FrontFeed a where
-  frontFeed :: LC -> a -> a
+addCmtUpDeclSig :: Text -> Comment LineFeed -> [Declaration ()] -> [Declaration ()]
+addCmtUpDeclSig searchName cmt decls = findAndApply (\dec -> isDeclWithName searchName dec && isDeclSignature dec) (addComment cmt) decls
 
-instance FrontFeed a => FrontFeed (Labeled a b) where
-  frontFeed cmt lbl = lbl {lblLabel = frontFeed cmt (lblLabel lbl)}
+addComment :: Comment LineFeed -> Declaration () -> Declaration ()
+addComment cmt decl =
+  let existingCmts = getLC decl
+      newCmts = updateOrAddComment cmt existingCmts
+   in cmtUpStrict newCmts decl
 
-instance FrontFeed Label where
-  frontFeed cmt lbl = lbl {lblTok = cmtUp cmt (lblTok lbl)}
+parseComment :: Comment LineFeed -> Maybe (Int, Text)
+parseComment (Comment txt) = do
+  let (idPart, rest) = T.breakOn " " (T.drop 2 txt)
+  if not (T.null idPart) && T.all isDigit idPart && not (T.null rest)
+    then Just (read (T.unpack idPart), T.drop 1 rest)
+    else Nothing
+parseComment _ = Nothing
 
-instance FrontFeed SourceToken where
-  frontFeed cmt srcTok = srcTok {tokAnn = cmtUp cmt (tokAnn srcTok)}
+updateOrAddComment :: Comment LineFeed -> [Comment LineFeed] -> [Comment LineFeed]
+updateOrAddComment newCmt oldCmts =
+  case parseComment newCmt of
+    Just (newId, newContent) ->
+      let (found, updatedCmts) =
+            foldl
+              ( \(finalCheck, allCmts) oldC ->
+                  let (chk, upC) = updateComment newId newContent oldC
+                   in (chk || finalCheck, allCmts ++ [upC])
+              )
+              (False, [])
+              oldCmts
+       in if found then updatedCmts else oldCmts ++ [newCmt, Line LF]
+    Nothing -> oldCmts -- This case should not happen as new comment is always correctly formatted
 
-instance FrontFeed TokenAnn where
-  frontFeed cmt tokAnn = tokAnn {tokLeadingComments = cmt ++ (tokLeadingComments tokAnn)}
+updateComment :: Int -> Text -> Comment LineFeed -> (Bool, Comment LineFeed)
+updateComment newId newContent oldCmt =
+  case parseComment oldCmt of
+    Just (oldId, _) -> if oldId == newId then (True, Comment ("--" <> T.pack (show newId) <> " " <> newContent)) else (False, oldCmt)
+    _ -> (False, oldCmt)
 
+isCmtRequired :: Declaration () -> [Comment LineFeed] -> Bool
+isCmtRequired decl cmts = not $ any (cmtAlreadyPresent decl) cmts
 
-
-addCmtUpDeclSig :: Text -> LC -> [Declaration ()] -> [Declaration ()]
-addCmtUpDeclSig searchName cmt decls = findAndApply (\dec -> isDeclWithName searchName dec && isDeclSignature dec) (cmtUp cmt) decls
-
+cmtAlreadyPresent :: Declaration () -> Comment LineFeed -> Bool
+cmtAlreadyPresent decl cmt = case cmt of
+  c@(Comment _) -> c `elem` (getLC decl)
+  _ -> False
 
 -- making new data types --
 instance Default (Wrapped (Row a)) where
-  def = Wrapped {wrpOpen = pSourceToken [] [] TokLeftBrace , wrpValue = Row {rowLabels = Nothing, rowTail = Nothing}, wrpClose = pSourceToken [] [] TokRightBrace}
+  def = Wrapped {wrpOpen = pSourceToken [] [] TokLeftBrace, wrpValue = Row {rowLabels = Nothing, rowTail = Nothing}, wrpClose = pSourceToken [] [] TokRightBrace}
 
 instance Default (Type ()) where
   def = TypeRecord () def
 
 pDataHead :: PRecordType -> RecordName -> DataHead ()
-pDataHead recType recName = DataHead {
-    dataHdKeyword = pSourceToken [Line LF,Line LF] [Space 1] (TokLowerName [] (case recType of
-      PNEWTYPE -> "newtype"
-      PTYPE -> "type")),
-    dataHdName = pName [] [Space 1] (pToken recName) (ProperName recName),
-    dataHdVars = []
- }
+pDataHead recType recName =
+  DataHead
+    { dataHdKeyword =
+        pSourceToken
+          [Line LF, Line LF]
+          [Space 1]
+          ( TokLowerName
+              []
+              ( case recType of
+                  PNEWTYPE -> "newtype"
+                  PTYPE -> "type"
+              )
+          ),
+      dataHdName = pName [] [Space 1] (pToken recName) (ProperName recName),
+      dataHdVars = []
+    }
 
 addNewDecl :: PRecordType -> RecordName -> Declaration ()
 addNewDecl recType recName =
-  let
-    dh = pDataHead recType recName
-    eqTok = pSourceToken [] [Space 1] TokEquals
-    consName = pName [] [Space 1] (pToken recName) (ProperName recName)
+  let dh = pDataHead recType recName
+      eqTok = pSourceToken [] [Space 1] TokEquals
+      consName = pName [] [Space 1] (pToken recName) (ProperName recName)
    in case recType of
-    PNEWTYPE -> DeclNewtype () dh eqTok consName def
-    PTYPE -> DeclType () dh eqTok def
+        PNEWTYPE -> DeclNewtype () dh eqTok consName def
+        PTYPE -> DeclType () dh eqTok def

@@ -60,7 +60,7 @@ parseChangeEntity (dName, changeObj) = do
   tdPathPrefixes <- tdPathPrefixes <$> ask
   let !qDName = maybe (if '.' `T.elem` dName then dName else errorT ("Module not found for " <> dName)) (\m -> m <> "." <> dName) (lookup dName mdlmap)
       (md, accDName) = getMdAndDname qDName
-      allCommentChanges = changeObj ^. ix acc_tdComments . _Array . to V.toList . to (map (mkCommentChange accDName))
+      allCommentChanges = changeObj ^. ix acc_tdComments . _Array . to V.toList . to (mkComments accDName)
       allNewTypeChange = case L.find ((\f -> f == "declType") . fst) (mkList $ Object changeObj :: [(Text, Text)]) of
         Just (_, t) -> [AddRecord (getRequiredDeclType t) accDName]
         _ -> []
@@ -131,7 +131,10 @@ toChangeList obj =
     Object o -> [(toText k, o)]
     _ -> []
 
-mkCommentChange :: Text -> Value -> Change
-mkCommentChange dName = \case
-  String a -> AddComment dName ("-- " <> a)
+mkComments :: Text -> [Value] -> [Change]
+mkComments dName = zipWith (mkCommentChange dName) [0 ..]
+
+mkCommentChange :: Text -> Int -> Value -> Change
+mkCommentChange dName id_ = \case
+  String a -> AddComment dName ("--" <> (T.pack $ show id_) <> " " <> a)
   _ -> errorT "Invalid Comment. Expected string"

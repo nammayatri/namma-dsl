@@ -24,7 +24,7 @@ applyChange (Ann chg _ fp) = do
         AddImport imp -> do
           pure $ PCST.addImports (pure imp) md
         AddComment declSig cmt -> do
-          let newDecls = PCST.addCmtUpDeclSig declSig [Comment cmt, Line LF] (modDecls md)
+          let newDecls = PCST.addCmtUpDeclSig declSig (Comment cmt) (modDecls md)
           pure $ md {modDecls = newDecls}
         AddRecord _recType _recName -> do
           if isJust $ PCST.findDeclWithName _recName (modDecls md)
