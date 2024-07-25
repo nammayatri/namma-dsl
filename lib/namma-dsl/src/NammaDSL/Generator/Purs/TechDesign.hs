@@ -1,5 +1,6 @@
 module NammaDSL.Generator.Purs.TechDesign where
 
+import Data.Maybe
 import qualified Data.Text.IO as T
 import Language.PureScript.CST as P
 import NammaDSL.DSL.Syntax.TechDesign
@@ -25,4 +26,10 @@ applyChange (Ann chg _ fp) = do
         AddComment declSig cmt -> do
           let newDecls = PCST.addCmtUpDeclSig declSig [Comment cmt, Line LF] (modDecls md)
           pure $ md {modDecls = newDecls}
+        AddRecord _recType _recName -> do
+          if isJust $ PCST.findDeclWithName _recName (modDecls md)
+            then pure md
+            else do
+              let newDecl = PCST.addNewDecl _recType _recName
+              pure $ md {modDecls = (modDecls md) ++ [newDecl]}
       T.writeFile fp (P.printModule newMd)
