@@ -8,7 +8,7 @@ import Control.Lens ((^.))
 import Control.Lens.Combinators
 import Control.Monad.Extra (concatMapM)
 import Data.Aeson
-import Data.Aeson.Key (fromString, fromText, toString)
+import Data.Aeson.Key (fromString, fromText, toString, toText)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (key, _Value)
 import Data.Bool (bool)
@@ -196,6 +196,13 @@ instance MakeList Key Value where
   mkList (Array arr) = (concatMap mkList) $ V.toList arr
   mkList _ = []
 
+instance MakeList Text Text where
+  mkList (Object obj) =
+    KM.toList obj >>= \(k, v) -> case v of
+      String t -> [(toText k, t)]
+      _ -> []
+  mkList _ = []
+
 extraOperation :: String -> ExtraOperations
 extraOperation = \case
   "EXTRA_QUERY_FILE" -> EXTRA_QUERY_FILE
@@ -323,3 +330,6 @@ headToLower :: Text -> Text
 headToLower txt = case T.uncons txt of
   Just (x, xs) -> T.cons (toLower x) xs
   Nothing -> ""
+
+errorT :: Text -> c
+errorT = error . T.unpack
