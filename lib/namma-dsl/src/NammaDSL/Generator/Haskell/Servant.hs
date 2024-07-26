@@ -159,6 +159,11 @@ generateAPIHandler apiRead = do
       Just (SafetyWebhookAuth _) -> True
       _ -> False
 
+    isApiTokenAuth :: ApiTT -> Bool
+    isApiTokenAuth apiT = case _authType apiT of
+      Just ApiTokenAuth -> True
+      _ -> False
+
     generateParamsPat :: Int -> [Q TH.Pat]
     generateParamsPat 0 = []
     generateParamsPat n = vP ("a" <> show n) : generateParamsPat (n - 1)
@@ -193,4 +198,4 @@ generateAPIHandler apiRead = do
               generateWithFlowHandlerAPI (isDashboardAuth apiT) $
                 TH.appendE $
                   vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| generateParamsExp (isAuthPresent apiT && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+                    NE.:| generateParamsExp (isAuthPresent apiT && not (isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD) &&) paramsNumber
