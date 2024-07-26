@@ -251,6 +251,7 @@ mkHeaderList val =
 getAuthType :: Text -> AuthType
 getAuthType = \case
   "AdminTokenAuth" -> AdminTokenAuth
+  "ApiTokenAuth" -> ApiTokenAuth
   "TokenAuth" -> TokenAuth RIDER_TYPE
   "NoAuth" -> NoAuth
   "SafetyWebhookAuth MERCHANT_SERVER" -> SafetyWebhookAuth MERCHANT_SERVER

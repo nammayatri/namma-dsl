@@ -127,6 +127,7 @@ This tutorial provides a comprehensive guide to understanding and working with t
 
 #### Api Auth
 - AdminTokenAuth
+- ApiTokenAuth
 - TokenAuth (default)
 - NoAuth
 - SafetyWebhookAuth

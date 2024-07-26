@@ -26,6 +26,7 @@ data ApiType = GET | POST | PUT | DELETE deriving (Show, Eq)
 
 data AuthType
   = AdminTokenAuth
+  | ApiTokenAuth
   | TokenAuth TokenAuthType
   | NoAuth
   | SafetyWebhookAuth DashboardAuthType
