@@ -40,7 +40,7 @@ _MerchantOperatingCity = cT "Domain.Types.MerchantOperatingCity.MerchantOperatin
 apiAuthTypeMapperDomainHandler :: ApiTT -> [TH.Q r TH.Type]
 apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
   Just (DashboardAuth _) -> pure $ cT "TokenInfo"
-  Just ApiTokenAuth -> []
+  Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
   Just NoAuth -> []
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
@@ -52,7 +52,7 @@ apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
 apiAuthTypeMapperServant :: GenerationType -> ApiTT -> [TH.Q r TH.Type]
 apiAuthTypeMapperServant generationType apiT = case _authType apiT of
   Just (DashboardAuth _) -> pure $ cT "TokenInfo"
-  Just ApiTokenAuth -> []
+  Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> case generationType of
     SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
