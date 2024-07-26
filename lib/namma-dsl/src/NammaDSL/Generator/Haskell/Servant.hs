@@ -198,4 +198,4 @@ generateAPIHandler apiRead = do
               generateWithFlowHandlerAPI (isDashboardAuth apiT) $
                 TH.appendE $
                   vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| generateParamsExp (isAuthPresent apiT && not (isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD) &&) paramsNumber
+                    NE.:| generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
