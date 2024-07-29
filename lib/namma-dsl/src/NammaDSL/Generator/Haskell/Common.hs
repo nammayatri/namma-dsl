@@ -263,11 +263,18 @@ generateParamsPat apiUnits = init $ vP . apiUnitToText <$> apiUnits
 generateParamsExp :: [ApiUnit] -> [Q r TH.Exp]
 generateParamsExp apiUnits = init $ vE . apiUnitToText <$> apiUnits
 
-findParamText :: [ApiUnit] -> ApiUnit -> Maybe String
-findParamText units unit = apiUnitToText <$> find (== unit) units
+findParamText :: [ApiUnit] -> String -> Maybe String
+findParamText units param = do
+  let paramString = T.pack param
+  findParam units (CaptureUnit paramString)
+    <|> findParam units (QueryParamUnit paramString)
+    <|> findParam units (MandatoryQueryParamUnit paramString)
 
 findRequest :: [ApiUnit] -> Maybe String
-findRequest units = findParamText units RequestUnit <|> findParamText units MultipartUnit
+findRequest units = findParam units RequestUnit <|> findParam units MultipartUnit
+
+findParam :: [ApiUnit] -> ApiUnit -> Maybe String
+findParam units unit = apiUnitToText <$> find (== unit) units
 
 class Importable a where
   getImportSignature :: a -> a
