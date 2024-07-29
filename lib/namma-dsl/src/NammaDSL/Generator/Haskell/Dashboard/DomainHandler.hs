@@ -167,8 +167,8 @@ handlerFunctionDef clientFuncName apiT = do
                       ~* (cE apiTreeName ~* cE endpointName)
                       ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
-                      ~* generateHandlerParam apiUnits (CaptureUnit "driverId")
-                      ~* generateHandlerParam apiUnits (CaptureUnit "rideId")
+                      ~* generateHandlerParam apiUnits "driverId"
+                      ~* generateHandlerParam apiUnits "rideId"
                       ~* generateReqParam apiUnits
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
 
@@ -195,7 +195,7 @@ handlerFunctionDef clientFuncName apiT = do
     mkServerName (Just (ApiAuth serverName _ _)) = cE serverName.getServerName
     mkServerName _ = error "ApiAuth expected for dashboard api"
 
-    generateHandlerParam :: [ApiUnit] -> ApiUnit -> Q TH.Exp
+    generateHandlerParam :: [ApiUnit] -> String -> Q TH.Exp
     generateHandlerParam apiUnits param = case findParamText apiUnits param of
       Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
       Nothing -> cE "Kernel.Prelude.Nothing"
