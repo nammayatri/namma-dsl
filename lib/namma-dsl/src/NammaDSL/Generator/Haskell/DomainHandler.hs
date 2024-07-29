@@ -23,7 +23,7 @@ type Writer w = TH.Writer Apis w
 type Q w = TH.Q Apis w
 
 generateDomainHandler :: DefaultImports -> ApiRead -> Apis -> Code
-generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
+generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) apiRead input =
   generateCode generatorInput
   where
     codeBody' = generateCodeBody (mkCodeBody $ apiReadKind apiRead) input

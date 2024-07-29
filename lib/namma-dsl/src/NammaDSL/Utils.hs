@@ -18,6 +18,7 @@ import qualified Data.List as L
 import Data.List.Extra (trim)
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.List.Split as L
+import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.String.Builder (build)
 import Data.Text (Text)
@@ -254,7 +255,7 @@ makeAccKeysTH inputs = do
   concatMapM mkKey (nub . filter (not . null) . map trim . lines $ inputs)
 
 getGeneratorDefaultImports :: AppConfigs -> GenerationType -> DefaultImports
-getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] [] generatorTp) $ find ((== generatorTp) . _generationType) (config ^. defaultImports)
+getGeneratorDefaultImports config generatorTp = fromMaybe (DefaultImports [] [] [] Map.empty generatorTp) $ find ((== generatorTp) . _generationType) (config ^. defaultImports)
 
 (<||>) :: PS.ParsecT s u m a -> PS.ParsecT s u m a -> PS.ParsecT s u m a
 (<||>) = (PS.<|>)

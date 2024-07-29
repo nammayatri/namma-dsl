@@ -20,7 +20,7 @@ import Prelude
 type Writer w = TH.Writer Apis w
 
 generateServantAPIDashboard :: DefaultImports -> ApiRead -> Apis -> Code
-generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
+generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) apiRead input =
   generateCode generatorInput
   where
     generationType = SERVANT_API_DASHBOARD

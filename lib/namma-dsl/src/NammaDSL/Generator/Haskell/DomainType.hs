@@ -33,7 +33,7 @@ data DomainTypeCode = DomainTypeCode
   }
 
 generateDomainType :: DefaultImports -> StorageRead -> TableDef -> DomainTypeCode
-generateDomainType (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
+generateDomainType (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) storageRead tableDef =
   DomainTypeCode defaultCode extraDomainCode
   where
     isExtraCode = EXTRA_DOMAIN_TYPE_FILE `elem` (extraOperations tableDef)

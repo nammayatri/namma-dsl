@@ -7,6 +7,7 @@ module NammaDSL.Config where
 import Control.Lens
 import Dhall (FromDhall)
 import GHC.Generics
+import qualified NammaDSL.Lib.Types as Lib
 import System.FilePath
 import Prelude
 
@@ -62,21 +63,24 @@ data StorageConfig = StorageConfig
 $(makeLenses ''StorageConfig)
 
 data DefaultImports = DefaultImports
-  { _qualifiedImports :: [String],
-    _simpleImports :: [String],
-    _packageImports :: [PackageImport],
+  { _qualifiedImports :: [String], -- TODO remove
+    _simpleImports :: [String], -- TODO remove
+    _packageImports :: [PackageImport], -- TODO remove
+    _importsMapper :: Lib.ImportsMapper,
     _generationType :: GenerationType
   }
   deriving (Generic, Show, FromDhall)
 
+-- TODO remove
 data PackageImport = PackageImport
-  { _importType :: ImportType,
+  { _importType :: ImportType',
     _importPackageName :: String,
     _importModuleName :: String
   }
   deriving (Generic, Show, FromDhall, Eq)
 
-data ImportType = SIMPLE | QUALIFIED
+-- TODO remove
+data ImportType' = SIMPLE | QUALIFIED
   deriving (Generic, Show, FromDhall, Eq)
 
 data AppConfigs = AppConfigs

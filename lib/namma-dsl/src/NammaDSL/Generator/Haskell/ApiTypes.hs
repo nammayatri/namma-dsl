@@ -27,7 +27,7 @@ type Writer w = TH.Writer Apis w
 -- type Q w = TH.Q Apis w
 
 generateApiTypes :: DefaultImports -> ApiRead -> Apis -> Code
-generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input = generateCode generatorInput
+generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) apiRead input = generateCode generatorInput
   where
     apiTypesModulePrefix = apiTypesImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]

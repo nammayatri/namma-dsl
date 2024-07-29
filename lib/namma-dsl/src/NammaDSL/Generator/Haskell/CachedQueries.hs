@@ -49,7 +49,7 @@ data ExtraCachedQueryCode = ExtraCachedQueryCode
   deriving (Show)
 
 generateCachedQueries :: DefaultImports -> StorageRead -> TableDef -> Maybe CachedQueryCode
-generateCachedQueries (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
+generateCachedQueries (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) storageRead tableDef =
   if EXTRA_CACHED_QUERY_FILE `elem` extraOperations tableDef
     then
       Just $

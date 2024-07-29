@@ -47,7 +47,7 @@ data ExtraQueryCode = ExtraQueryCode
   deriving (Show)
 
 generateBeamQueries :: DefaultImports -> StorageRead -> TableDef -> BeamQueryCode
-generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
+generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) storageRead tableDef =
   if EXTRA_QUERY_FILE `elem` extraOperations tableDef
     then
       WithExtraQueryFile $

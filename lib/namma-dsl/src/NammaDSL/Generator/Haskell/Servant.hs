@@ -23,7 +23,7 @@ type Writer w = TH.Writer Apis w
 type Q w = TH.Q Apis w
 
 generateServantAPI :: DefaultImports -> ApiRead -> Apis -> Code
-generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
+generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) apiRead input =
   generateCode generatorInput
   where
     codeBody' = generateCodeBody (mkCodeBody apiRead) input

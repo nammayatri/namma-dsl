@@ -12,7 +12,7 @@ import Data.Functor (void)
 import Data.List (nub)
 import Data.String (IsString (..))
 import Data.String.Builder (Builder, build, literal)
-import NammaDSL.Config (ImportType (..), PackageImport (..))
+import NammaDSL.Config (ImportType' (..), PackageImport (..))
 import Prelude
 
 type BuilderM a = RWS a Builder ()

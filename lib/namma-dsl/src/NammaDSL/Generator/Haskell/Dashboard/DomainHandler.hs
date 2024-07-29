@@ -23,7 +23,7 @@ type Writer w = TH.Writer Apis w
 type Q w = TH.Q Apis w
 
 generateDomainHandlerDashboard :: DefaultImports -> ApiRead -> Apis -> Code
-generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
+generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) apiRead input =
   generateCode generatorInput
   where
     clientFuncName = getClientFunctionName apiRead

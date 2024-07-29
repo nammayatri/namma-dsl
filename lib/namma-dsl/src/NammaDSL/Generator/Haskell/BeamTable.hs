@@ -26,7 +26,7 @@ type Writer w = TH.Writer TableDef w
 type Q w = TH.Q TableDef w
 
 generateBeamTable :: DefaultImports -> StorageRead -> TableDef -> Code
-generateBeamTable (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
+generateBeamTable (DefaultImports qualifiedImp simpleImp _packageImports _importMapper _) storageRead tableDef =
   generateCode generatorInput
   where
     codeBody' = generateCodeBody mkCodeBody tableDef

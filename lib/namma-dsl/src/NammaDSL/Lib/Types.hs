@@ -1,11 +1,18 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module NammaDSL.Lib.Types where
 
 import Control.Monad.Reader
 import Control.Monad.Writer hiding (Writer)
 import Data.Function (flip)
 -- import Data.Semigroup
+
+import qualified Data.Map as M
+import Dhall (FromDhall)
+import GHC.Generics (Generic)
 import qualified Language.Haskell.TH as TH
-import Prelude (Eq, Maybe (..), String)
+import Prelude (Eq, Maybe (..), Ord, Show, String)
 
 -- In future this monad can include TH.Q or error handling, now these effects are not used
 type Q r = Reader r
@@ -28,8 +35,23 @@ newtype Splice = Splice TH.Exp deriving (Eq)
 -- sometimes extra new line required after comment
 data Comment = Comment String | AddNewLine
 
-data Import = Import ImportType (Maybe PackageName) ModuleName (Maybe ModuleSynonym) (Maybe ImportList)
-  deriving (Eq)
+type ImportsMapper = M.Map ImportModule Import
+
+data ImportModule
+  = KernelPrelude
+  | DomainTypesMerchant
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (FromDhall)
+
+data Import = Import
+  { _importType :: ImportType,
+    _importPackageName :: Maybe PackageName,
+    _importModuleName :: ModuleName,
+    _importModuleSynonym :: Maybe ModuleSynonym,
+    _importList :: Maybe ImportList
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromDhall)
 
 mkQualifiedName :: Import -> String -> String
 mkQualifiedName (Import importType _ (ModuleName moduleName) mbModuleSynonym _) str =
@@ -40,23 +62,30 @@ mkQualifiedName (Import importType _ (ModuleName moduleName) mbModuleSynonym _) 
       NotQualified -> str
 
 data ImportType = Qualified | NotQualified
-  deriving (Eq)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (FromDhall)
 
 newtype PackageName = PackageName String
-  deriving (Eq)
+  deriving (Eq, Show, Generic)
+  deriving newtype (FromDhall)
 
 newtype ModuleName = ModuleName String
-  deriving (Eq)
+  deriving (Eq, Show, Generic)
+  deriving newtype (FromDhall)
 
 newtype ModuleSynonym = ModuleSynonym String
-  deriving (Eq)
+  deriving (Eq, Show, Generic)
+  deriving newtype (FromDhall)
 
 -- for now ImportList is simple String, can be changed to list later
 newtype ImportList = ImportList String
-  deriving (Eq)
+  deriving (Eq, Show, Generic)
+  deriving newtype (FromDhall)
 
 -- for now ImportHidingList is simple String, can be changed to list later
 -- newtype ImportHidingList = ImportHidingList String
+-- deriving (Eq, Generic)
+-- deriving newtype FromDhall
 
 type Writer r w = WriterT [w] (Q r) ()
 
