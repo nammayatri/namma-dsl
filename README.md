@@ -46,7 +46,20 @@ This tutorial provides a comprehensive guide to understanding and working with t
 - `imports`: Used for importing predefined types.
 - `importPackageOverrides`: Used to override import packages [See More](#import-package-override)
 - `module`: Specifies the name of the module.
+
+  **Note:** In case of dashboard APIs, all APIs in the module have the same API prefix, by default it is `module` converted to camel case.
+- `apiPrefix`: overwrite default API prefix for main and helper dashboard API (optional, specific for dashboard).
+
+  **Note:** Empty value `""` allowed for `apiPrefix` and`helperApiPrefix`, it means no API prefix.
+- `helperApiPrefix`: overwrite API prefix for helper dashboard API (optional, specific for dashboard).
 - `types`: Defines the request and response types for your APIs. This field is optional. Same as [Complex Types in Storage DSL](#complex-types). Types are defined in the following format:
+    ```
+    {TypeName}:
+      - {field1}: {field1Type}
+      - {field2}: {field2Type}
+      - derive: {Any extra derivation}
+    ```
+  **Note:** Old syntax does not preserve fields order and will be deprecated.
     ```
     {TypeName}:
       {field1}: {field1Type}
@@ -56,8 +69,25 @@ This tutorial provides a comprehensive guide to understanding and working with t
     Enum types can be defined as:
     ```
     {TypeName}:
-      enum: {enum1},{enum2}
-      derive: {Any extra derivation}
+      - enum: {enum1},{enum2}
+      - derive: {Any extra derivation}
+    ```
+    To make newtype or type instead of data use `recordType: NewType | Data (Default) | Type`
+    ```
+    {TypeName}:
+      - recordType: NewType
+      - {fieldName}: {fieldType}
+      - derive: {Any extra derivation}
+
+    {TypeName}:
+      - recordType: Type
+      - type: {fieldType}
+    ```
+    To create default HideSecrets instance use `derive` keyword (specific for dashboard)
+    ```
+    {TypeName}:
+      - {fieldName}: {fieldType}
+      - derive: "'HideSecrets"
     ```
 - `apis`: Contains all the APIs in the following format:
     - `{httpMethod}` (HTTP method GET | POST | PUT | DELETE)
@@ -66,16 +96,27 @@ This tutorial provides a comprehensive guide to understanding and working with t
              /path1/path2/{pathParam1}/path3/{pathParam2}
            ```
            **Note:** Path param types should be mentioned in the **params** part below.
+        - `name`: API name. Sometimes two different APIs have the same API name auto generated from path, so it can be overwritten (optional)
         - `response`:
           - `type`: Type of response
         - `request`:
           - `type`: Type of request (optional)
+        - `multipart`:
+          - `type`: Type of request in case of multipart request (optional)
         - `auth`: Authentication method (default: TokenAuth) [See More](#api-auth)
         - `query`: List of query parameters
+          ```
+          - {queryParam1}: {queryParam1Type}
+          ```
+          **Note:** Old syntax does not preserve params order and will be deprecated.
           ```
           {queryParam1}: {queryParam1Type}
           ```
         - `mandatoryQuery`: List of mandatory query parameters
+          ```
+          - {mandatoryQueryParam1}: {mandatoryQueryParam1Type}
+          ```
+          **Note:** Old syntax does not preserve params order and will be deprecated.
           ```
           {mandatoryQueryParam1}: {mandatoryQueryParam1Type}
           ```
@@ -84,24 +125,26 @@ This tutorial provides a comprehensive guide to understanding and working with t
           {pathParam1}: {pathParam1Type}
           {pathParam2}: {pathParam2Type}
           ```
+        - `helperApi`: Recursively contains dashboard helper API in the same format as main API  (optional, specific for dashboard)
+        - `validation`: Qualified name for request validation function (optional)
 - Example:
   ```yaml
     imports: {}
     module: Sos
     types:
       SosRes:
-        sosId: Id Sos
+        - sosId: Id Sos
 
       SosDetailsRes:
-        sos: Maybe Sos
+        - sos: Maybe Sos
 
       SosReq:
-        flow: SosType
-        rideId: Id Ride
+        - flow: SosType
+        - rideId: Id Ride
 
       SosUpdateReq:
-        status: SosStatus
-        comment: Maybe Text
+        - status: SosStatus
+        - comment: Maybe Text
 
     apis:
       # GET /sos/getDetails
@@ -145,7 +188,10 @@ This tutorial provides a comprehensive guide to understanding and working with t
   -  MERCHANT_CHECKER
   -  MERCHANT_SERVER
   -  MERCHANT_USER
-
+- ApiAuth ServerName ApiEntity UserActionType
+    ```
+    auth: ApiAuth DRIVER_OFFER_BPP_MANAGEMENT DRIVERS LIST
+    ```
 ---
 ---
 
@@ -879,7 +925,9 @@ findOnlyQuery id createdAt requestId something = do
 - Beam tables are not created for this types.
 - `fromTType` must be mentioned for complex types excluding enums.
 - These are generally enums and small types which are used in the main Data type.
-- To make Enum use `enum` keyword and to derive use `derive` keyword. Most of the required deriving are already included but if any extra required user can add using it.
+- To make Enum use `enum` keyword.
+- To derive use `derive` keyword. Most of the required deriving are already included but if any extra required user can add using it.
+- To override default derives use `derive'` keyword.
 - To make newtype or type instead of data use `recordType: NewType | Data (Default) | Type`
   Examples:
   ```yaml
