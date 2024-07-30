@@ -46,8 +46,8 @@ data ExtraQueryCode = ExtraQueryCode
   }
   deriving (Show)
 
-generateBeamQueries :: DefaultImports -> StorageRead -> TableDef -> BeamQueryCode
-generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
+generateBeamQueries :: DefaultImports -> StorageRead -> [String] -> TableDef -> BeamQueryCode
+generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead _tfNames tableDef =
   if EXTRA_QUERY_FILE `elem` extraOperations tableDef
     then
       WithExtraQueryFile $
@@ -66,12 +66,15 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) st
                     if transformerCode' == mempty
                       then Nothing
                       else
-                        Just $
-                          generateCode $
-                            commonGeneratorInput
-                              & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
-                              & codeBody .~ transformerCode'
-                              & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
+                        if (null _tfNames)
+                          then
+                            Just $
+                              generateCode $
+                                commonGeneratorInput
+                                  & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
+                                  & codeBody .~ transformerCode'
+                                  & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
+                          else Just transformerCode'
                 },
             instanceCode = do
               generateCode $
@@ -103,12 +106,15 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) st
               if transformerCode' == mempty
                 then Nothing
                 else
-                  Just $
-                    generateCode $
-                      commonGeneratorInput
-                        & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
-                        & codeBody .~ transformerCode'
-                        & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
+                  if (null _tfNames)
+                    then
+                      Just $
+                        generateCode $
+                          commonGeneratorInput
+                            & moduleNm .~ extraTransformerModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
+                            & codeBody .~ transformerCode'
+                            & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
+                    else Just transformerCode'
           }
   where
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix ++ "."
@@ -118,7 +124,7 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) st
     extraTransformerModulePrefix = queryModulePrefix ++ "Transformers."
 
     transformerCode' :: Code
-    transformerCode' = generateCodeBody mkTransformerCodeBody tableDef
+    transformerCode' = generateCodeBody (mkTransformerCodeBody _tfNames) tableDef
 
     readOnlyCodeModuleName = queryModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
 
@@ -244,13 +250,13 @@ mkTTypeInstance storageRead = do
       fromTTypeInstance storageRead
       toTTypeInstance storageRead
 
-mkTransformerCodeBody :: StorageM ()
-mkTransformerCodeBody = do
+mkTransformerCodeBody :: [String] -> StorageM ()
+mkTransformerCodeBody alreadyTfs = do
   tableDef <- ask
   tellM . fromMaybe mempty $
     interpreter tableDef $ do
-      generateToTTypeFuncs
-      generateFromTypeFuncs
+      generateToTTypeFuncs alreadyTfs
+      generateFromTypeFuncs alreadyTfs
 
 generateDefaultCreateQuery :: StorageRead -> Writer CodeUnit
 generateDefaultCreateQuery storageRead = do
@@ -768,13 +774,13 @@ generateClause allFields isFullObjInp (Query (op, clauses)) = do
     then expList
     else [operator op ~* TH.listE expList]
 
-generateToTTypeFuncs :: Writer CodeUnit
-generateToTTypeFuncs = do
+generateToTTypeFuncs :: [String] -> Writer CodeUnit
+generateToTTypeFuncs _alreadyTfs = do
   def <- ask
   forM_ (fields def) \field -> do
     forM_ (beamFields field) $ \bfield ->
       whenJust (bToTType bfield) $ \tf ->
-        if '.' `elem` tfName tf || tfIsEmbeddedArgs tf
+        if '.' `elem` tfName tf || tfIsEmbeddedArgs tf || (tfName tf) `elem` _alreadyTfs
           then pure ()
           else case tfType tf of
             PureT -> do
@@ -790,15 +796,15 @@ generateToTTypeFuncs = do
                 TH.funDW (TH.mkName $ tfName tf) $ do
                   TH.clauseW [] $ TH.normalB $ vE "error" ~* strE "TODO"
 
-generateFromTypeFuncs :: Writer CodeUnit
-generateFromTypeFuncs = do
+generateFromTypeFuncs :: [String] -> Writer CodeUnit
+generateFromTypeFuncs _alreadyTfs = do
   def <- ask
   forM_ (fields def) $ \field -> do
     let (params, types) = first (map ("_" ++)) $ unzip $ map (\bfield -> (bFieldName bfield, bFieldType bfield)) (beamFields field)
         funcType = TH.appendInfixT "->" . NE.fromList $ cT <$> (types <> [haskellType field])
         funcTypeM = TH.forallT [] [_MonadFlow] $ TH.appendInfixT "->" . NE.fromList $ ((cT <$> types) <> [vT "m" ~~ cT ("(" ++ haskellType field ++ ")")])
     whenJust (fromTType field) $ \tf ->
-      if '.' `elem` tfName tf || tfIsEmbeddedArgs tf
+      if '.' `elem` tfName tf || tfIsEmbeddedArgs tf || (tfName tf) `elem` _alreadyTfs
         then pure ()
         else case tfType tf of
           PureT -> TH.decsW $ do
