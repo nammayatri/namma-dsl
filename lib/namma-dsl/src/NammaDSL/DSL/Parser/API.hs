@@ -91,6 +91,7 @@ parseAllApis' = do
       obj <- preview (_Object) val
       let params = fromMaybe KM.empty $ preview (ix acc_params ._Object) obj
           endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
+          endpointText = fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
           auth = getAuthType <$> preview (ix acc_auth . _String) obj
 
           req = parseRequest obj
@@ -120,7 +121,7 @@ parseAllApis' = do
                     [helperApiVal] -> parseSingleApi True moduleName apiKind helperApiVal
                     _vs -> error "More than one helper api not supported"
 
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation
+      return $ ApiTT allApiParts apiTp apiName endpointText auth headers multipart req res helperApi apiKind moduleName requestValidation
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq

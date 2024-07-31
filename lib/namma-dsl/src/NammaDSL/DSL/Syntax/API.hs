@@ -72,6 +72,7 @@ data ApiTT = ApiTT
   { _urlParts :: [UrlParts],
     _apiType :: ApiType,
     _apiName :: Maybe Text,
+    _apiEndpoint :: Text,
     _authType :: Maybe AuthType,
     _header :: [HeaderType],
     _apiMultipartType :: Maybe ApiMultipart,
