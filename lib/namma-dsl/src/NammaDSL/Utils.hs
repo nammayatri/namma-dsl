@@ -18,14 +18,13 @@ import qualified Data.List as L
 import Data.List.Extra (trim)
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import qualified Data.List.Split as L
-import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
+import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.String.Builder (build)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Dhall (inputFile)
 import Dhall.Marshal.Decode (auto)
-import qualified Language.Haskell.Exts as LHE
 import Language.Haskell.TH hiding (match)
 import NammaDSL.Config
 import NammaDSL.DSL.Syntax.API (ApiType (..), Apis (..))
@@ -324,17 +323,3 @@ headToLower :: Text -> Text
 headToLower txt = case T.uncons txt of
   Just (x, xs) -> T.cons (toLower x) xs
   Nothing -> ""
-
-getHaskellParsedDecs :: FilePath -> IO ([LHE.Decl LHE.SrcSpanInfo])
-getHaskellParsedDecs filePath = do
-  parsedHaskellFile <- LHE.parseFile filePath
-  return $ case parsedHaskellFile of
-    LHE.ParseOk (LHE.Module _ _ _ _ decs) -> decs
-    _ -> error $ "Invalid Haskell file " <> filePath
-
-getHaskellFuncSigs :: [LHE.Decl LHE.SrcSpanInfo] -> [String]
-getHaskellFuncSigs decs = catMaybes $ map getFuncSig decs
-  where
-    getFuncSig :: LHE.Decl LHE.SrcSpanInfo -> Maybe String
-    getFuncSig (LHE.TypeSig _ [LHE.Ident _ funcName] _) = Just funcName
-    getFuncSig _ = Nothing

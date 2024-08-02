@@ -92,7 +92,6 @@ dependencies:
   - pretty
   - haskell-src-meta
   - regex-compat
-  - haskell-src-exts
 
 ghc-options:
   - -Wall
