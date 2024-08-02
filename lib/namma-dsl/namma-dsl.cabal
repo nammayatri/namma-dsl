@@ -106,7 +106,6 @@ library
     , extra
     , filepath
     , flatparse
-    , haskell-src-exts
     , haskell-src-meta
     , lens
     , lens-aeson
@@ -221,7 +220,6 @@ test-suite namma-dsl-tests
     , extra
     , filepath
     , flatparse
-    , haskell-src-exts
     , haskell-src-meta
     , lens
     , lens-aeson

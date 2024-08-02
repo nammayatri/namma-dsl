@@ -65,17 +65,3 @@ instance Default a => Default (Marked a) where
 
 instance Default Location where
   def = Location 1 0
-
--- Better import definition, will work on it later
-data HImport = HImport
-  { hImportModule :: String,
-    hIsImportQualified :: Bool,
-    hImportPkg :: Maybe String,
-    hImportAs :: Maybe String,
-    hImportSpecs :: Maybe HImportSpecList
-  }
-
-data HImportSpecList = HImportSpecList
-  { hIsHidden :: Bool,
-    hSpecList :: [String]
-  }
