@@ -197,6 +197,11 @@ instance MakeList Key Value where
   mkList (Array arr) = (concatMap mkList) $ V.toList arr
   mkList _ = []
 
+instance MakeList String Value where
+  mkList (Object obj) = KM.toList obj >>= \(k, v) -> [(toString k, v)]
+  mkList (Array arr) = (concatMap mkList) $ V.toList arr
+  mkList _ = []
+
 instance MakeList Text Text where
   mkList (Object obj) =
     KM.toList obj >>= \(k, v) -> case v of
@@ -361,5 +366,12 @@ parseModeConfig =
           )
           LHE.knownExtensions
     }
+
 errorT :: Text -> c
 errorT = error . T.unpack
+
+toModelList :: Object -> [(String, Object)]
+toModelList obj =
+  KM.toList obj >>= \(k, v) -> case v of
+    Object o -> [(toString k, o)]
+    _ -> []
