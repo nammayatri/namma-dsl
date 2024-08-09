@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+
 module NammaDSL.Generator.Purs.TechDesign where
 
 import Data.Maybe
@@ -26,10 +28,31 @@ applyChange (Ann chg _ fp) = do
         AddComment declSig cmt -> do
           let newDecls = PCST.addCmtUpDeclSig declSig (Comment cmt) (modDecls md)
           pure $ md {modDecls = newDecls}
-        AddRecord _recType _recName -> do
-          if isJust $ PCST.findDeclWithName _recName (modDecls md)
+        AddRecord recType recName enumDef -> do
+          if PCST.findDeclWithName recName (modDecls md) /= Nothing
             then pure md
             else do
-              let newDecl = PCST.addNewDecl _recType _recName
-              pure $ md {modDecls = (modDecls md) ++ [newDecl]}
+              let newDecl = PCST.addNewDecl recType recName enumDef
+              logDeclarationDetails newDecl
+              pure $ md {modDecls = modDecls md ++ [newDecl]}
+
       T.writeFile fp (P.printModule newMd)
+
+logDeclarationDetails :: Declaration () -> IO ()
+logDeclarationDetails decl = do
+  case decl of
+    DeclNewtype _ dh eqTok consName def -> do
+      putStrLn "DeclNewtype:"
+      putStrLn $ "  DataHead: " ++ show dh
+      putStrLn $ "  Equals Token: " ++ show eqTok
+      putStrLn $ "  Constructor Name: " ++ show consName
+      putStrLn $ "  Definition: " ++ show def
+    DeclType _ dh eqTok def -> do
+      putStrLn "DeclType:"
+      putStrLn $ "  DataHead: " ++ show dh
+      putStrLn $ "  Equals Token: " ++ show eqTok
+      putStrLn $ "  Definition: " ++ show def
+    DeclData _ dh enumDef -> do
+      putStrLn "DeclData:"
+      putStrLn $ "  DataHead: " ++ show dh
+      putStrLn $ "  Enum Definition: " ++ show enumDef
