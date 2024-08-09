@@ -14,11 +14,11 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key
+import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Lens (_Array, _Value)
 import Data.Bool
 import qualified Data.ByteString as BS
---import Debug.Trace (traceShowId)
 import Data.Char (isUpper)
 import Data.Default
 import qualified Data.List as L
@@ -61,18 +61,27 @@ parseChangeEntity (dName, changeObj) = do
   let !qDName = maybe (if '.' `T.elem` dName then dName else errorT ("Module not found for " <> dName)) (\m -> m <> "." <> dName) (lookup dName mdlmap)
       (md, accDName) = getMdAndDname qDName
       allCommentChanges = changeObj ^. ix acc_tdComments . _Array . to V.toList . to (mkComments accDName)
-      allNewTypeChange = case L.find ((\f -> f == "declType") . fst) (mkList $ Object changeObj :: [(Text, Text)]) of
-        Just (_, t) -> [AddRecord (getRequiredDeclType t) accDName]
+      allNewTypeChange = case L.find ((== "declType") . fst) (mkList $ Object changeObj :: [(Text, Text)]) of
+        Just (_, t) -> [AddRecord (getRequiredDeclType t) accDName Nothing]
+        _ -> []
+      allDataChanges = case L.find ((== "declType") . fst) (mkList $ Object changeObj :: [(Text, Text)]) of
+        Just (_, t) -> [AddRecord (getRequiredDeclType t) accDName (extractTextValue "enum" changeObj)]
         _ -> []
       allFieldChanges = (mkList $ Object changeObj) & filter (\(f, _) -> f /= "declType") & map \(f, v) -> AddField accDName f v
       extraChange = concatMap extraChanges allFieldChanges
   potentialFilePaths <- mapM (\pfx -> getModuleFilePath pfx (T.unpack md)) tdPathPrefixes
   let correctFilePath = fromMaybe (errorT $ "No File path found for module: " <> md) $ (listToMaybe . catMaybes) potentialFilePaths
-  let annotatedChanges = map (mkAnnotated md correctFilePath) (allNewTypeChange ++ allCommentChanges ++ allFieldChanges ++ extraChange)
+  let annotatedChanges = map (mkAnnotated md correctFilePath) (allDataChanges ++ allNewTypeChange ++ allCommentChanges ++ allFieldChanges ++ extraChange)
   modify $ \s -> s {changes = changes s ++ annotatedChanges}
+  where
+    extractTextValue :: Text -> Object -> Maybe Text
+    extractTextValue key obj = case KM.lookup (Key.fromText key) obj of
+      Just (String s) -> Just s
+      _ -> Nothing
 
 getRequiredDeclType :: Text -> PRecordType
 getRequiredDeclType = \case
+  "data" -> PDATA
   "newtype" -> PNEWTYPE
   "type" -> PTYPE
   _ -> errorT "Invalid DeclType"

@@ -20,7 +20,7 @@ type EC = [Comment Void]
 
 type DeclSig = Text
 
-data PRecordType = PTYPE | PNEWTYPE deriving (Show, Eq, Ord)
+data PRecordType = PNEWTYPE | PTYPE | PDATA deriving (Show, Eq, Ord)
 
 type RecordName = Text
 
@@ -28,7 +28,7 @@ data PImportType = Simple | Qualified deriving (Show, Eq, Ord)
 
 data PImport = PImport Text PImportType deriving (Show, Eq, Ord)
 
-data Change = AddRecord PRecordType RecordName | AddField DeclSig Text Text | AddImport PImport | AddComment DeclSig Text deriving (Show, Eq, Ord)
+data Change = AddRecord PRecordType RecordName (Maybe Text) | AddField DeclSig Text Text | AddImport PImport | AddComment DeclSig Text deriving (Show, Eq, Ord)
 
 data TechDRead = TechDRead
   { tdPathPrefixes :: [FilePath],

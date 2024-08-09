@@ -92,7 +92,9 @@ runTechDesign configPath yamlPath = do
   let moduleMaps = _defaultModuleMapper config
       rPaths = config ^. tdRootPaths
       techDesignRead = TechDRead rPaths moduleMaps mempty
+  putStrLn $ ("techDesignRead----------------------------------->: " :: String) <> show techDesignRead
   tDChanges <- techDesignParser techDesignRead yamlPath
+
   applyTechDesignChanges tDChanges
 
 getHashObjectAtHEAD :: FilePath -> IO (Maybe String)
