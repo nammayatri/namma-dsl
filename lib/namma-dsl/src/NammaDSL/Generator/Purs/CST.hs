@@ -1,4 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module NammaDSL.Generator.Purs.CST (module NammaDSL.Generator.Purs.CST, module ReExport) where
@@ -6,7 +9,7 @@ module NammaDSL.Generator.Purs.CST (module NammaDSL.Generator.Purs.CST, module R
 import Control.Arrow ((&&&))
 --import Debug.Trace (traceShowId)
 import Data.Bool (bool)
-import Data.Char (isDigit)
+import Data.Char (isDigit, isSpace)
 import Data.Default
 import qualified Data.List as L
 import Data.Maybe
@@ -475,17 +478,40 @@ pDataHead recType recName =
               ( case recType of
                   PNEWTYPE -> "newtype"
                   PTYPE -> "type"
+                  PDATA -> "data"
               )
           ),
       dataHdName = pName [] [Space 1] (pToken recName) (ProperName recName),
       dataHdVars = []
     }
 
-addNewDecl :: PRecordType -> RecordName -> Declaration ()
-addNewDecl recType recName =
+-- Combine parsing of enum constructors and adding spaces
+addNewDecl :: PRecordType -> RecordName -> Maybe Text -> Declaration ()
+addNewDecl recType recName enumDef =
   let dh = pDataHead recType recName
       eqTok = pSourceToken [] [Space 1] TokEquals
       consName = pName [] [Space 1] (pToken recName) (ProperName recName)
    in case recType of
         PNEWTYPE -> DeclNewtype () dh eqTok consName def
         PTYPE -> DeclType () dh eqTok def
+        PDATA -> case enumDef of
+          Just enum
+            | T.null (T.strip enum) -> error "Enum definition is required for declType: data"
+            | otherwise -> DeclData () dh (Just (eqTok, parseEnumConstructors enum))
+          Nothing -> error "Enum definition is required for declType: data"
+  where
+    parseEnumConstructors enum =
+      let constructors = map T.strip $ T.splitOn "," enum
+          parsedCtors = map parseDataCtor constructors
+       in Separated (head parsedCtors) (zip (repeat pipeSeparator) (tail parsedCtors))
+
+    parseDataCtor ctor =
+      let (name, types) = T.break isSpace (T.strip ctor)
+          ctorName = pName [] [] (pToken name) (ProperName name)
+          ctorTypes =
+            if T.null (T.strip types)
+              then []
+              else [pTypeVar () [Space 1] [] (T.strip types)]
+       in DataCtor () ctorName ctorTypes
+
+    pipeSeparator = pSourceToken [Space 1] [Space 1] TokPipe
