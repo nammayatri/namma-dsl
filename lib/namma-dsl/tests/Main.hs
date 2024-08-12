@@ -7,6 +7,8 @@ import NammaDSL.App
 import NammaDSL.DSL.Parser.Storage (SQL_MANIPULATION, sqlCleanedLineParser)
 import Prelude
 
+--import qualified NammaDSL.Generator.Purs.CST as PCST
+
 --import qualified Data.Text as T
 
 storageYamlFilePath :: FilePath
@@ -29,4 +31,7 @@ sql :: String -> SQL_MANIPULATION -- Just for quick testing
 sql = sqlCleanedLineParser
 
 main :: IO ()
-main = pure () -- generateAllExample
+main = pure ()
+
+-- runFrontendGenerator "./tests/frontend-config.dhall" "./tests/frontend.yaml"
+-- PCST.viewModule "/Users/anirbandas/work/nWork/nnn/nammayatri/Frontend/ui-customer/src/Components/ChooseYourRide/View.purs"

@@ -30,10 +30,12 @@ library
       NammaDSL.App
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
+      NammaDSL.DSL.Parser.Frontend.Purs
       NammaDSL.DSL.Parser.Storage
       NammaDSL.DSL.Parser.TechDesign
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
+      NammaDSL.DSL.Syntax.Frontend.Purs
       NammaDSL.DSL.Syntax.Storage
       NammaDSL.DSL.Syntax.TechDesign
       NammaDSL.Generator.Haskell
@@ -49,6 +51,8 @@ library
       NammaDSL.Generator.Haskell.Servant
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
+      NammaDSL.Generator.Purs.Common
+      NammaDSL.Generator.Purs.Component
       NammaDSL.Generator.Purs.CST
       NammaDSL.Generator.Purs.TechDesign
       NammaDSL.Generator.SQL
@@ -152,10 +156,12 @@ test-suite namma-dsl-tests
       NammaDSL.App
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
+      NammaDSL.DSL.Parser.Frontend.Purs
       NammaDSL.DSL.Parser.Storage
       NammaDSL.DSL.Parser.TechDesign
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
+      NammaDSL.DSL.Syntax.Frontend.Purs
       NammaDSL.DSL.Syntax.Storage
       NammaDSL.DSL.Syntax.TechDesign
       NammaDSL.Generator.Haskell
@@ -171,6 +177,8 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Haskell.Servant
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
+      NammaDSL.Generator.Purs.Common
+      NammaDSL.Generator.Purs.Component
       NammaDSL.Generator.Purs.CST
       NammaDSL.Generator.Purs.TechDesign
       NammaDSL.Generator.SQL

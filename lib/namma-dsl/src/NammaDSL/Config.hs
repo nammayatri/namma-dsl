@@ -23,6 +23,8 @@ data GenerationType
   | DOMAIN_TYPE
   | SQL
   | PURE_SCRIPT_FRONTEND
+  | PURE_SCRIPT_FRONTEND_COMPONENT
+  | PURE_SCRIPT_FRONTEND_SCREEN
   deriving (Generic, Show, Eq, FromDhall)
 
 data InputPath = InputPath
@@ -103,3 +105,15 @@ data TechDesignConfig = TechDesignConfig
   deriving (Generic, Show, FromDhall)
 
 $(makeLenses ''TechDesignConfig)
+
+data FrontendConfig = FrontendConfig
+  { _fGenRootPath :: FilePath,
+    _fComponentModulePrefix :: String,
+    _fScreenModulePrefix :: String,
+    _fDefaultImportMapper :: [(String, String)],
+    _fDefaultImports :: [String],
+    _fGenerate :: [GenerationType]
+  }
+  deriving (Generic, Show, FromDhall)
+
+$(makeLenses ''FrontendConfig)

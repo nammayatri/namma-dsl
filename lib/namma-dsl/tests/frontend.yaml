@@ -1,0 +1,22 @@
+imports:
+  String: Prim
+
+ChooseYourRide:
+  modelType: Component
+  viewConfigType: Car
+  types:
+    Car:
+      declType: type
+      make: String
+      model: String
+      year: Int
+      color: String
+      topSpeed: Prim3.Double
+  defaults:
+    defaultCar:
+      defaultTypeSig: A.B.C.Car
+      make: "AB.C.Toyota"
+      model: "Corolla"
+      year: "2019"
+      color: "Red"
+      topSpeed: "120.0"

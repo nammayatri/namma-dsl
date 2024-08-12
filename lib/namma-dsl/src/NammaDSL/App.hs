@@ -14,16 +14,19 @@ import Dhall (inputFile)
 import Dhall.Marshal.Decode (auto)
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
+import NammaDSL.DSL.Parser.Frontend.Purs
 import NammaDSL.DSL.Parser.Storage
 import NammaDSL.DSL.Parser.TechDesign (techDesignParser)
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common as ReExport
+import NammaDSL.DSL.Syntax.Frontend.Purs
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.DSL.Syntax.TechDesign (TechDRead (..))
 import NammaDSL.Generator.Haskell
 import NammaDSL.Generator.Haskell.ApiTypes
 import NammaDSL.Generator.Purs
-import NammaDSL.Generator.Purs.TechDesign (applyTechDesignChanges)
+import NammaDSL.Generator.Purs.Component
+import NammaDSL.Generator.Purs.TechDesign (applyChange, applyTechDesignChanges)
 import NammaDSL.Generator.SQL
 import NammaDSL.Utils
 import System.Directory
@@ -98,6 +101,40 @@ runTechDesign configPath yamlPath = do
       techDesignRead = TechDRead rPaths moduleMaps mempty
   tDChanges <- techDesignParser techDesignRead yamlPath
   applyTechDesignChanges tDChanges
+
+runFrontendGenerator :: FilePath -> FilePath -> IO ()
+runFrontendGenerator configPath _yamlPath = do
+  config <- (inputFile auto configPath) :: IO FrontendConfig
+  let frontendPursRead =
+        FrontendPursRead
+          { _fPursDefaultImportMapper = config ^. fDefaultImportMapper,
+            _fPursYamlObject = mempty,
+            _fPursDefaultImports = config ^. fDefaultImports,
+            _fPursComponentModulePrefix = config ^. fComponentModulePrefix,
+            _fPursScreenModulePrefix = config ^. fScreenModulePrefix
+          }
+  pursFrontendDef <- frontendPursParser frontendPursRead _yamlPath
+  let when' = \(t, f) -> when (elem t (config ^. fGenerate)) $ f config pursFrontendDef frontendPursRead
+  mapM_
+    when'
+    [ (PURE_SCRIPT_FRONTEND_COMPONENT, mkPursComponent),
+      (PURE_SCRIPT_FRONTEND_SCREEN, mkPursScreen)
+    ]
+
+mkPursComponent :: FrontendConfig -> PursFrontend -> FrontendPursRead -> IO ()
+mkPursComponent config pursfrontend pursRead = do
+  let allComponentCode = generateAllComponents pursRead config (pursfrontend ^. components)
+  mapM_
+    ( \(ComponentGenCode {..}) -> do
+        writeToFileIfNotExists componentGenPath (componentGenName <> ".purs") (show reExportModule)
+        writeToFileIfNotExists componentGenPath ("Controller.purs") (show controllerBaseCode)
+        writeToFileIfNotExists componentGenPath ("View.purs") (show viewCode)
+        mapM_ applyChange controllerOverlapChanges
+    )
+    allComponentCode
+
+mkPursScreen :: FrontendConfig -> PursFrontend -> FrontendPursRead -> IO ()
+mkPursScreen = error "TODO" -- sai moonohar
 
 getHashObjectAtHEAD :: FilePath -> IO (Maybe String)
 getHashObjectAtHEAD filePath = do

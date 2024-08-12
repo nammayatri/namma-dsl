@@ -67,5 +67,9 @@ $( makeAccKeysTH
     extImports
     moduleMapper
     tdComments
+    modelType
+    defaults
+    defaultType
+    viewConfigType
     |]
  )

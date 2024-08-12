@@ -10,6 +10,7 @@ import Data.Char (isDigit)
 import Data.Default
 import qualified Data.List as L
 import Data.Maybe
+import Data.String.Builder (literal)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.IO as T
@@ -18,7 +19,9 @@ import Language.PureScript.CST.Types
 import Language.PureScript.Names (ModuleName (..), ProperName (..), runModuleName)
 import Language.PureScript.PSString (mkString)
 import qualified Language.PureScript.PSString as PS
+import NammaDSL.DSL.Parser.TechDesign (etImp)
 import NammaDSL.DSL.Syntax.TechDesign as ReExport
+import NammaDSL.GeneratorCore (Code (..))
 import Prelude
 
 doCSTChanges :: FilePath -> [(Module () -> Module ())] -> IO ()
@@ -29,6 +32,13 @@ doCSTChanges pursFilePath changes = do
     Right md -> do
       let newMd = foldl (\acc f -> f acc) md changes
       T.writeFile pursFilePath (P.printModule newMd)
+
+viewModule :: FilePath -> IO ()
+viewModule pursFilePath = do
+  contents <- T.readFile pursFilePath
+  case snd (P.parse contents) of
+    Left err -> print err
+    Right md -> print md
 
 pToken :: Text -> Token
 pToken txt = TokUpperName [] txt
@@ -42,6 +52,9 @@ pName leadingComments trailingComments tok val =
     { nameTok = pSourceToken leadingComments trailingComments tok,
       nameValue = val
     }
+
+pNameIdent :: LC -> EC -> Text -> Name Ident
+pNameIdent lc ec txt = pName lc ec (pToken txt) (Ident txt)
 
 pSourceToken :: LC -> EC -> Token -> SourceToken
 pSourceToken leadingComments trailingComments tok =
@@ -62,7 +75,10 @@ addFieldToExprRecord :: Text -> Text -> Expr () -> Expr ()
 addFieldToExprRecord _fieldName _fieldValue expr =
   case expr of
     ExprRecord _ann _wrp ->
-      let newWrp = _wrp {wrpValue = (addRecordLabeledToSeperated _fieldName _fieldValue) <$> (wrpValue _wrp)}
+      let newWrp =
+            if isNothing (wrpValue _wrp)
+              then _wrp {wrpValue = Just (Separated {sepHead = (pRecordField [Line LF, Space 2] [] _fieldName _fieldValue), sepTail = []})}
+              else _wrp {wrpValue = (addRecordLabeledToSeperated _fieldName _fieldValue) <$> (wrpValue _wrp)}
        in ExprRecord _ann newWrp
     _exp@_ -> _exp
 
@@ -87,11 +103,51 @@ pImport qualifiedName txt =
             )
     }
 
+pSeperated :: forall a. Text -> [a] -> Maybe (Separated a)
+pSeperated sepTok items =
+  let sourceToken = pSourceToken [] [] (TokLowerName [] sepTok)
+      sepModuleExports = case items of
+        [] -> Nothing
+        (x : xs) ->
+          Just $
+            Separated
+              { sepHead = x,
+                sepTail = zip (repeat sourceToken) xs
+              }
+   in sepModuleExports
+
+pWrapped :: forall a. Token -> Token -> a -> Wrapped a
+pWrapped openTok endTok val =
+  Wrapped
+    { wrpOpen = pSourceToken [] [Space 1] openTok,
+      wrpValue = val,
+      wrpClose = pSourceToken [Space 1] [] endTok
+    }
+
+pExports :: [Text] -> Maybe (DelimitedNonEmpty (Export ()))
+pExports exports = (pWrapped TokLeftParen TokRightParen) <$> (pSeperated "," $ map ((ExportValue ()) . (pNameIdent [] [])) exports)
+
+pModule :: Text -> [Text] -> Module ()
+pModule moduleName reExports =
+  Module
+    { modAnn = (),
+      modKeyword = pSourceToken [] [Space 1] (TokLowerName [] "module"),
+      modNamespace = pName [] [Space 1] (TokUpperName [] moduleName) (ModuleName moduleName),
+      modExports = pExports reExports,
+      modImports = [],
+      modDecls = [],
+      modTrailingComments = [],
+      modWhere = pSourceToken [Space 1] [] (TokLowerName [] "where\n")
+    }
+
 addImports :: [PImport] -> Module () -> Module ()
 addImports imports mod' =
   let oldImportDecls = modImports mod'
       newImportDecls = foldl (\acc imp -> addImportIfNotPresent imp acc) oldImportDecls imports
    in mod' {modImports = newImportDecls}
+
+putImports :: [ImportDecl ()] -> Module () -> Module ()
+putImports imports mod' = mod' {modImports = imports}
 
 addImportIfNotPresent :: PImport -> [ImportDecl ()] -> [ImportDecl ()]
 addImportIfNotPresent imp@(PImport val typ) _imports =
@@ -126,6 +182,41 @@ isDeclSignature :: Declaration a -> Bool
 isDeclSignature = \case
   DeclSignature _ _ -> True
   _ -> False
+
+pDeclSignature :: Text -> Text -> Declaration ()
+pDeclSignature declName typeName =
+  DeclSignature
+    ()
+    ( Labeled
+        { lblLabel = pNameIdent [Line LF, Line LF] [] declName,
+          lblSep = pSourceToken [Space 1] [] (TokDoubleColon ASCII),
+          lblValue = pTypeVar () [Space 1] [] typeName
+        }
+    )
+
+pTypeWithArrow :: Text -> [Text] -> (Text, [ImportDecl ()])
+pTypeWithArrow extra types =
+  let reqImports = map (\imp -> pImport (Just imp) imp) (T.pack <$> (etImp $ T.unpack <$> types))
+      arrowedType = T.intercalate " -> " types
+      typeExtraWithArrowed = extra <> " " <> arrowedType
+   in (typeExtraWithArrowed, reqImports)
+
+pToBeImplementedFunction :: Text -> Text -> Text -> Module () -> Module ()
+pToBeImplementedFunction declName typeName defaultExpr md =
+  md
+    { modDecls =
+        modDecls md
+          ++ [ pDeclSignature declName typeName,
+               DeclValue
+                 ()
+                 ( ValueBindingFields
+                     { valName = pNameIdent [Line LF] [] declName,
+                       valBinders = [],
+                       valGuarded = Unconditional (pSourceToken [Space 1] [Space 1] (TokEquals)) (Where {whereExpr = pExprVar [] [] defaultExpr, whereBindings = Nothing})
+                     }
+                 )
+             ]
+    }
 
 isDeclWithName :: Text -> Declaration a -> Bool
 isDeclWithName searchName decl = getName decl == searchName
@@ -489,3 +580,6 @@ addNewDecl recType recName =
    in case recType of
         PNEWTYPE -> DeclNewtype () dh eqTok consName def
         PTYPE -> DeclType () dh eqTok def
+
+moduleToCode :: Module () -> Code
+moduleToCode md = Code (literal . T.unpack $ P.printModule md)

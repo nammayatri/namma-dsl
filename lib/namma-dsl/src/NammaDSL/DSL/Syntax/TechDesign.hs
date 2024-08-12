@@ -28,7 +28,13 @@ data PImportType = Simple | Qualified deriving (Show, Eq, Ord)
 
 data PImport = PImport Text PImportType deriving (Show, Eq, Ord)
 
-data Change = AddRecord PRecordType RecordName | AddField DeclSig Text Text | AddImport PImport | AddComment DeclSig Text deriving (Show, Eq, Ord)
+data Change
+  = AddRecord PRecordType RecordName
+  | AddField DeclSig Text Text
+  | AddImport PImport
+  | AddComment DeclSig Text
+  | AddDefaultRecord RecordName Text
+  deriving (Show, Eq, Ord)
 
 data TechDRead = TechDRead
   { tdPathPrefixes :: [FilePath],

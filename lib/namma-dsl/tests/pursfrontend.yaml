@@ -1,0 +1,55 @@
+# in dhall
+# default import mapper for purs frontend
+
+
+purs
+
+
+# similar to backend dsl imports just for frontend
+imports:
+  ..
+
+<Component name>:
+  modelType: < component | screen >
+  types:
+    <type name 1>:
+       <field name 1>: <field type 1>
+       <field name 2>: <field type 2>
+       <field name 3>: <field type 3>
+       <field name 4>: <field type 4>
+
+    <type name 2>:
+       <field name 1>: <field type 1>
+       <field name 3>: <field type 3>
+
+  defaults:
+    <default name 1>:
+       defaultType: <type name >
+       <field name 1>: <default value>
+       <field name 2>: <default value>
+
+  viewPassedConfigType: <type name 1, If not passed takend config by default if present>
+
+<Component name 2>:
+   modelType: component
+   types:
+     <type name 1>:
+       <declType>: <decl type>
+       <field name 1>: <field type 1>
+       <field name 2>: <field type 2>
+       <field name 3>: <field type 3>
+     <type name 2>:
+       <field name 1>: <field type 1>
+   viewPassedConfigType: <type name 1, If not passed takend config by default if present>
+
+<Screen name 1>:
+    modelType: screen
+    types:
+      <type name 1>:
+        <field name 1>: <field type 1>
+        <field name 2>: <field type 2>
+        <field name 3>: <field type 3>
+      <type name 2>:
+        <field name 1>: <field type 1>
+    # Screens might have specific informations
+    # will figure them out

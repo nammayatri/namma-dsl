@@ -1190,12 +1190,6 @@ getProperConstraint txt = case L.trim txt of
   "!SecondaryKey" -> Forced SecondaryKey
   _ -> error "No a proper contraint type"
 
-toModelList :: Object -> [(String, Object)]
-toModelList obj =
-  KM.toList obj >>= \(k, v) -> case v of
-    Object o -> [(toString k, o)]
-    _ -> []
-
 mkListObject :: Value -> [(String, Object)]
 mkListObject (Object obj) =
   KM.toList obj >>= \(k, v) -> case v of

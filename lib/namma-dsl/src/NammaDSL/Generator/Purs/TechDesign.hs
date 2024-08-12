@@ -32,4 +32,9 @@ applyChange (Ann chg _ fp) = do
             else do
               let newDecl = PCST.addNewDecl _recType _recName
               pure $ md {modDecls = (modDecls md) ++ [newDecl]}
+        AddDefaultRecord _recName _recType -> do
+          if isJust $ PCST.findDeclWithName _recName (modDecls md)
+            then pure md
+            else do
+              pure $ PCST.pToBeImplementedFunction _recName _recType "{ \n}" md
       T.writeFile fp (P.printModule newMd)
