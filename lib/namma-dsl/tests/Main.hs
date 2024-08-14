@@ -31,7 +31,10 @@ sql :: String -> SQL_MANIPULATION -- Just for quick testing
 sql = sqlCleanedLineParser
 
 main :: IO ()
-main = pure ()
+main = runFrontendGenerator "./tests/frontend-config.dhall" "./tests/frontend.yaml"
 
--- runFrontendGenerator "./tests/frontend-config.dhall" "./tests/frontend.yaml"
 -- PCST.viewModule "/Users/anirbandas/work/nWork/nnn/nammayatri/Frontend/ui-customer/src/Components/ChooseYourRide/View.purs"
+-- runFrontendGenerator "./tests/frontend-config.dhall" "./tests/frontend.yaml"
+--runTechDesign "./tests/tech-design-config.dhall" "./tests/tech-design.yaml"
+
+--pure () -- generateAllExample

@@ -12,6 +12,8 @@ ChooseYourRide:
       year: Int
       color: String
       topSpeed: Prim3.Double
+      driver: String
+      abc: Int
   defaults:
     defaultCar:
       defaultTypeSig: A.B.C.Car
@@ -20,3 +22,4 @@ ChooseYourRide:
       year: "2019"
       color: "Red"
       topSpeed: "120.0"
+      driver: "\"John Doe\""

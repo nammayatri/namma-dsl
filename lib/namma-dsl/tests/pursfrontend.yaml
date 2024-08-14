@@ -13,7 +13,7 @@ imports:
   modelType: < component | screen >
   types:
     <type name 1>:
-       <field name 1>: <field type 1>
+       <field name 1>: <field type 1> Array Int
        <field name 2>: <field type 2>
        <field name 3>: <field type 3>
        <field name 4>: <field type 4>
@@ -24,7 +24,8 @@ imports:
 
   defaults:
     <default name 1>:
-       defaultType: <type name >
+       declType: <type name >
+       defaultTypeName: <type name>
        <field name 1>: <default value>
        <field name 2>: <default value>
 
