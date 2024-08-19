@@ -116,6 +116,9 @@ type IsHelperApi = Bool
 apiTTToTextHelper :: GenerationType -> ApiTT -> Q r TH.Type
 apiTTToTextHelper generationType = withHelperApi (apiTTToText generationType)
 
+textToType :: Text -> Q r TH.Type
+textToType ty = TH.appendT $ NE.fromList $ cT <$> words (T.unpack ty)
+
 apiTTToText :: GenerationType -> ApiTT -> Q r TH.Type
 apiTTToText generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
@@ -135,24 +138,24 @@ apiTTToText generationType apiTT = do
   where
     urlPartToText :: UrlParts -> Q r TH.Type
     urlPartToText (UnitPath path) = strT (T.unpack path)
-    urlPartToText (Capture path ty) = cT "Capture" ~~ strT (T.unpack path) ~~ TH.appendT (NE.fromList $ cT <$> words (T.unpack ty))
+    urlPartToText (Capture path ty) = cT "Capture" ~~ strT (T.unpack path) ~~ textToType ty
     urlPartToText (QueryParam path ty isMandatory) =
       if isMandatory
-        then cT "MandatoryQueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
-        else cT "QueryParam" ~~ strT (T.unpack path) ~~ cT (T.unpack ty)
+        then cT "MandatoryQueryParam" ~~ strT (T.unpack path) ~~ textToType ty
+        else cT "QueryParam" ~~ strT (T.unpack path) ~~ textToType ty
 
     apiMultipartToText :: ApiMultipart -> Q r TH.Type
-    apiMultipartToText (ApiMultipart ty) = cT "Kernel.ServantMultipart.MultipartForm" ~~ cT "Kernel.ServantMultipart.Tmp" ~~ cT (T.unpack ty)
+    apiMultipartToText (ApiMultipart ty) = cT "Kernel.ServantMultipart.MultipartForm" ~~ cT "Kernel.ServantMultipart.Tmp" ~~ textToType ty
 
     apiReqToText :: ApiReq -> Q r TH.Type
-    apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ cT (T.unpack ty)
+    apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ textToType ty
 
     apiResToText :: Text -> ApiRes -> Q r TH.Type
     apiResToText apiTypeText apiRes =
-      cT (T.unpack apiTypeText) ~~ promotedList1T (T.unpack $ _apiResApiType apiRes) ~~ cT (T.unpack $ _apiResTypeName apiRes)
+      cT (T.unpack apiTypeText) ~~ promotedList1T (T.unpack $ _apiResApiType apiRes) ~~ textToType (_apiResTypeName apiRes)
 
     headerToText :: HeaderType -> Q r TH.Type
-    headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ cT (T.unpack ty)
+    headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ textToType ty
 
 generateAPIType :: GenerationType -> ApiRead -> Writer Apis CodeUnit
 generateAPIType = generateAPIType' False
