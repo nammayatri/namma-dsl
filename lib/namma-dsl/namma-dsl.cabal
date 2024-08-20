@@ -30,10 +30,14 @@ library
       NammaDSL.App
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
+      NammaDSL.DSL.Parser.Frontend.Purs
       NammaDSL.DSL.Parser.Storage
+      NammaDSL.DSL.Parser.TechDesign
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
+      NammaDSL.DSL.Syntax.Frontend.Purs
       NammaDSL.DSL.Syntax.Storage
+      NammaDSL.DSL.Syntax.TechDesign
       NammaDSL.Generator.Haskell
       NammaDSL.Generator.Haskell.ApiTypes
       NammaDSL.Generator.Haskell.BeamQueries
@@ -47,6 +51,10 @@ library
       NammaDSL.Generator.Haskell.Servant
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
+      NammaDSL.Generator.Purs.Common
+      NammaDSL.Generator.Purs.Component
+      NammaDSL.Generator.Purs.CST
+      NammaDSL.Generator.Purs.TechDesign
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
@@ -108,12 +116,15 @@ library
     , flatparse
     , haskell-src-exts
     , haskell-src-meta
+    , interpolate
     , lens
     , lens-aeson
     , mtl
     , parsec
+    , pcre-heavy
     , pretty
     , process
+    , purescript
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield
@@ -145,10 +156,14 @@ test-suite namma-dsl-tests
       NammaDSL.App
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
+      NammaDSL.DSL.Parser.Frontend.Purs
       NammaDSL.DSL.Parser.Storage
+      NammaDSL.DSL.Parser.TechDesign
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
+      NammaDSL.DSL.Syntax.Frontend.Purs
       NammaDSL.DSL.Syntax.Storage
+      NammaDSL.DSL.Syntax.TechDesign
       NammaDSL.Generator.Haskell
       NammaDSL.Generator.Haskell.ApiTypes
       NammaDSL.Generator.Haskell.BeamQueries
@@ -162,6 +177,10 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Haskell.Servant
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
+      NammaDSL.Generator.Purs.Common
+      NammaDSL.Generator.Purs.Component
+      NammaDSL.Generator.Purs.CST
+      NammaDSL.Generator.Purs.TechDesign
       NammaDSL.Generator.SQL
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
@@ -223,13 +242,16 @@ test-suite namma-dsl-tests
     , flatparse
     , haskell-src-exts
     , haskell-src-meta
+    , interpolate
     , lens
     , lens-aeson
     , mtl
     , namma-dsl
     , parsec
+    , pcre-heavy
     , pretty
     , process
+    , purescript
     , raw-strings-qq
     , record-dot-preprocessor
     , record-hasfield

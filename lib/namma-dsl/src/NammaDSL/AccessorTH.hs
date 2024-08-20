@@ -64,5 +64,12 @@ $( makeAccKeysTH
     helperApi
     apiPrefix
     helperApiPrefix
+    extImports
+    moduleMapper
+    tdComments
+    modelType
+    defaults
+    defaultType
+    viewConfigType
     |]
  )

@@ -5,6 +5,7 @@
 module NammaDSL.Config where
 
 import Control.Lens
+import Data.Text (Text)
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
@@ -22,6 +23,8 @@ data GenerationType
   | DOMAIN_TYPE
   | SQL
   | PURE_SCRIPT_FRONTEND
+  | PURE_SCRIPT_FRONTEND_COMPONENT
+  | PURE_SCRIPT_FRONTEND_SCREEN
   deriving (Generic, Show, Eq, FromDhall)
 
 data InputPath = InputPath
@@ -94,3 +97,23 @@ data ApiKind = UI | DASHBOARD
   deriving (Generic, Show, FromDhall, Eq)
 
 $(makeLenses ''AppConfigs)
+
+data TechDesignConfig = TechDesignConfig
+  { _tdRootPaths :: [FilePath],
+    _defaultModuleMapper :: [(Text, Text)]
+  }
+  deriving (Generic, Show, FromDhall)
+
+$(makeLenses ''TechDesignConfig)
+
+data FrontendConfig = FrontendConfig
+  { _fGenRootPath :: FilePath,
+    _fComponentModulePrefix :: String,
+    _fScreenModulePrefix :: String,
+    _fDefaultImportMapper :: [(String, String)],
+    _fDefaultImports :: [String],
+    _fGenerate :: [GenerationType]
+  }
+  deriving (Generic, Show, FromDhall)
+
+$(makeLenses ''FrontendConfig)
