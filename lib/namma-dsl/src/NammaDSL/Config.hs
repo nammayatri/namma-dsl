@@ -13,6 +13,7 @@ import Prelude
 data GenerationType
   = SERVANT_API
   | SERVANT_API_DASHBOARD
+  | SERVANT_API_TREE
   | API_TYPES
   | DOMAIN_HANDLER
   | DOMAIN_HANDLER_DASHBOARD
@@ -86,7 +87,9 @@ data AppConfigs = AppConfigs
     _storageConfig :: StorageConfig,
     _generate :: [GenerationType],
     _apiKind :: ApiKind,
-    _clientFunction :: Maybe String
+    _clientFunction :: Maybe String,
+    _endpointPrefix :: Maybe String,
+    _folderName :: Maybe String
   }
   deriving (Generic, Show, FromDhall)
 

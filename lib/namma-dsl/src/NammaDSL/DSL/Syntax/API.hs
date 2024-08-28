@@ -6,10 +6,11 @@
 module NammaDSL.DSL.Syntax.API where
 
 import Control.Lens hiding (noneOf)
-import Data.Aeson (Object)
+import Data.Aeson (FromJSON, Object, ToJSON)
 import Data.Default
 import Data.Map (Map)
 import Data.Text (Text)
+import GHC.Generics (Generic)
 import NammaDSL.Config (ApiKind (..))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
@@ -80,9 +81,31 @@ data ApiTT = ApiTT
     _apiHelperApi :: Maybe HelperApiTT,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
-    _requestValidation :: Maybe Text
+    _requestValidation :: Maybe Text,
+    _apiMigrate :: [ApiMigration]
   }
   deriving (Show)
+
+data ApiMigration = ApiMigration
+  { _migrationName :: Text,
+    _migrationParam :: Maybe Text -- in general it can be JSON Value, for now String and Null supported
+  }
+  deriving (Show)
+
+data MigrationFile = MigrationFile
+  { apiMigrationKeys :: [ApiMigrationKey],
+    rawLastSqlFile :: String
+  }
+  deriving (Show)
+
+-- depending on this key in sql file we can define that migration already exists
+data ApiMigrationKey = ApiMigrationKey
+  { schema :: Text,
+    api :: Text,
+    migration :: Text,
+    param :: Maybe Text
+  }
+  deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
 newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
   deriving (Show)
@@ -93,6 +116,8 @@ newtype ApiMultipart = ApiMultipart Text
 $(makeLenses ''ApiTT)
 
 $(makeLenses ''HelperApiTT)
+
+$(makeLenses ''ApiMigration)
 
 type OverrideDefaultDerive = Bool
 
@@ -139,7 +164,9 @@ data ApiRead = ApiRead
     apiDomainHandlerDashboardImportPrefix :: String,
     apiDefaultTypeImportMapper :: [(String, String)],
     apiClientFunction :: Maybe String,
-    apiReadKind :: ApiKind
+    apiReadKind :: ApiKind,
+    apiEndpointPrefix :: Maybe String,
+    apiFolderName :: Maybe String
   }
 
 data ExtraParseInfo = ExtraParseInfo
@@ -167,10 +194,16 @@ instance Default ApiState where
 instance Default TypesInfo where
   def = TypesInfo [] []
 
-instance Default ApiRead where
-  def = ApiRead "" "" "" "" "" "" [] Nothing UI
+-- instance Default ApiRead where
+--   def = ApiRead "" "" "" "" "" "" [] Nothing UI Nothing
 
 instance Default Apis where
   def = Apis "" Nothing Nothing [] [] mempty def []
 
 type ApiParserM = ParserM ApiRead ApiState
+
+newtype ApiTree = ApiTree
+  { specModules :: [String]
+  }
+
+type ApiTreeM = BuilderM ApiTree

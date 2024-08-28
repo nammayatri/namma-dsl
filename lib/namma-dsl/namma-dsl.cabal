@@ -45,9 +45,11 @@ library
       NammaDSL.Generator.Haskell.DomainHandler
       NammaDSL.Generator.Haskell.DomainType
       NammaDSL.Generator.Haskell.Servant
+      NammaDSL.Generator.Haskell.ServantTree
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
       NammaDSL.Generator.SQL
+      NammaDSL.Generator.SQL.API
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
       NammaDSL.Lib
@@ -160,9 +162,11 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Haskell.DomainHandler
       NammaDSL.Generator.Haskell.DomainType
       NammaDSL.Generator.Haskell.Servant
+      NammaDSL.Generator.Haskell.ServantTree
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
       NammaDSL.Generator.SQL
+      NammaDSL.Generator.SQL.API
       NammaDSL.Generator.SQL.Table
       NammaDSL.GeneratorCore
       NammaDSL.Lib

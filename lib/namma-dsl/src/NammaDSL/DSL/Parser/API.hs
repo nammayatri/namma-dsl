@@ -16,10 +16,13 @@ import Data.Aeson.Lens (_Array, _Object, _String, _Value)
 import Data.Bifunctor
 import Data.Bool
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Default
+import Data.List (isPrefixOf)
+import Data.List.Extra (dropPrefix)
 import Data.List.Split (splitWhen)
 import qualified Data.Map.Strict as M
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -30,6 +33,8 @@ import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Utils (valueToString)
 import qualified NammaDSL.Utils as U
+import System.Directory (doesFileExist)
+import System.IO (readFile')
 import Prelude
 
 parseApis' :: ApiParserM ()
@@ -119,8 +124,14 @@ parseAllApis' = do
                     [] -> Nothing
                     [helperApiVal] -> parseSingleApi True moduleName apiKind helperApiVal
                     _vs -> error "More than one helper api not supported"
+          migrationsObj = fromMaybe KM.empty $ preview (ix acc_migrate . _Object) obj
+          migrations = flip map (KM.toList migrationsObj) $ \(k, v) -> do
+            case v of
+              A.String str -> ApiMigration (toText k) (Just str)
+              A.Null -> ApiMigration (toText k) Nothing
+              _ -> error "String or Null migration params only supported for now"
 
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation
+      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq
@@ -399,3 +410,21 @@ removeSurroundedSpaces = removeSpacesBegin . removeSpacesEnd
     removeSpacesEnd str = case T.unsnoc str of
       Just (subStr, ' ') -> removeSpacesEnd subStr
       _ -> str
+
+getOldApiSqlFile :: FilePath -> IO (Maybe MigrationFile)
+getOldApiSqlFile filepath = do
+  fileExist <- doesFileExist filepath
+  if fileExist
+    then do
+      lastSqlFile <- readFile' filepath -- lazy function readFile caused error: withFile: resource busy (file is locked)
+      print ("loading old sql file: " <> filepath :: String)
+      pure $
+        Just $
+          MigrationFile
+            { apiMigrationKeys = (decode . LBS.pack) `mapMaybe` (stripPrefix "--" `mapMaybe` lines lastSqlFile),
+              rawLastSqlFile = lastSqlFile
+            }
+    else pure Nothing
+
+stripPrefix :: String -> String -> Maybe String
+stripPrefix prefix str = if prefix `isPrefixOf` str then Just $ dropPrefix prefix str else Nothing

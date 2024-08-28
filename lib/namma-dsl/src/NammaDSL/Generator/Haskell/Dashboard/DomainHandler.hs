@@ -10,7 +10,7 @@ import Data.Maybe (fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common
+import NammaDSL.Generator.Haskell.Common as Common
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -56,7 +56,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
       ]
         <> nub (qualifiedImp <> figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)))
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
-        <> when_ ifTransactionStore ["Dashboard.Common" #. T.unpack (input ^. moduleName), "Domain.Types.Transaction"]
+        <> storeTransactionImports
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
         <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
         <> [getClientModuleName clientFuncName]
@@ -99,8 +99,14 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
         )
         (map _authType $ _apis input)
 
-    ifTransactionStore :: Bool
-    ifTransactionStore = any (\apiT -> apiT ^. apiType /= GET) $ input ^. apis
+    storeTransactionImports :: [String]
+    storeTransactionImports =
+      when_
+        (any (\apiT -> apiT ^. apiType /= GET) $ input ^. apis)
+        [ apiTypesImportPrefix apiRead,
+          apiTypesImportPrefix apiRead #. T.unpack (_moduleName input),
+          "Domain.Types.Transaction"
+        ]
 
     ifValidationRequired :: Bool
     ifValidationRequired = any (\apiT -> isJust $ apiT ^. requestValidation) $ input ^. apis
@@ -130,10 +136,10 @@ mkCodeBodyDomainHandlerDashboard apiRead input = do
   let clientFuncName = getClientFunctionName apiRead
   let allApis = input ^. apis
   interpreter input $ do
-    forM_ allApis $ handlerFunctionDef clientFuncName
+    forM_ allApis $ handlerFunctionDef apiRead clientFuncName
 
-handlerFunctionDef :: String -> ApiTT -> Writer CodeUnit
-handlerFunctionDef clientFuncName apiT = do
+handlerFunctionDef :: ApiRead -> String -> ApiTT -> Writer CodeUnit
+handlerFunctionDef apiRead clientFuncName apiT = do
   input <- ask
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
@@ -160,11 +166,14 @@ handlerFunctionDef clientFuncName apiT = do
             let transactionWrapper clientCall = case apiT ^. apiType of
                   GET -> clientCall
                   _ -> do
-                    let apiTreeName = "Domain.Types.Transaction" #. T.unpack moduleName' <> "API"
-                    let endpointName = "Dashboard.Common" #. T.unpack moduleName' #. (T.unpack (mkApiName apiT) <> "Endpoint")
+                    let endpointPrefix' = fromMaybe (error "endpointPrefix required for dashboard api generation") $ apiEndpointPrefix apiRead
+                    let folderName' = fromMaybe (error "folderName required for dashboard api generation") $ apiFolderName apiRead
+                    let apiFolderName' = "Domain.Types.Transaction" #. endpointPrefix' <> folderName' <> "API"
+                    let apiTreeName' = apiTypesImportPrefix apiRead #. T.unpack moduleName' <> "API"
+                    let endpointName' = apiTypesImportPrefix apiRead #. T.unpack moduleName' #. Common.mkEndpointName apiT
                     vP "transaction"
                       <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (cE apiTreeName ~* cE endpointName)
+                      ~* (cE apiFolderName' ~* (cE apiTreeName' ~* cE endpointName'))
                       ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits "driverId"

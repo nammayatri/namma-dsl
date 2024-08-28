@@ -64,5 +64,6 @@ $( makeAccKeysTH
     helperApi
     apiPrefix
     helperApiPrefix
+    migrate
     |]
  )

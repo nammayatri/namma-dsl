@@ -10,7 +10,7 @@ import Data.Proxy
 import Data.String
 import qualified Data.Text as T
 import Language.Haskell.Meta.Parse (parseExp)
-import Language.Haskell.TH as Reexport hiding (Code, Q, forallT, listE, listT, normalB, parensT, runQ, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT)
+import Language.Haskell.TH as Reexport hiding (Code, Q, compE, forallT, listE, listT, normalB, parensT, runQ, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT, wildP)
 import qualified Language.Haskell.TH as TH
 import NammaDSL.Lib.Types
 import Text.Read (readEither)
@@ -38,6 +38,11 @@ wildRecordsE name = vE $ name <> " {..}"
 vP :: String -> Q r TH.Pat
 vP = pure . TH.VarP . TH.mkName
 
+cP :: String -> [Q r TH.Pat] -> Q r TH.Pat
+cP name patsQ = do
+  pats <- sequenceA patsQ
+  pure $ TH.ConP (TH.mkName name) [] pats
+
 -- hack for record wild cards
 wildRecordsP :: String -> Q r TH.Pat
 wildRecordsP name = vP $ name <> " {..}"
@@ -54,6 +59,15 @@ cT' = pure . TH.ConT . TH.mkName . ("'" <>)
 strE :: String -> Q r TH.Exp
 strE = pure . TH.LitE . TH.StringL
 
+strP :: String -> Q r TH.Pat
+strP = pure . TH.LitP . TH.StringL
+
+wildP :: Q r TH.Pat
+wildP = pure TH.WildP
+
+intE :: Integer -> Q r TH.Exp
+intE = pure . TH.LitE . TH.IntegerL
+
 rawE :: String -> Q r TH.Exp
 rawE st = pure $ either (const (error ("Failed while making Exp of " <> st))) id (parseExp st)
 
@@ -65,13 +79,13 @@ infixr 1 -->
 (~*) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
 (~*) = liftA2 TH.AppE
 
+--priority should be higher then for other operators
+infixl 9 ~*
+
 (~~) :: Q r TH.Type -> Q r TH.Type -> Q r TH.Type
 (~~) = liftA2 TH.AppT
 
 infixl 2 ~~
-
---priority should be higher then for other operators
-infixl 9 ~*
 
 parensT :: Q r TH.Type -> Q r TH.Type
 parensT = fmap TH.ParensT
@@ -104,6 +118,21 @@ infixl 4 ~<*>
 (~<&>) e1 = uInfixE e1 (vE "<&>")
 
 infixl 1 ~<&>
+
+(~<>) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
+(~<>) e1 = uInfixE e1 (vE "<>")
+
+infixr 6 ~<>
+
+(~>) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
+(~>) e1 = uInfixE e1 (vE ">")
+
+infix 4 ~>
+
+(~+) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
+(~+) e1 = uInfixE e1 (vE "+")
+
+infixl 6 ~+
 
 (~&) :: Q r TH.Exp -> Q r TH.Exp -> Q r TH.Exp
 (~&) e1 = uInfixE e1 (vE "&")
@@ -140,6 +169,9 @@ instanceDW cxtQ tQ dW = do
 
 emptyContext :: Q r TH.Cxt
 emptyContext = pure []
+
+emptyDerive :: Writer r TH.DerivClause
+emptyDerive = pure ()
 
 sigDW :: TH.Name -> Q r TH.Type -> Writer r TH.Dec
 sigDW n tQ = do
@@ -330,6 +362,11 @@ letStmt :: TH.Name -> TH.Exp -> Writer r TH.Stmt
 letStmt vName rhsExp = do
   let valP = TH.VarP vName
   tell [TH.LetS [TH.ValD valP (TH.NormalB rhsExp) []]]
+
+compE :: Writer r TH.Stmt -> Q r TH.Exp
+compE stmtW = do
+  stmts <- execWriterT stmtW
+  pure $ CompE stmts
 
 forallT :: [TH.TyVarBndr TH.Specificity] -> [Q r TH.Type] -> Q r TH.Type -> Q r TH.Type
 forallT a b = liftA2 (TH.ForallT a) (sequenceA b)
