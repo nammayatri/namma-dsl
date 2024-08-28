@@ -43,6 +43,10 @@ data Location = Location
   }
   deriving (Show, Eq, Ord)
 
+type Database = String
+
+type SQL_ERROR = String
+
 instance Functor Marked where
   fmap f (Marked a p) = Marked (f a) p
 

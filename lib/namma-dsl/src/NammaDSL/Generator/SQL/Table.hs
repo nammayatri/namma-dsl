@@ -7,6 +7,7 @@ import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import qualified Data.Set as DS
+import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils (removeBeamFieldsWRTRelation)
 import Text.Casing (quietSnake)

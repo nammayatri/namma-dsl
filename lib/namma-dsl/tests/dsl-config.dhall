@@ -23,6 +23,7 @@ let outputPath =
 let GeneratorType =
       < SERVANT_API
       | SERVANT_API_DASHBOARD
+      | SERVANT_API_TREE
       | API_TYPES
       | DOMAIN_HANDLER
       | BEAM_QUERIES

@@ -55,6 +55,11 @@ writeToFile directoryPath fileName content = do
   withFile (directoryPath ++ "/" ++ fileName) WriteMode $ \handle_ -> do
     hPutStr handle_ content
 
+writeToFile' :: FilePath -> String -> IO ()
+writeToFile' filePath content = do
+  withFile filePath WriteMode $ \handle_ -> do
+    hPutStr handle_ content
+
 writeToFileIfNotExists :: FilePath -> FilePath -> String -> IO ()
 writeToFileIfNotExists directoryPath fileName content = do
   exists <- doesFileExist filePath
