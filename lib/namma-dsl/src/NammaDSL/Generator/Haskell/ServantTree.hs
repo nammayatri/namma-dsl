@@ -8,6 +8,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
 import NammaDSL.Config (ApiKind (..), DefaultImports (..))
 import NammaDSL.DSL.Syntax.API
+import qualified NammaDSL.Generator.Haskell.Common as Common
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -79,8 +80,9 @@ generateEndpointShowInstance apiRead = do
         TH.normalB $
           TH.lambdaCaseE $
             specModules input <&> \specModule -> do
-              TH.matchWOD (cP (specModule <> "API") [vP "e"]) $
-                TH.normalB (TH.strE (specModule <> "API_") ~<> vE "show" ~* vE "e")
+              TH.matchWOD (cP (specModule <> "API") [vP "e"]) $ do
+                let moduleUserActionType = Common.screamingSnake specModule
+                TH.normalB (TH.strE (moduleUserActionType <> "/") ~<> vE "Dashboard.Common.showUserActionType" ~* vE "e")
 
 generateEndpointReadInstance :: ApiRead -> Writer CodeUnit
 generateEndpointReadInstance apiRead = do
@@ -100,8 +102,9 @@ generateEndpointReadInstance apiRead = do
                     NE.fromList $
                       specModules input <&> \specModule -> do
                         compE $ do
-                          vP "r1" <-- vE "stripPrefix" ~* TH.strE (specModule <> "API_") ~* vE "r"
-                          tupP [vP "v1", vP "r2"] <-- vE "Text.Read.readsPrec" ~* (vE "app_prec" ~+ intE 1) ~* vE "r1"
+                          let moduleUserActionType = Common.screamingSnake specModule
+                          vP "r1" <-- vE "stripPrefix" ~* TH.strE (moduleUserActionType <> "/") ~* vE "r"
+                          tupP [vP "v1", vP "r2"] <-- vE "Dashboard.Common.readUserActionTypeS" ~* vE "r1"
                           noBindSW (tupE [Just $ cE (specModule <> "API") ~* vE "v1", Just $ vE "r2"])
         do
           -- TODO move to Common module instead of generate
