@@ -3,6 +3,7 @@ module NammaDSL.Generator.Haskell.Common where
 import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
+import qualified Data.Char as Char
 import Data.List.Extra (find, nub, snoc)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map, lookup)
@@ -17,7 +18,7 @@ import NammaDSL.Lib
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils
-import Text.Casing (camel)
+import Text.Casing (camel, quietSnake)
 import Prelude hiding (lookup)
 
 _Maybe :: TH.Q r TH.Type
@@ -296,3 +297,6 @@ generateWithFlowHandlerAPI = \case
 mkEndpointName :: ApiTT -> String
 mkEndpointName apiT = do
   T.unpack (mkApiName apiT) <> "Endpoint"
+
+screamingSnake :: String -> String
+screamingSnake = map Char.toUpper . quietSnake

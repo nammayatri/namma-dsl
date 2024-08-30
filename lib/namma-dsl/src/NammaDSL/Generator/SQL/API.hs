@@ -11,7 +11,7 @@ import Data.Maybe (isJust)
 import qualified Data.Text as T
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
-import NammaDSL.Generator.Haskell.Common as Common
+import qualified NammaDSL.Generator.Haskell.Common as Common
 import Prelude
 
 -- Generates SQL for each api endpoint depending on spec
@@ -106,4 +106,7 @@ generateEndpointV3 :: ApiRead -> ApiTT -> Either SQL_ERROR String
 generateEndpointV3 apiRead apiTT = do
   endpointPrefix <- maybe (Left "Endpoint prefix required for 'endpoint' migration") pure $ apiEndpointPrefix apiRead
   folderName <- maybe (Left "Folder name required for 'endpoint' migration") pure $ apiFolderName apiRead
-  pure $ endpointPrefix <> folderName <> "API_" <> T.unpack (apiTT ^. apiModuleName) <> "API_" <> Common.mkEndpointName apiTT
+  let folderUserActionType = Common.screamingSnake endpointPrefix <> "_" <> Common.screamingSnake folderName
+  let moduleUserActionType = Common.screamingSnake $ T.unpack (apiTT ^. apiModuleName)
+  let endpointUserActionType = Common.screamingSnake $ T.unpack (Common.mkApiName apiTT)
+  pure $ folderUserActionType <> "/" <> moduleUserActionType <> "/" <> endpointUserActionType
