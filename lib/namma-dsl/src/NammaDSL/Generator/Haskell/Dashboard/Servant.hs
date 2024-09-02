@@ -53,6 +53,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
         <> when_ ifTransactionStore ["Dashboard.Common" #. T.unpack (input ^. moduleName), "Domain.Types.Transaction"]
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
         <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
+        <> [apiTypesImportPrefix apiRead]
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -147,7 +148,7 @@ generateServantApiType generationType apiRead apiTT = do
   let moduleName' = input ^. moduleName
   tySynDW (TH.mkNameT $ mkApiName apiTT) [] $ do
     TH.appendInfixT ":>" . NE.fromList $
-      maybeToList (addAuthToApi generationType $ _authType apiTT)
+      maybeToList (addAuthToApi apiRead generationType apiTT)
         <> [cT (((apiTypesImportPrefix apiRead <> "." <> T.unpack moduleName' <> ".") <>) . T.unpack . mkApiName $ apiTT)]
 
 handlerFunctionDef :: GenerationType -> ApiRead -> ApiTT -> Writer CodeUnit

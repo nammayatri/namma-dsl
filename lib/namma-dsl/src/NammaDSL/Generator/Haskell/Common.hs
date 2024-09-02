@@ -99,29 +99,44 @@ handlerFunctionText apiTT = flip fromMaybe (headToLower <$> apiTT ^. apiName) $ 
     urlPartToName (UnitPath name) = (T.toUpper . T.singleton . T.head) name <> T.tail name
     urlPartToName _ = ""
 
-addAuthToApi :: GenerationType -> Maybe AuthType -> Maybe (Q r TH.Type)
-addAuthToApi generationType authtype = case authtype of
+addAuthToApi :: ApiRead -> GenerationType -> ApiTT -> Maybe (Q r TH.Type)
+addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just AdminTokenAuth -> Just $ cT "AdminTokenAuth"
   Just ApiTokenAuth -> Just $ cT "ApiTokenAuth"
   Just (TokenAuth _) -> Just $ cT "TokenAuth"
   Just (SafetyWebhookAuth dashboardAuthType) -> Just $ cT "SafetyWebhookAuth" ~~ cT' (show dashboardAuthType)
   Just (DashboardAuth dashboardAuthType) -> Just $ cT "DashboardAuth" ~~ cT' (show dashboardAuthType)
-  Just (ApiAuth sn ae uat) -> case generationType of
-    SERVANT_API_DASHBOARD -> Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ cT' (show uat)
+  Just (ApiAuth sn ae _uat) -> case generationType of
+    SERVANT_API_DASHBOARD -> do
+      -- TODO userActionType and apiEntity from spec should be deprecated
+      let endpointPrefix = fromMaybe (error "Endpoint prefix required for dashboard api auth generation") $ apiEndpointPrefix apiRead
+      let folderName = fromMaybe (error "Folder name required for dashboard api auth generation") $ apiFolderName apiRead
+      let uat =
+            appendInfixT (TH.mkName "/") $
+              cT' (screamingSnake endpointPrefix <> "_" <> screamingSnake folderName)
+                NE.:| [cT' (screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ mkUserActionTypeName apiTT]
+      Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ uat
     _ -> Nothing -- auth already added in common folder
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
 
+-- generateApiAuth :: ApiRead -> ApiTT -> Q r TH.Type
+-- generateApiAuth apiRead apiT (ApiAuth sn ae _uat)
+--         -- TODO userActionType and apiEntity from spec should be deprecated
+--       let uat = appendInfixT (TH.mkName "/") $
+--             error "TODO"
+--       Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ cT' at
+
 type IsHelperApi = Bool
 
-apiTTToTextHelper :: GenerationType -> ApiTT -> Q r TH.Type
-apiTTToTextHelper generationType = withHelperApi (apiTTToText generationType)
+apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
+apiTTToTextHelper apiRead generationType = withHelperApi (apiTTToText apiRead generationType)
 
 textToType :: Text -> Q r TH.Type
 textToType ty = TH.appendT $ NE.fromList $ cT <$> words (T.unpack ty)
 
-apiTTToText :: GenerationType -> ApiTT -> Q r TH.Type
-apiTTToText generationType apiTT = do
+apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
+apiTTToText apiRead generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
@@ -130,7 +145,7 @@ apiTTToText generationType apiTT = do
       headerText = map headerToText (_header apiTT)
 
   TH.appendInfixT ":>" . NE.fromList $
-    maybeToList (addAuthToApi generationType $ _authType apiTT)
+    maybeToList (addAuthToApi apiRead generationType apiTT)
       <> urlPartsText
       <> headerText
       <> maybeToList apiMultipartText
@@ -171,7 +186,7 @@ generateAPIType' isHelperApi generationType apiRead = do
   tySynDW "API" [] $ do
     case apiReadKind apiRead of
       UI -> do
-        let apiTTToText_ = apiTTToText generationType
+        let apiTTToText_ = apiTTToText apiRead generationType
         appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
       DASHBOARD -> do
         let apiTTToText_ = cT . T.unpack . (if isHelperApi then mkApiNameHelper else mkApiName)
@@ -297,6 +312,9 @@ generateWithFlowHandlerAPI = \case
 mkEndpointName :: ApiTT -> String
 mkEndpointName apiT = do
   T.unpack (mkApiName apiT) <> "Endpoint"
+
+mkUserActionTypeName :: ApiTT -> String
+mkUserActionTypeName = screamingSnake . T.unpack . mkApiName
 
 screamingSnake :: String -> String
 screamingSnake = map Char.toUpper . quietSnake
