@@ -88,8 +88,7 @@ extraFileCodeBody = do
 
 createDefaultImports :: TableDef -> [String]
 createDefaultImports tableDef =
-  ["Kernel.Prelude"] -- <> ["Tools.Beam.UtilsTH" | shouldImportUtilsTH (fromMaybe [] $ types tableDef)]
-    <> ["Kernel.Utils.TH" | isHttpInstanceImportRequired (fromMaybe [] $ types tableDef)]
+  ["Kernel.Utils.TH" | isHttpInstanceImportRequired (fromMaybe [] $ types tableDef)]
     <> ["Data.Aeson" | isHttpInstanceImportRequired (fromMaybe [] $ types tableDef)]
     <> ["Kernel.External.Encryption" | tableDef.containsEncryptedField]
     <> ["Domain.Types.Common (UsageSafety (..))" | isUsageSafetyRequired tableDef.derives]
