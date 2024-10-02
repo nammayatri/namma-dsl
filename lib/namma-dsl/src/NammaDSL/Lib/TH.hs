@@ -396,6 +396,8 @@ tupleT a = pure (TH.TupleT a)
 (#.) :: String -> String -> String
 (#.) a b = a <> "." <> b
 
+infixr 6 #.
+
 mkNameT :: T.Text -> Name
 mkNameT = TH.mkName . T.unpack
 

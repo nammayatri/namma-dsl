@@ -111,10 +111,14 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
       -- TODO userActionType and apiEntity from spec should be deprecated
       let endpointPrefix = fromMaybe (error "Endpoint prefix required for dashboard api auth generation") $ apiEndpointPrefix apiRead
       let folderName = fromMaybe (error "Folder name required for dashboard api auth generation") $ apiFolderName apiRead
+      -- TODO use short synonyms
+      let apiTreeModule = apiTypesImportPrefix apiRead
+      let apiTyposModule = apiTypesImportPrefix apiRead #. T.unpack (apiTT ^. apiModuleName)
+
       let uat =
             appendInfixT (TH.mkName "/") $
               cT' (screamingSnake endpointPrefix <> "_" <> screamingSnake folderName)
-                NE.:| [cT' (screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ mkUserActionTypeName apiTT]
+                NE.:| [cT' (apiTreeModule #. screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ apiTyposModule #. mkUserActionTypeName apiTT]
       Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ uat
     _ -> Nothing -- auth already added in common folder
   Just NoAuth -> Nothing
