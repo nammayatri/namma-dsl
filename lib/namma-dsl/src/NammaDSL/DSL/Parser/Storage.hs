@@ -499,7 +499,7 @@ sqlAlterAddPrimaryKeyParser dbName = do
   $(string " ADD PRIMARY KEY ( ")
   keys <- many $ notFollowedBy anyChar $(string ";")
   $(string ");\n") <|> $(string ");")
-  let snakeKeys = map (snakeCaseToCamelCase . T.unpack) (T.split (== ',') . T.pack $ keys)
+  let snakeKeys = map (snakeCaseToCamelCase . removeQuoteWrap . T.unpack . T.strip) (T.split (== ',') . T.pack $ DT.traceShowId $ keys)
   case snakeKeys of
     (x : xs) -> pure ([x], xs)
     [] -> pure ([], [])
@@ -713,7 +713,7 @@ sqlCleanedLineParser line
     parseAddPrimaryKey :: PS.Parser SQL_MANIPULATION
     parseAddPrimaryKey = do
       rawPks <- PS.string "ADD" >> PS.spaces >> PS.string "PRIMARY" >> PS.spaces >> PS.string "KEY" >> PS.spaces >> PS.string "(" >> PS.manyTill PS.anyChar (PS.string ")")
-      let pks = map L.trim $ L.split (== ',') rawPks
+      let pks = map (removeQuoteWrap . L.trim) $ L.split (== ',') rawPks
       return $ SQL_ALTER $ ADD_PRIMARY_KEYS pks
 
 migrationFileParserLineByLine :: [(String, String)] -> String -> String -> MigrationFile

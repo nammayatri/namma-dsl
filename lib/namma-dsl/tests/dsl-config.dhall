@@ -1,5 +1,5 @@
 let outputPrefix =
-      "/Users/anirbandas/work/nWork/namma-dsl/lib/namma-dsl/tests/src-read-only/"
+      "/Users/anirbandas/work/nWork/namma-dsl-main/lib/namma-dsl/tests/src-read-only/"
 
 let sqlOutputPaths =
       [ { _1 = outputPrefix ++ "/migrations", _2 = "atlas_app" } ]
@@ -18,6 +18,7 @@ let outputPath =
       , _servantApiDashboard = outputPrefix ++ "dashboard/Dashboard"
       , _sql = sqlOutputPaths
       , _purescriptFrontend = ""
+      , _domainHandlerDashboard = ""
       }
 
 let GeneratorType =
@@ -32,6 +33,7 @@ let GeneratorType =
       | DOMAIN_TYPE
       | SQL
       | PURE_SCRIPT_FRONTEND
+      | DOMAIN_HANDLER_DASHBOARD
       >
 
 let ImportType = < SIMPLE | QUALIFIED >
@@ -213,4 +215,6 @@ in  { _output = outputPath
       ]
     , _apiKind = ApiKind.DASHBOARD
     , _clientFunction = None Text
+    , _endpointPrefix = None Text
+    , _folderName = None Text
     }

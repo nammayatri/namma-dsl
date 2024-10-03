@@ -27,7 +27,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.70"
+version = "1.0.72"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -215,6 +215,7 @@ mkSQLFile appConfigs _storageRead tableDefs = do
         mapM_
           ( \(filePath', database') -> do
               mbOldMigrationFile <- getOldSqlFile sqlMapper database' $ filePath' </> filename
+              --print mbOldMigrationFile
               let contents = generateSQL database' mbOldMigrationFile t
               case contents of
                 Right content -> unless (null content) $ writeToFile filePath' filename content

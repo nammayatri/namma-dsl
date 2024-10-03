@@ -155,10 +155,6 @@ addColumnSQL hasOldMigration database tableName beamFields = do
         beamFields
   return (intercalate "\n" mappedAddColStmts)
   where
-    sqlKeywords = ["group", "order", "inner", "left", "right", "full", "union", "insert", "values", "update", "set", "delete", "create", "alter", "drop", "truncate", "index", "constraint", "primary", "foreign", "default", "not", "distinct", "like", "between", "in", "exists", "case", "then", "else", "end", "null", "is", "count", "avg", "sum", "max", "min", "any", "all", "as"]
-    wrapWithQuotes columnName
-      | columnName `elem` sqlKeywords = "\"" ++ columnName ++ "\""
-      | otherwise = columnName
     generateAlterColumnSQL :: Database -> String -> String -> BeamField -> Either SQL_ERROR String
     generateAlterColumnSQL database' fieldName_ sqlType_ beamField =
       if hasOldMigration && NotNull `elem` bConstraints beamField
@@ -172,7 +168,7 @@ addColumnSQL hasOldMigration database tableName beamFields = do
 
 addKeySQL :: Database -> TableDef -> String
 addKeySQL database tableDef =
-  let keys = map quietSnake $ primaryKey tableDef
+  let keys = map (wrapWithQuotes . quietSnake) $ primaryKey tableDef
    in ("ALTER TABLE " <> database <> ".") ++ tableNameSql tableDef ++ " ADD PRIMARY KEY ( "
         ++ intercalate ", " keys
         ++ ");"
@@ -183,3 +179,10 @@ addKeySQL database tableDef =
 constraintToSQL :: FieldConstraint -> Maybe String
 constraintToSQL NotNull = Just "NOT NULL"
 constraintToSQL _ = Nothing
+
+wrapWithQuotes :: String -> String
+wrapWithQuotes columnName
+  | columnName `elem` sqlKeywords = "\"" ++ columnName ++ "\""
+  | otherwise = columnName
+  where
+    sqlKeywords = ["group", "order", "inner", "left", "right", "full", "union", "insert", "values", "update", "set", "delete", "create", "alter", "drop", "truncate", "index", "constraint", "primary", "foreign", "default", "not", "distinct", "like", "between", "in", "exists", "case", "then", "else", "end", "null", "is", "count", "avg", "sum", "max", "min", "any", "all", "as"]
