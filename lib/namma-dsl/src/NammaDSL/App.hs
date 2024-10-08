@@ -239,7 +239,7 @@ mkApiSQLFile appConfigs apiRead apiDef = do
   when (appConfigs ^. apiKind == DASHBOARD) $ do
     let folderName' = fromMaybe (error "Folder name required for api migrations") $ apiFolderName apiRead
     let fileName' = "API_" <> folderName' <> "_" <> T.unpack (apiDef ^. moduleName) ++ ".sql"
-    let localFileName = "LOCAL_" <> fileName'
+    let localFileName = "Local_" <> fileName'
     let filePathsAndDatabase =
           concat $
             (appConfigs ^. output . sql) <&> \(filePath, database) -> do

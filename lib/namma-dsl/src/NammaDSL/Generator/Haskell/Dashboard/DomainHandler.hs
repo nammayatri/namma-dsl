@@ -75,6 +75,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
               Just (DashboardAuth _) -> False
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
+              Just (ApiAuthV2 {}) -> False
               _ -> True
         )
         (map _authType $ _apis input)
