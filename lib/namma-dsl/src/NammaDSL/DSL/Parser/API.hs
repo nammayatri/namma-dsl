@@ -28,7 +28,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import NammaDSL.AccessorTH
-import NammaDSL.Config (ApiKind)
+import NammaDSL.Config (ApiKind, ApiMigration (..))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Utils (valueToString)

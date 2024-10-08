@@ -6,6 +6,7 @@ import Control.Lens ((.~), (^.))
 import Control.Monad (unless, when)
 import Control.Monad.Extra (whenJust)
 import Data.Function ((&))
+import Data.Functor ((<&>))
 import Data.List (isInfixOf)
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
@@ -73,7 +74,8 @@ runApiGenerator configPath yamlPath = do
             apiClientFunction = config ^. clientFunction,
             apiReadKind = config ^. apiKind,
             apiEndpointPrefix = config ^. endpointPrefix,
-            apiFolderName = config ^. folderName
+            apiFolderName = config ^. folderName,
+            apiMigrationParams = config ^. migrationParams
           }
   apiDef <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead apiDef
@@ -104,7 +106,8 @@ runApiTreeGenerator configPath specModules = do
             apiClientFunction = config ^. clientFunction,
             apiReadKind = config ^. apiKind,
             apiEndpointPrefix = config ^. endpointPrefix,
-            apiFolderName = config ^. folderName
+            apiFolderName = config ^. folderName,
+            apiMigrationParams = config ^. migrationParams
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_
@@ -224,21 +227,35 @@ mkSQLFile appConfigs _storageRead tableDefs = do
     )
     tableDefs
 
+data FilePathAndDatabase = FilePathAndDatabase
+  { filePath :: FilePath,
+    database :: String,
+    fileName :: FilePath,
+    isLocal :: Bool
+  }
+
 mkApiSQLFile :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiSQLFile appConfigs apiRead apiDef = do
   when (appConfigs ^. apiKind == DASHBOARD) $ do
-    let filePathAndDatabase = appConfigs ^. output . sql
     let folderName' = fromMaybe (error "Folder name required for api migrations") $ apiFolderName apiRead
-    let filename = "API_" <> folderName' <> "_" <> T.unpack (apiDef ^. moduleName) ++ ".sql"
+    let fileName' = "API_" <> folderName' <> "_" <> T.unpack (apiDef ^. moduleName) ++ ".sql"
+    let localFileName = "LOCAL_" <> fileName'
+    let filePathsAndDatabase =
+          concat $
+            (appConfigs ^. output . sql) <&> \(filePath, database) -> do
+              [ FilePathAndDatabase {filePath, database, fileName = fileName', isLocal = False},
+                FilePathAndDatabase {filePath, database, fileName = localFileName, isLocal = True}
+                ]
+
     mapM_
-      ( \(filePath', database') -> do
-          mbOldMigrationFile <- getOldApiSqlFile $ filePath' </> filename
-          let contents = generateApiSQL database' mbOldMigrationFile apiRead apiDef
+      ( \FilePathAndDatabase {..} -> do
+          mbOldMigrationFile <- getOldApiSqlFile $ filePath </> fileName
+          let contents = generateApiSQL database mbOldMigrationFile isLocal apiRead apiDef
           case contents of
-            Right content -> unless (null content) $ writeToFile filePath' filename content
+            Right content -> unless (null content) $ writeToFile filePath fileName content
             Left err -> error err
       )
-      filePathAndDatabase
+      filePathsAndDatabase
 
 mkServantAPI :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkServantAPI appConfigs apiRead apiDef = do

@@ -5,6 +5,7 @@
 module NammaDSL.Config where
 
 import Control.Lens
+import qualified Data.Text as T
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
@@ -89,11 +90,18 @@ data AppConfigs = AppConfigs
     _apiKind :: ApiKind,
     _clientFunction :: Maybe String,
     _endpointPrefix :: Maybe String,
-    _folderName :: Maybe String
+    _folderName :: Maybe String,
+    _migrationParams :: [ApiMigration]
   }
   deriving (Generic, Show, FromDhall)
 
 data ApiKind = UI | DASHBOARD
   deriving (Generic, Show, FromDhall, Eq)
+
+data ApiMigration = ApiMigration
+  { _migrationName :: T.Text, -- FIXME String
+    _migrationParam :: Maybe T.Text -- in general it can be JSON Value, for now String and Null supported
+  }
+  deriving (Generic, Show, FromDhall)
 
 $(makeLenses ''AppConfigs)
