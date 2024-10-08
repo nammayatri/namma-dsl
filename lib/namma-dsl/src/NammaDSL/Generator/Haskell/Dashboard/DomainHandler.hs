@@ -174,6 +174,7 @@ handlerFunctionDef clientFuncName apiT = do
                       ~* generateHandlerParam apiUnits "driverId"
                       ~* generateHandlerParam apiUnits "rideId"
                       ~* generateReqParam apiUnits
+                    -- TODO implement response trnsaction storing
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
 
             transactionWrapper $

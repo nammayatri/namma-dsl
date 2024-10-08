@@ -106,7 +106,8 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just (TokenAuth _) -> Just $ cT "TokenAuth"
   Just (SafetyWebhookAuth dashboardAuthType) -> Just $ cT "SafetyWebhookAuth" ~~ cT' (show dashboardAuthType)
   Just (DashboardAuth dashboardAuthType) -> Just $ cT "DashboardAuth" ~~ cT' (show dashboardAuthType)
-  Just (ApiAuth sn ae _uat) -> case generationType of
+  Just (ApiAuth _ _ _) -> error "ApiAuth is deprecated, use ApiAuthV2"
+  Just (ApiAuthV2 sn) -> case generationType of
     SERVANT_API_DASHBOARD -> do
       -- TODO userActionType and apiEntity from spec should be deprecated
       let endpointPrefix = fromMaybe (error "Endpoint prefix required for dashboard api auth generation") $ apiEndpointPrefix apiRead
@@ -119,7 +120,7 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
             appendInfixT (TH.mkName "/") $
               cT' (screamingSnake endpointPrefix <> "_" <> screamingSnake folderName)
                 NE.:| [cT' (apiTreeModule #. screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ apiTyposModule #. mkUserActionTypeName apiTT]
-      Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ uat
+      Just $ cT "ApiAuthV2" ~~ cT' (show sn) ~~ uat
     _ -> Nothing -- auth already added in common folder
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"

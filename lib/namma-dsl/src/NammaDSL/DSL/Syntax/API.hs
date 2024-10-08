@@ -33,6 +33,7 @@ data AuthType
   | SafetyWebhookAuth DashboardAuthType
   | DashboardAuth DashboardAuthType
   | ApiAuth ServerName ApiEntity UserActionType
+  | ApiAuthV2 ServerName
   deriving (Show)
 
 newtype ServerName = ServerName {getServerName :: String}
