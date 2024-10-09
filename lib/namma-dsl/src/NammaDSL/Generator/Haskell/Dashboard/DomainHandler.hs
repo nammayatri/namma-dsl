@@ -75,6 +75,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
               Just (DashboardAuth _) -> False
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
+              Just (ApiAuthV2 {}) -> False
               _ -> True
         )
         (map _authType $ _apis input)
@@ -136,10 +137,10 @@ mkCodeBodyDomainHandlerDashboard apiRead input = do
   let clientFuncName = getClientFunctionName apiRead
   let allApis = input ^. apis
   interpreter input $ do
-    forM_ allApis $ handlerFunctionDef apiRead clientFuncName
+    forM_ allApis $ handlerFunctionDef clientFuncName
 
-handlerFunctionDef :: ApiRead -> String -> ApiTT -> Writer CodeUnit
-handlerFunctionDef apiRead clientFuncName apiT = do
+handlerFunctionDef :: String -> ApiTT -> Writer CodeUnit
+handlerFunctionDef clientFuncName apiT = do
   input <- ask
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
@@ -166,19 +167,15 @@ handlerFunctionDef apiRead clientFuncName apiT = do
             let transactionWrapper clientCall = case apiT ^. apiType of
                   GET -> clientCall
                   _ -> do
-                    let endpointPrefix' = fromMaybe (error "endpointPrefix required for dashboard api generation") $ apiEndpointPrefix apiRead
-                    let folderName' = fromMaybe (error "folderName required for dashboard api generation") $ apiFolderName apiRead
-                    let apiFolderName' = "Domain.Types.Transaction" #. endpointPrefix' <> folderName' <> "API"
-                    let apiTreeName' = apiTypesImportPrefix apiRead #. T.unpack moduleName' <> "API"
-                    let endpointName' = apiTypesImportPrefix apiRead #. T.unpack moduleName' #. Common.mkEndpointName apiT
                     vP "transaction"
                       <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (cE apiFolderName' ~* (cE apiTreeName' ~* cE endpointName'))
+                      ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
                       ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits "driverId"
                       ~* generateHandlerParam apiUnits "rideId"
                       ~* generateReqParam apiUnits
+                    -- TODO implement response trnsaction storing
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
 
             transactionWrapper $
