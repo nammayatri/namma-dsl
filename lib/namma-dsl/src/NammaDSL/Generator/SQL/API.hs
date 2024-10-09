@@ -160,7 +160,7 @@ generateUserActionTypeMigration apiRead apiTT migrationKey = do
       <> ".access_matrix (id, role_id, api_entity, user_access_type, user_action_type) "
       <> "( SELECT "
       <> T.unpack (schema migrationKey)
-      <> ".uuid_generate_v4(), T1.role_id, null, 'USER_FULL_ACCESS', '"
+      <> ".uuid_generate_v4(), T1.role_id, 'DSL', 'USER_FULL_ACCESS', '"
       <> userActionTypeV2
       <> "' FROM "
       <> T.unpack (schema migrationKey)
@@ -186,6 +186,6 @@ generatelocalAccessForRoleIdMigration apiRead apiTT migrationKey = do
       <> T.unpack (schema migrationKey)
       <> ".uuid_generate_v4(), '"
       <> T.unpack roleId
-      <> "', null, 'USER_FULL_ACCESS', '"
+      <> "', 'DSL', 'USER_FULL_ACCESS', '"
       <> userActionTypeV2
-      <> "' );"
+      <> "' ) ON CONFLICT DO NOTHING;"
