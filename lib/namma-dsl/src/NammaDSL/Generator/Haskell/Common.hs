@@ -116,13 +116,13 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
       let folderName = fromMaybe (error "Folder name required for dashboard api auth generation") $ apiFolderName apiRead
       -- TODO use short synonyms
       let apiTreeModule = apiTypesImportPrefix apiRead
-      let apiTyposModule = apiTypesImportPrefix apiRead #. T.unpack (apiTT ^. apiModuleName)
+      let apiTypesModule = apiTypesImportPrefix apiRead #. T.unpack (apiTT ^. apiModuleName)
 
       let uat =
             appendInfixT (TH.mkName "/") $
               cT' (screamingSnake endpointPrefix <> "_" <> screamingSnake folderName)
-                NE.:| [cT' (apiTreeModule #. screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ apiTyposModule #. mkUserActionTypeName apiTT]
-      Just $ cT "ApiAuthV2" ~~ cT' (show sn) ~~ uat
+                NE.:| [cT' (apiTreeModule #. screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ apiTypesModule #. mkUserActionTypeName apiTT]
+      Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' "DSL" ~~ uat
     _ -> Nothing -- auth already added in common folder
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
