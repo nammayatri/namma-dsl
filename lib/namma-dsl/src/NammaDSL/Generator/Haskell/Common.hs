@@ -128,13 +128,6 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
 
--- generateApiAuth :: ApiRead -> ApiTT -> Q r TH.Type
--- generateApiAuth apiRead apiT (ApiAuth sn ae _uat)
---         -- TODO userActionType and apiEntity from spec should be deprecated
---       let uat = appendInfixT (TH.mkName "/") $
---             error "TODO"
---       Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ cT' at
-
 type IsHelperApi = Bool
 
 apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
