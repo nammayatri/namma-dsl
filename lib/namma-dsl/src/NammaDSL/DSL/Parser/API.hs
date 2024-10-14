@@ -28,7 +28,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 import NammaDSL.AccessorTH
-import NammaDSL.Config (ApiKind)
+import NammaDSL.Config (ApiKind, ApiMigration (..))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.Utils (valueToString)
@@ -202,7 +202,7 @@ apiParser' :: ApiRead -> FilePath -> IO Apis
 apiParser' apiRead filepath = do
   contents <- BS.readFile filepath
   case Yaml.decodeEither' contents of
-    Left _ -> error "Not a Valid Yaml"
+    Left _ -> error $ "Not a Valid Yaml: " <> filepath
     Right yml -> do
       let extraParseInfo = ExtraParseInfo yml []
           apiState = ApiState def extraParseInfo
@@ -336,7 +336,8 @@ getAuthType = \case
   authType -> do
     case T.words authType of
       ["ApiAuth", sn, ae, uat] -> ApiAuth (ServerName $ T.unpack sn) (ApiEntity $ T.unpack ae) (UserActionType $ T.unpack uat)
-      _ -> error "Not a valid auth type"
+      ["ApiAuthV2"] -> ApiAuthV2
+      _ -> error $ "Not a valid auth type: " <> T.unpack authType
 
 getApiType :: Text -> ApiType
 getApiType = \case
