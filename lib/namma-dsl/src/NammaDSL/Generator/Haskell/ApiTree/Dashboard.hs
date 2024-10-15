@@ -3,6 +3,7 @@ module NammaDSL.Generator.Haskell.ApiTree.Dashboard (generateAPITreeDashboard) w
 import Control.Monad (when)
 import Control.Monad.Reader (ask)
 import Data.Functor ((<&>))
+import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
 import NammaDSL.Config (ApiKind (..), DefaultImports (..))
@@ -39,8 +40,9 @@ generateAPITreeDashboard (DefaultImports qualifiedImp simpleImp _packageImports 
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      ((apiServantDashboardModulePrefix <>) <$> specModules input)
-        <> qualifiedImp
+      nub $
+        ((apiServantDashboardModulePrefix <>) <$> specModules input)
+          <> qualifiedImp
 
 mkCodeBody :: ApiRead -> ApiTreeM ()
 mkCodeBody apiRead = do

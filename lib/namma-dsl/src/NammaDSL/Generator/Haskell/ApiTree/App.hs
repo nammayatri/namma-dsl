@@ -3,6 +3,7 @@ module NammaDSL.Generator.Haskell.ApiTree.App (generateAPITree) where
 import Control.Monad (when)
 import Control.Monad.Reader (ask)
 import Data.Functor ((<&>))
+import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
 import NammaDSL.Config (ApiKind (..), DefaultImports (..))
@@ -39,8 +40,9 @@ generateAPITree (DefaultImports qualifiedImp simpleImp _packageImports _) apiRea
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      ((apiServantModulePrefix <>) <$> specModules input)
-        <> qualifiedImp
+      nub $
+        ((apiServantModulePrefix <>) <$> specModules input)
+          <> qualifiedImp
 
 mkCodeBody :: ApiRead -> ApiTreeM ()
 mkCodeBody apiRead = do

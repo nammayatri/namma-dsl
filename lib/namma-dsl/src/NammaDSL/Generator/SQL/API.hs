@@ -20,12 +20,6 @@ import Prelude
 generateApiSQL :: Database -> Maybe MigrationFile -> Bool -> ApiRead -> Apis -> Either SQL_ERROR String
 generateApiSQL database mbOldApiMigrationFile isLocal apiRead input = do
   migrationUnits <- forM (input ^. apis) $ \apiTT -> do
-    -- TODO remove this tmp check
-    case find (\apiMigrate' -> apiMigrate' ^. migrationName == "userActionType") (apiTT ^. apiMigrate) of
-      Nothing -> do
-        endpointV3 <- generateEndpointV3 apiRead apiTT
-        Left $ "userActionType is mandatory: " <> endpointV3
-      Just _ -> pure ()
     let apiTTWithDefaultMigrations =
           apiTT & apiMigrate %~ \migrationParams -> do
             let migrationNames = migrationParams <&> (^. migrationName)
@@ -87,14 +81,6 @@ data SupportedMigration = SupportedMigration
     generate :: ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR String
   }
 
--- supportedMigrations :: [(T.Text, ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR String)]
--- supportedMigrations =
---   [ ("endpoint", generateEndpointMigration),
---     ("endpointV2", generateEndpointV2Migration),
---     ("userActionType", generateEndpointV2Migration),
---     ("localAccessForRoleId", generateEndpointV2Migration)
---   ]
-
 allSupportedMigrations :: [SupportedMigration]
 allSupportedMigrations =
   [ SupportedMigration {name = "endpoint", isLocal = False, generate = generateEndpointMigration},
@@ -139,11 +125,7 @@ generateEndpointV2 apiTT = do
 
 generateEndpointV3 :: ApiRead -> ApiTT -> Either SQL_ERROR String
 generateEndpointV3 apiRead apiTT = do
-  endpointPrefix <- maybe (Left "Endpoint prefix required for 'endpoint' migration") pure $ apiEndpointPrefix apiRead
-  folderName <- maybe (Left "Folder name required for 'endpoint' migration") pure $ apiFolderName apiRead
-  let folderUserActionType = Common.screamingSnake endpointPrefix <> "_" <> Common.screamingSnake folderName
-  let moduleUserActionType = Common.screamingSnake $ T.unpack (apiTT ^. apiModuleName)
-  let endpointUserActionType = Common.screamingSnake $ T.unpack (Common.mkApiName apiTT)
+  (folderUserActionType, moduleUserActionType, endpointUserActionType) <- Common.mkFullUserActionType apiRead apiTT
   pure $ folderUserActionType <> "/" <> moduleUserActionType <> "/" <> endpointUserActionType
 
 generateUserActionTypeMigration :: ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR String

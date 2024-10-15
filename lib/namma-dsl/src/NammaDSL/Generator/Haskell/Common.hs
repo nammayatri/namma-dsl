@@ -112,17 +112,14 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just ApiAuthV2 -> case generationType of
     SERVANT_API_DASHBOARD -> do
       let sn = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead
-      -- TODO userActionType and apiEntity from spec should be deprecated
-      let endpointPrefix = fromMaybe (error "Endpoint prefix required for dashboard api auth generation") $ apiEndpointPrefix apiRead
-      let folderName = fromMaybe (error "Folder name required for dashboard api auth generation") $ apiFolderName apiRead
       -- TODO use short synonyms
       let apiTreeModule = apiTypesImportPrefix apiRead
       let apiTypesModule = apiTypesImportPrefix apiRead #. T.unpack (apiTT ^. apiModuleName)
-
+      let (folderUserActionType, moduleUserActionType, endpointUserActionType) = either error id $ mkFullUserActionType apiRead apiTT
       let uat =
             appendInfixT (TH.mkName "/") $
-              cT' (screamingSnake endpointPrefix <> "_" <> screamingSnake folderName)
-                NE.:| [cT' (apiTreeModule #. screamingSnake (T.unpack $ apiTT ^. apiModuleName)), cT' $ apiTypesModule #. mkUserActionTypeName apiTT]
+              cT' (folderUserActionType)
+                NE.:| [cT' (apiTreeModule #. moduleUserActionType), cT' $ apiTypesModule #. endpointUserActionType]
       Just $ cT "ApiAuth" ~~ cT' sn ~~ cT' "DSL" ~~ uat
     _ -> Nothing -- auth already added in common folder
   Just NoAuth -> Nothing
@@ -319,3 +316,12 @@ mkUserActionTypeName = screamingSnake . T.unpack . mkApiName
 
 screamingSnake :: String -> String
 screamingSnake = map Char.toUpper . quietSnake
+
+mkFullUserActionType :: ApiRead -> ApiTT -> Either String (String, String, String)
+mkFullUserActionType apiRead apiTT = do
+  endpointPrefix <- maybe (Left "Endpoint prefix required for dashboard api generation") pure $ apiEndpointPrefix apiRead
+  folderName <- maybe (Left "Folder name required for dashboard api generation") pure $ apiFolderName apiRead
+  let folderUserActionType = screamingSnake endpointPrefix <> "_" <> screamingSnake folderName
+  let moduleUserActionType = screamingSnake $ T.unpack (apiTT ^. apiModuleName)
+  let endpointUserActionType = mkUserActionTypeName apiTT
+  pure (folderUserActionType, moduleUserActionType, endpointUserActionType)
