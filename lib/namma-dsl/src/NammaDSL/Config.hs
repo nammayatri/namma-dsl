@@ -5,6 +5,7 @@
 module NammaDSL.Config where
 
 import Control.Lens
+import qualified Data.Text as T
 import Dhall (FromDhall)
 import GHC.Generics
 import System.FilePath
@@ -13,7 +14,10 @@ import Prelude
 data GenerationType
   = SERVANT_API
   | SERVANT_API_DASHBOARD
-  | SERVANT_API_TREE
+  | API_TREE
+  | API_TREE_DASHBOARD
+  | API_TREE_COMMON
+  | API_TREE_CLIENT
   | API_TYPES
   | DOMAIN_HANDLER
   | DOMAIN_HANDLER_DASHBOARD
@@ -46,6 +50,7 @@ data OutputPath = OutputPath
     _domainType :: FilePath,
     _servantApi :: FilePath,
     _servantApiDashboard :: FilePath,
+    _servantApiClient :: FilePath,
     _sql :: [(FilePath, String)],
     _purescriptFrontend :: FilePath
   }
@@ -87,13 +92,20 @@ data AppConfigs = AppConfigs
     _storageConfig :: StorageConfig,
     _generate :: [GenerationType],
     _apiKind :: ApiKind,
-    _clientFunction :: Maybe String,
+    _serverName :: Maybe String, -- required for dashboard client calls
     _endpointPrefix :: Maybe String,
-    _folderName :: Maybe String
+    _folderName :: Maybe String,
+    _migrationParams :: [ApiMigration]
   }
   deriving (Generic, Show, FromDhall)
 
 data ApiKind = UI | DASHBOARD
   deriving (Generic, Show, FromDhall, Eq)
+
+data ApiMigration = ApiMigration
+  { _migrationName :: T.Text, -- FIXME String
+    _migrationParam :: Maybe T.Text -- in general it can be JSON Value, for now String and Null supported
+  }
+  deriving (Generic, Show, FromDhall)
 
 $(makeLenses ''AppConfigs)

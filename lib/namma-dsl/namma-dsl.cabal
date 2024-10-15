@@ -35,6 +35,10 @@ library
       NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
       NammaDSL.Generator.Haskell
+      NammaDSL.Generator.Haskell.ApiTree.App
+      NammaDSL.Generator.Haskell.ApiTree.Client
+      NammaDSL.Generator.Haskell.ApiTree.Common
+      NammaDSL.Generator.Haskell.ApiTree.Dashboard
       NammaDSL.Generator.Haskell.ApiTypes
       NammaDSL.Generator.Haskell.BeamQueries
       NammaDSL.Generator.Haskell.BeamTable
@@ -45,7 +49,6 @@ library
       NammaDSL.Generator.Haskell.DomainHandler
       NammaDSL.Generator.Haskell.DomainType
       NammaDSL.Generator.Haskell.Servant
-      NammaDSL.Generator.Haskell.ServantTree
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
       NammaDSL.Generator.SQL
@@ -152,6 +155,10 @@ test-suite namma-dsl-tests
       NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
       NammaDSL.Generator.Haskell
+      NammaDSL.Generator.Haskell.ApiTree.App
+      NammaDSL.Generator.Haskell.ApiTree.Client
+      NammaDSL.Generator.Haskell.ApiTree.Common
+      NammaDSL.Generator.Haskell.ApiTree.Dashboard
       NammaDSL.Generator.Haskell.ApiTypes
       NammaDSL.Generator.Haskell.BeamQueries
       NammaDSL.Generator.Haskell.BeamTable
@@ -162,7 +169,6 @@ test-suite namma-dsl-tests
       NammaDSL.Generator.Haskell.DomainHandler
       NammaDSL.Generator.Haskell.DomainType
       NammaDSL.Generator.Haskell.Servant
-      NammaDSL.Generator.Haskell.ServantTree
       NammaDSL.Generator.Purs
       NammaDSL.Generator.Purs.API
       NammaDSL.Generator.SQL
