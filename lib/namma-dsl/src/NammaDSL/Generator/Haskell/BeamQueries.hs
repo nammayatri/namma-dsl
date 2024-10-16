@@ -387,7 +387,7 @@ intermediateTransformerCode itfs = do
             let transformerExp = vE (tfName tf)
             vP (outputVarName) <-- transformerExp
           PureT -> do
-            let transformerExp = TH.VarE $ TH.mkName (tfName tf)
+            let transformerExp = TH.vE (tfName tf)
             letStmt (mkNameT $ T.pack outputVarName) transformerExp
     )
 

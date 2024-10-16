@@ -358,9 +358,10 @@ appendT = foldl1 (~~)
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB
 
-letStmt :: TH.Name -> TH.Exp -> Writer r TH.Stmt
-letStmt vName rhsExp = do
+letStmt :: TH.Name -> Q r TH.Exp -> Writer r TH.Stmt
+letStmt vName rhsExpQ = do
   let valP = TH.VarP vName
+  rhsExp <- lift rhsExpQ
   tell [TH.LetS [TH.ValD valP (TH.NormalB rhsExp) []]]
 
 compE :: Writer r TH.Stmt -> Q r TH.Exp
