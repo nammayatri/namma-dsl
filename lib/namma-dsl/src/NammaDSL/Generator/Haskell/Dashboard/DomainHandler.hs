@@ -75,6 +75,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
               Just (ApiAuthV2 {}) -> False
+              Just NoAuth | apiReadKind apiRead == DASHBOARD -> False
               _ -> True
         )
         (map _authType $ _apis input)
@@ -140,6 +141,10 @@ mkCodeBodyDomainHandlerDashboard apiRead input = do
 handlerFunctionDef :: String -> String -> ApiTT -> Writer CodeUnit
 handlerFunctionDef serverName clientFuncName apiT = do
   input <- ask
+  useAuth <- case (apiT ^. authType) of
+    Just ApiAuthV2 {} -> pure True
+    Just NoAuth -> pure False
+    _ -> error "Please use ApiAuthV2, or NoAuth in case of auth not required for dashboard api"
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
       signatureUnits = mkApiSignatureUnits apiT
@@ -152,7 +157,7 @@ handlerFunctionDef serverName clientFuncName apiT = do
       TH.forallT [] [] $
         TH.appendArrow $ NE.fromList handlerTypes
     TH.funDW (TH.mkNameT functionName) $ do
-      let pats = vP "merchantShortId" : vP "opCity" : vP "apiTokenInfo" : generateParamsPat apiUnits
+      let pats = vP "merchantShortId" : vP "opCity" : [vP "apiTokenInfo" | useAuth] <> generateParamsPat apiUnits
       TH.clauseW pats $
         TH.normalB $
           TH.doEW $ do
@@ -161,9 +166,12 @@ handlerFunctionDef serverName clientFuncName apiT = do
                     Just paramText -> vE paramText
                     Nothing -> error "Did not found request for validation"
               TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
-            vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
+            if useAuth
+              then vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
+              else letStmt "checkedMerchantId" $ vE "skipMerchantCityAccessCheck" ~* vE "merchantShortId"
             let transactionWrapper clientCall = case apiT ^. apiType of
                   GET -> clientCall
+                  _ | not useAuth -> clientCall
                   _ -> do
                     vP "transaction"
                       <-- vE "SharedLogic.Transaction.buildTransaction"

@@ -46,7 +46,9 @@ apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
   Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> error "ApiAuth is deprecated, use ApiAuthV2"
   Just ApiAuthV2 {} -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
-  Just NoAuth -> []
+  Just NoAuth -> case apiT ^. apiTypeKind of
+    DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
+    UI -> []
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
   Just (TokenAuth tp) -> case tp of
     RIDER_TYPE -> pure $ tupleT 2 ~~ (_Maybe ~~ (_Id ~~ _Person)) ~~ (_Id ~~ _Merchant)
@@ -63,7 +65,9 @@ apiAuthTypeMapperServant generationType apiT = case _authType apiT of
     DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
-  Just NoAuth -> []
+  Just NoAuth -> case apiT ^. apiTypeKind of
+    DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
+    UI -> []
   Just (TokenAuth tp) -> case tp of
     RIDER_TYPE -> pure $ tupleT 2 ~~ (_Id ~~ _Person) ~~ (_Id ~~ _Merchant)
     PROVIDER_TYPE -> pure $ tupleT 3 ~~ (_Id ~~ _Person) ~~ (_Id ~~ _Merchant) ~~ (_Id ~~ _MerchantOperatingCity)
