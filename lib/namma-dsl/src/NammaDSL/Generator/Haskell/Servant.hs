@@ -78,6 +78,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
               Just (ApiAuthV2 {}) -> False
+              Just NoAuth | apiReadKind apiRead == DASHBOARD -> False
               _ -> True
         )
         (map _authType $ _apis input)
