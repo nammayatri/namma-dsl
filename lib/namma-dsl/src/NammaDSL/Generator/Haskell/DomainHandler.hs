@@ -53,7 +53,6 @@ generateDomainHandler (DefaultImports qualifiedImp simpleImp _packageImports _) 
             <> qualifiedImp
             <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
             <> ["Kernel.Utils.Validation" | ifValidationRequired]
-            <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
 
     ifProviderPlatform :: Bool
     ifProviderPlatform =
