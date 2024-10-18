@@ -37,15 +37,20 @@ import System.Directory (doesFileExist)
 import System.IO (readFile')
 import Prelude
 
+data ParserGeneratorType = API_TYPES_PARSER | OTHER_PARSER
+
 parseApis' :: ApiParserM ()
 parseApis' = do
   parseModule'
   parseApiPrefix'
   parseTypes'
   parseAllApis'
-  makeApiTTPartsQualified'
-  parseImports'
   parseExtraOperations'
+
+mkParsedTypesQualified' :: ParserGeneratorType -> ApiParserM ()
+mkParsedTypesQualified' generatorType = do
+  makeApiTTPartsQualified' generatorType
+  parseImports'
 
 parseModule' :: ApiParserM ()
 parseModule' = do
@@ -198,7 +203,7 @@ extractComplexTypeImports' = do
             )
             tps
 
-apiParser' :: ApiRead -> FilePath -> IO Apis
+apiParser' :: ApiRead -> FilePath -> IO (Apis, Apis)
 apiParser' apiRead filepath = do
   contents <- BS.readFile filepath
   case Yaml.decodeEither' contents of
@@ -206,12 +211,18 @@ apiParser' apiRead filepath = do
     Right yml -> do
       let extraParseInfo = ExtraParseInfo yml []
           apiState = ApiState def extraParseInfo
-      _apisRes <$> evalParser parseApis' apiRead apiState
+      notQualifiedApiRes <- evalParser parseApis' apiRead apiState
+      apiDef <- _apisRes <$> evalParser (mkParsedTypesQualified' OTHER_PARSER) apiRead notQualifiedApiRes
+      apiDefApiTypes <- _apisRes <$> evalParser (mkParsedTypesQualified' API_TYPES_PARSER) apiRead notQualifiedApiRes
+      pure (apiDef, apiDefApiTypes)
 
-makeApiTTPartsQualified' :: ApiParserM ()
-makeApiTTPartsQualified' = do
+makeApiTTPartsQualified' :: ParserGeneratorType -> ApiParserM ()
+makeApiTTPartsQualified' generatorType = do
   obj <- gets (^. extraParseInfo . yamlObj)
-  defaultImportModule <- asks apiTypesImportPrefix
+  -- Hack for remove qualified name of current module inside of types
+  defaultImportModule <- case generatorType of
+    OTHER_PARSER -> asks apiTypesImportPrefix
+    API_TYPES_PARSER -> pure ""
   defaultTypeImportMap <- asks apiDefaultTypeImportMapper
   moduleName <- gets (^. apisRes . moduleName)
   parsedTypeDataNames <- gets (^. extraParseInfo . parsedTypesDataNames)
