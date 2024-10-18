@@ -54,18 +54,18 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
 
     reexportModuleNm = apiTypesModulePrefix <> T.unpack (_moduleName input)
-    apiTypesModuleNm = apiTypesModulePrefix <> (if isDashboardGenerator then "Internal" else "") #. T.unpack (_moduleName input)
+    apiTypesModuleNm = apiTypesModulePrefix <> (if isDashboardGenerator then "Endpoints" else "") #. T.unpack (_moduleName input)
     extraApiTypesModuleNm = extraApiTypesModulePrefix <> T.unpack (_moduleName input)
     extraApiCommonTypesModuleNm = extraApiCommonTypesModulePrefix <> T.unpack (_moduleName input)
 
     reexportGeneratorInput :: GeneratorInput
     reexportGeneratorInput =
       GeneratorInput
-        { _ghcOptions = ["-Wwarn=unused-imports"],
+        { _ghcOptions = ["-Wno-unused-imports"],
           _extensions = [],
           _moduleNm = reexportModuleNm,
           _moduleExports = Just ["module ReExport"],
-          _simpleImports = (<> " as ReExport") <$> ([apiTypesModuleNm] <> [extraApiTypesModuleNm | isExtraCode] <> [extraApiCommonTypesModuleNm | isExtraCommonCode] <> ["Dashboard.Common"]),
+          _simpleImports = (<> " as ReExport") <$> ([apiTypesModuleNm] <> [extraApiTypesModuleNm | isExtraCode] <> [extraApiCommonTypesModuleNm | isExtraCommonCode]), -- Dashboard.Common sometimes caused conflicts, so removed from src-read-only
           _qualifiedImports = [],
           _packageImports,
           _codeBody = mempty
@@ -90,8 +90,8 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
         { _ghcOptions = ["-Wno-orphans", "-Wwarn=unused-imports"],
           _extensions = [],
           _moduleNm = extraApiTypesModuleNm,
-          _moduleExports = Nothing,
-          _simpleImports = [apiTypesModuleNm, "Dashboard.Common", "Kernel.Prelude"],
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = [apiTypesModuleNm, "Dashboard.Common as ReExport", "Kernel.Prelude"] <> [extraApiCommonTypesModuleNm | isExtraCommonCode],
           _qualifiedImports = [],
           _packageImports,
           _codeBody = mempty
@@ -103,8 +103,8 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
         { _ghcOptions = ["-Wwarn=unused-imports"],
           _extensions = [],
           _moduleNm = extraApiCommonTypesModuleNm,
-          _moduleExports = Nothing,
-          _simpleImports = ["Dashboard.Common", "Kernel.Prelude"],
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = ["Dashboard.Common as ReExport", "Kernel.Prelude"],
           _qualifiedImports = [],
           _packageImports,
           _codeBody = mempty

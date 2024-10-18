@@ -267,7 +267,7 @@ mkServantAPITree appConfigs apiRead apiTree = do
 mkApiTypes :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiTypes appConfigs apiRead apiDef = do
   let isDashboardGenerator = apiReadKind apiRead == DASHBOARD
-      filePath = appConfigs ^. output . apiRelatedTypes <> if isDashboardGenerator then "/Internal" else ""
+      filePath = appConfigs ^. output . apiRelatedTypes <> if isDashboardGenerator then "/Endpoints" else ""
       reexportFilePath = appConfigs ^. output . apiRelatedTypes
       extraFilePath = appConfigs ^. output . extraApiRelatedTypes
       extraCommonFilePath = appConfigs ^. output . extraApiRelatedCommonTypes
