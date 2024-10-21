@@ -27,7 +27,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.73"
+version = "1.0.74"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -65,6 +65,7 @@ runApiGenerator configPath yamlPath = do
         ApiRead
           { apiTypesImportPrefix = modulePrefix apiRelatedTypes,
             extraApiTypesImportPrefix = modulePrefix extraApiRelatedTypes,
+            extraApiCommonTypesImportPrefix = modulePrefix extraApiRelatedCommonTypes,
             apiServantImportPrefix = modulePrefix servantApi,
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
@@ -96,6 +97,7 @@ runApiTreeGenerator configPath specModules = do
         ApiRead
           { apiTypesImportPrefix = modulePrefix apiRelatedTypes,
             extraApiTypesImportPrefix = modulePrefix extraApiRelatedTypes,
+            extraApiCommonTypesImportPrefix = modulePrefix extraApiRelatedCommonTypes,
             apiServantImportPrefix = modulePrefix servantApi,
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
@@ -264,10 +266,22 @@ mkServantAPITree appConfigs apiRead apiTree = do
 
 mkApiTypes :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiTypes appConfigs apiRead apiDef = do
-  let filePath = appConfigs ^. output . apiRelatedTypes
+  let isDashboardGenerator = apiReadKind apiRead == DASHBOARD
+      filePath = appConfigs ^. output . apiRelatedTypes <> if isDashboardGenerator then "/Endpoints" else ""
+      reexportFilePath = appConfigs ^. output . apiRelatedTypes
+      extraFilePath = appConfigs ^. output . extraApiRelatedTypes
+      extraCommonFilePath = appConfigs ^. output . extraApiRelatedCommonTypes
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TYPES
-      generateApiTypes' = generateApiTypes defaultImportsFromConfig apiRead
-  when (isApiExtraTypesPresent apiDef || apiReadKind apiRead == DASHBOARD) $ writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateApiTypes' apiDef)
+      ApiTypesCode {..} = generateApiTypes defaultImportsFromConfig apiRead apiDef
+      fileName = T.unpack (_moduleName apiDef) ++ ".hs"
+  when (isApiExtraTypesPresent apiDef || apiReadKind apiRead == DASHBOARD) $ do
+    writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show apiTypesDefaultCode)
+  whenJust reexportApiTypesCode $
+    writeToFile reexportFilePath fileName . show
+  whenJust apiTypesExtraCode $
+    writeToFileIfNotExists extraFilePath fileName . show
+  whenJust apiCommonTypesExtraCode $
+    writeToFileIfNotExists extraCommonFilePath fileName . show
 
 mkDomainHandler :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkDomainHandler appConfigs apiRead apiDef = do

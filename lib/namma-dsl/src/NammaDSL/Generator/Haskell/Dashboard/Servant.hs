@@ -52,7 +52,6 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> when_ ifTransactionStore ["Dashboard.Common" #. T.unpack (input ^. moduleName), "Domain.Types.Transaction"]
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
-        <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
 
     allSimpleImports :: [String]
     allSimpleImports =

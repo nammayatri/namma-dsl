@@ -36,6 +36,7 @@ $(makeLenses ''InputPath)
 data OutputPath = OutputPath
   { _apiRelatedTypes :: FilePath,
     _extraApiRelatedTypes :: FilePath,
+    _extraApiRelatedCommonTypes :: FilePath,
     _beamQueries :: FilePath,
     _extraBeamQueries :: FilePath,
     _cachedQueries :: FilePath,

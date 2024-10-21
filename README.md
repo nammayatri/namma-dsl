@@ -967,7 +967,7 @@ findOnlyQuery id createdAt requestId something = do
 #### Extra Operations
 - This a part where we can define an array of operation that need to be done.
 - For now we have these operations:
-  - `EXTRA_QUERY_FILE` : This operation is used to make an extra Query file which can be edited by user. This can be uses if there is a complex query which user is not able to create using dsl query builder.
+  - `EXTRA_QUERY_FILE` : This operation is used to make an extra Query file which can be edited by user. This can be used if there is a complex query which user is not able to create using dsl query builder.
   Example:
     ```yaml
     extraOperations:
@@ -975,3 +975,5 @@ findOnlyQuery id createdAt requestId something = do
     ```
   - `EXTRA_DOMAIN_TYPE_FILE`: Used to create extra Domain Type file
   - `EXTRA_CACHED_QUERY_FILE`: Creates extra Cached Query File
+  - `EXTRA_API_TYPES_FILE`: Creates extra API Types File which can be edited by user. This can be used if user need to define a complex type or custom instance, which is not able to generate using dsl
+  - `EXTRA_API_COMMON_TYPES_FILE`: Creates extra API Common Types File which can be edited by user. Difference between this operation and previous one is that `EXTRA_API_COMMON_TYPES_FILE` does not import generated api types, but vise versa it can be imported by generated api types module

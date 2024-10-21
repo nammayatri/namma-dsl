@@ -1,4 +1,4 @@
-module NammaDSL.Generator.Haskell.ApiTypes (generateApiTypes) where
+module NammaDSL.Generator.Haskell.ApiTypes (generateApiTypes, ApiTypesCode (..)) where
 
 import Control.Lens ((^.))
 import Control.Monad (when)
@@ -27,25 +27,89 @@ type Writer w = TH.Writer Apis w
 
 -- type Q w = TH.Q Apis w
 
-generateApiTypes :: DefaultImports -> ApiRead -> Apis -> Code
-generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input = generateCode generatorInput
+-- Optional fields available only for dashbaord for now
+data ApiTypesCode = ApiTypesCode
+  { reexportApiTypesCode :: Maybe Code,
+    apiTypesDefaultCode :: Code,
+    apiTypesExtraCode :: Maybe Code,
+    apiCommonTypesExtraCode :: Maybe Code
+  }
+
+generateApiTypes :: DefaultImports -> ApiRead -> Apis -> ApiTypesCode
+generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
+  ApiTypesCode {reexportApiTypesCode, apiTypesDefaultCode, apiTypesExtraCode, apiCommonTypesExtraCode}
   where
+    isDashboardGenerator = apiReadKind apiRead == DASHBOARD
+    isReexportCode = isDashboardGenerator
+    isExtraCode = isDashboardGenerator && (EXTRA_API_TYPES_FILE `elem` (input ^. extraOperations))
+    isExtraCommonCode = isDashboardGenerator && (EXTRA_API_COMMON_TYPES_FILE `elem` (input ^. extraOperations))
+    reexportApiTypesCode = bool Nothing (Just $ generateCode reexportGeneratorInput) isReexportCode
+    apiTypesDefaultCode = generateCode generatorInput
+    apiTypesExtraCode = bool Nothing (Just $ generateCode extraFileGeneratorInput) isExtraCode
+    apiCommonTypesExtraCode = bool Nothing (Just $ generateCode extraCommonFileGeneratorInput) isExtraCommonCode
     apiTypesModulePrefix = apiTypesImportPrefix apiRead ++ "."
+    extraApiTypesModulePrefix = extraApiTypesImportPrefix apiRead ++ "."
+    extraApiCommonTypesModulePrefix = extraApiCommonTypesImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+
+    reexportModuleNm = apiTypesModulePrefix <> T.unpack (_moduleName input)
+    apiTypesModuleNm = apiTypesModulePrefix <> (if isDashboardGenerator then "Endpoints." else "") <> T.unpack (_moduleName input)
+    extraApiTypesModuleNm = extraApiTypesModulePrefix <> T.unpack (_moduleName input)
+    extraApiCommonTypesModuleNm = extraApiCommonTypesModulePrefix <> T.unpack (_moduleName input)
+
+    reexportGeneratorInput :: GeneratorInput
+    reexportGeneratorInput =
+      GeneratorInput
+        { _ghcOptions = ["-Wno-unused-imports"],
+          _extensions = [],
+          _moduleNm = reexportModuleNm,
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = (<> " as ReExport") <$> ([apiTypesModuleNm] <> [extraApiTypesModuleNm | isExtraCode] <> [extraApiCommonTypesModuleNm | isExtraCommonCode]), -- Dashboard.Common sometimes caused conflicts, so removed from src-read-only
+          _qualifiedImports = [],
+          _packageImports,
+          _codeBody = mempty
+        }
 
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
-        { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
+        { _ghcOptions = ["-Wno-unused-imports"], -- "-Wno-orphans",
           _extensions = [],
-          _moduleNm = apiTypesModulePrefix <> T.unpack (_moduleName input),
+          _moduleNm = apiTypesModuleNm,
           _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
         }
+
+    extraFileGeneratorInput :: GeneratorInput
+    extraFileGeneratorInput =
+      GeneratorInput
+        { _ghcOptions = ["-Wno-orphans", "-Wwarn=unused-imports"],
+          _extensions = [],
+          _moduleNm = extraApiTypesModuleNm,
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = [apiTypesModuleNm, "Dashboard.Common as ReExport", "Kernel.Prelude"] <> [extraApiCommonTypesModuleNm | isExtraCommonCode],
+          _qualifiedImports = [],
+          _packageImports,
+          _codeBody = mempty
+        }
+
+    extraCommonFileGeneratorInput :: GeneratorInput
+    extraCommonFileGeneratorInput =
+      GeneratorInput
+        { _ghcOptions = ["-Wwarn=unused-imports"],
+          _extensions = [],
+          _moduleNm = extraApiCommonTypesModuleNm,
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = ["Dashboard.Common as ReExport", "Kernel.Prelude"],
+          _qualifiedImports = [],
+          _packageImports,
+          _codeBody = mempty
+        }
+
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
     qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
 

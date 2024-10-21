@@ -58,7 +58,6 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> storeTransactionImports
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
-        <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
         <> [getClientModuleName clientFuncName]
         <> multipartImports
     allSimpleImports :: [String]
