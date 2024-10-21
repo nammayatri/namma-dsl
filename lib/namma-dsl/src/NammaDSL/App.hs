@@ -75,8 +75,8 @@ runApiGenerator configPath yamlPath = do
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName
           }
-  apiDef <- apiParser' apiRead yamlPath
-  let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead apiDef
+  (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
+  let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
   mapM_
     when'
     [ (SQL, mkApiSQLFile),
