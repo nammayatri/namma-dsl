@@ -122,7 +122,7 @@ getFieldRelationAndHaskellType str' = do
         _ -> False
 
 -- makeTypeQualified (Maybe Module name)
-makeTypeQualified :: [(String, String)] -> Maybe String -> Maybe [String] -> Maybe [String] -> String -> Object -> String -> String
+makeTypeQualified :: [(String, String)] -> Maybe String -> Maybe [String] -> Maybe [String] -> Maybe String -> Object -> String -> String
 makeTypeQualified defaultTypeImport moduleName excludedList dList defaultImportModule obj str' = concatMap replaceOrKeep (split (whenElt (`elem` typeDelimiter)) str) <> opt
   where
     (str, opt) = break (== '|') str'
@@ -134,8 +134,8 @@ makeTypeQualified defaultTypeImport moduleName excludedList dList defaultImportM
     replaceOrKeep :: String -> String
     replaceOrKeep word
       | '.' `elem` word || ',' `elem` word = word
-      | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = defaultImportModule ++ "." ++ fromJust moduleName ++ "." ++ word
-      | isJust dList && L.elem word (fromJust dList) = defaultImportModule ++ "." ++ word ++ "." ++ word
+      | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = maybe "" (++ ("." ++ fromJust moduleName ++ ".")) defaultImportModule ++ word
+      | isJust dList && L.elem word (fromJust dList) = maybe "" (++ ("." ++ word ++ ".")) defaultImportModule ++ word
       | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e", "s"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
 
 figureOutImports :: [String] -> [String]
