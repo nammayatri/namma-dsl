@@ -234,6 +234,8 @@ This tutorial provides a comprehensive guide to understanding and working with t
         - merchantOperatingCityId
         - merchantId
       ```
+  - `extraIndexes` : Any additional indexes
+  [See More](#generating-sql-indexes-or-unique-constraints)
   - `extraOperations` : Extra Operations [See More](#extra-operations)
 ---
 
@@ -964,6 +966,50 @@ findOnlyQuery id createdAt requestId something = do
     } deriving (Generic, B.Beamable)
   ```
 
+#### Generating SQL Indexes or Unique constraints
+- Toggle index generation by adding `GENERATE_INDEXES` to extraOperations section
+- Adding SecondaryKey constraint to a field will generate index for that field (Default case)
+  ```yaml
+    constraints:
+      domain: PrimaryKey
+      version: PrimaryKey
+      order: PrimaryKey|SecondaryKey
+  ```
+  Output:
+  ```sql
+  CREATE INDEX app_dynamic_logic_element_idx_order ON atlas_app.app_dynamic_logic_element USING btree ("order");
+  ```
+- If required to toggle off the above default case we can add `NO_DEFAULT_INDEXES` to extraOperations
+- To generate anything extra apart form the above cases we can use `extraIndexes` option:
+  Syntax -
+  ```yaml
+  extraIndexes:
+    - name: < Optional field >
+      columns: [field1, field2 .. ]
+      unique: <Optional Boolean field > Used for making unique constraint
+  ```
+  Examples 1:
+  ```yaml
+  extraIndexes:
+    - columns: [domain, version]
+  ```
+  Output
+  ```sql
+  CREATE INDEX app_dynamic_logic_element_idx_domain_version ON atlas_app.app_dynamic_logic_element USING btree (domain, version);
+  ```
+
+  Example 2:
+  ```yaml
+  extraIndexes:
+    - columns: [domain, version]
+      unique: true
+  ```
+  Output:
+  ```sql
+  ALTER TABLE atlas_app.app_dynamic_logic_element ADD CONSTRAINT app_dynamic_logic_element_unique_idx_domain_version UNIQUE (domain, version);
+  ```
+
+
 #### Extra Operations
 - This a part where we can define an array of operation that need to be done.
 - For now we have these operations:
@@ -975,3 +1021,6 @@ findOnlyQuery id createdAt requestId something = do
     ```
   - `EXTRA_DOMAIN_TYPE_FILE`: Used to create extra Domain Type file
   - `EXTRA_CACHED_QUERY_FILE`: Creates extra Cached Query File
+  - `GENERATE_INDEXES`: Toggle for generating indexes
+  - `NO_DEFAULT_INDEXES`: Toggle for stopping default index generations wrt secondary keys
+

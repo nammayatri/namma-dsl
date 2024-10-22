@@ -11,7 +11,7 @@ module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, r
 
 import Control.Lens.Combinators
 import Control.Lens.Operators
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
@@ -24,13 +24,15 @@ import qualified Data.ByteString.UTF8 as BSU
 import Data.Char (toUpper)
 import Data.Default
 import Data.Foldable (foldlM)
-import Data.List (find, foldl')
+import Data.List (find, foldl', nub)
 import qualified Data.List as L
 import qualified Data.List.Extra as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, fromMaybe, maybeToList)
+import Data.Set (Set)
+import qualified Data.Set as S
 import qualified Data.Text as T
 import Data.Tuple (swap)
 import qualified Data.Tuple.Extra as TE
@@ -42,7 +44,7 @@ import NammaDSL.AccessorTH
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Utils hiding (typeDelimiter)
-import Safe (headMay, lastMay)
+import Safe (headMay)
 import System.Directory (doesFileExist)
 import Text.Casing (quietSnake)
 import qualified Text.Parsec as PS
@@ -65,6 +67,54 @@ parseTableDef = do
   parsePrimaryAndSecondaryKeys
   parseRelationalTableNamesHaskell
   parseExtraOperations
+  parseExtraIndexes
+
+parseExtraIndexes :: StorageParserM ()
+parseExtraIndexes = do
+  obj <- gets (dataObject . extraParseInfo)
+  tableName <- gets (tableNameSql . tableDef)
+  isGenerationAllowed <- gets ((GENERATE_INDEXES `elem`) . extraOperations . tableDef)
+  isDefaultIndexingStopped <- gets ((NO_DEFAULT_INDEXES `elem`) . extraOperations . tableDef)
+  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf) . concatMap beamFields . fields . tableDef)
+  let defaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) defaultColForIndexing
+  let rawExtraIndexes = fromMaybe [] $ obj ^? ix acc_extraIndexes . _Array . to V.toList
+  parsedExtraIndexes <- mapM parseExtraIndex rawExtraIndexes
+  let finalIndex =
+        nub $
+          if isGenerationAllowed && not isDefaultIndexingStopped
+            then defaultIndexes <> parsedExtraIndexes
+            else
+              if isGenerationAllowed && isDefaultIndexingStopped
+                then parsedExtraIndexes
+                else mempty
+  modify $ \s -> s {tableDef = (tableDef s) {indexes = finalIndex}}
+
+mkIndexDef :: String -> [String] -> Bool -> Maybe String -> IndexDef
+mkIndexDef tableName cols isUnique name' = IndexDef name (S.fromList cols) isUnique
+  where
+    name = fromMaybe (L.intercalate "_" ([tableName] <> ["unique" | isUnique] <> ("idx" : map quietSnake cols))) name'
+
+parseExtraIndex :: Value -> StorageParserM IndexDef
+parseExtraIndex obj = do
+  fields <- gets (fields . tableDef)
+  tableName <- gets (tableNameSql . tableDef)
+  let bFields = concatMap beamFields fields
+      bFieldNames = map bFieldName bFields
+      indexDef = case obj of
+        String _ ->
+          let cols = [valueToString obj]
+           in mkIndexDef tableName cols False Nothing
+        Object _ ->
+          let cols = fromMaybe [] $ obj ^? ix acc_columns . _Array . to V.toList . to (map valueToString)
+              isUnique = fromMaybe False $ obj ^? ix acc_unique . _Bool
+              name' = obj ^? ix acc_name . _String
+           in mkIndexDef tableName cols isUnique name'
+        Array _ ->
+          let cols = fromMaybe [] $ obj ^? _Array . to V.toList . to (map valueToString)
+           in mkIndexDef tableName cols False Nothing
+        _ -> error "Invalid Index Definition"
+  unless (all (`elem` bFieldNames) (indexColumns indexDef)) $ throwError (InternalError $ "Invalid Column Name in Index. Please ensure beam side name is used " <> show (indexColumns indexDef))
+  pure indexDef
 
 parseDefaultQueryTypeConstraint :: StorageParserM ()
 parseDefaultQueryTypeConstraint = do
@@ -644,11 +694,34 @@ updateParser sqlTypeWrtType dbName = do
 sqlCleanedLineParser :: String -> SQL_MANIPULATION
 sqlCleanedLineParser line
   | "CREATE TABLE" `L.isPrefixOf` line = SQL_CREATE
+  | "CREATE INDEX" `L.isPrefixOf` line = case PS.parse parseCreateIndex "" line of
+    Right sqlManipulation -> sqlManipulation
+    Left errk -> error $ "Error Parsing SQL line : " <> line <> " Error : " <> show errk
   | "ALTER TABLE" `L.isPrefixOf` line = case PS.parse parseAlterTable "" line of
+    Right sqlManipulation -> sqlManipulation
+    Left errk -> error $ "Error Parsing SQL line : " <> line <> " Error : " <> show errk
+  | "DROP INDEX" `L.isPrefixOf` line = case PS.parse parseDropIndex "" line of
     Right sqlManipulation -> sqlManipulation
     Left errk -> error $ "Error Parsing SQL line : " <> line <> " Error : " <> show errk
   | otherwise = error "Invalid SQL line. Is any of the sql query line not generated ?"
   where
+    parseDropIndex :: PS.Parser SQL_MANIPULATION
+    parseDropIndex = do
+      PS.string "DROP INDEX" >> PS.spaces
+      indexName <- PS.manyTill PS.anyChar (PS.string ";")
+      return $ SQL_ALTER (DROP_CONSTRAINT indexName)
+    parseCreateIndex :: PS.Parser SQL_MANIPULATION
+    parseCreateIndex = do
+      PS.string "CREATE INDEX" >> PS.spaces
+      indexName <- PS.manyTill PS.anyChar PS.space
+      PS.spaces >> PS.string "ON" >> PS.spaces
+      _tableName <- PS.manyTill PS.anyChar PS.space
+      PS.spaces >> PS.string "USING" >> PS.spaces >> PS.string "btree" >> PS.spaces
+      PS.string "(" >> PS.spaces
+      rawColNames <- PS.manyTill PS.anyChar (PS.string ");")
+      let colNames = map (snakeCaseToCamelCase . removeQuoteWrap . L.trim) $ L.split (== ',') rawColNames
+      return $ SQL_ALTER (ADD_CONSTRAINT indexName colNames False)
+
     parseAlterTable :: PS.Parser SQL_MANIPULATION
     parseAlterTable =
       PS.string "ALTER" >> PS.spaces >> PS.string "TABLE" >> PS.spaces >> PS.manyTill PS.anyChar PS.space >> PS.spaces
@@ -657,7 +730,16 @@ sqlCleanedLineParser line
                <||> PS.try parseAlterColumn
                <||> PS.try parseDropConstraint
                <||> PS.try parseAddPrimaryKey
+               <||> PS.try parseAddUniqueIndex
            )
+
+    -- ALTER TABLE atlas_app.app_dynamic_logic_element ADD CONSTRAINT unique_idx_domain_version UNIQUE (domain, version);
+    parseAddUniqueIndex :: PS.Parser SQL_MANIPULATION
+    parseAddUniqueIndex = do
+      uniqueIdxName <- PS.string "ADD" >> PS.spaces >> PS.string "CONSTRAINT" >> PS.spaces >> PS.manyTill PS.anyChar PS.space
+      rawColNames <- PS.spaces >> PS.string "UNIQUE" >> PS.spaces >> PS.string "(" >> PS.manyTill PS.anyChar (PS.string ");")
+      let colNames = map (snakeCaseToCamelCase . removeQuoteWrap . L.trim) $ L.split (== ',') rawColNames
+      return $ SQL_ALTER (ADD_CONSTRAINT uniqueIdxName colNames True)
 
     parseAddColumn :: PS.Parser SQL_MANIPULATION
     parseAddColumn = do
@@ -708,7 +790,11 @@ sqlCleanedLineParser line
     parseSetNotNull = PS.string "SET" >> PS.spaces >> PS.string "NOT" >> PS.spaces >> PS.string "NULL" >> return SET_NOT_NULL
 
     parseDropConstraint :: PS.Parser SQL_MANIPULATION
-    parseDropConstraint = PS.string "DROP" >> PS.spaces >> PS.string "CONSTRAINT" >> return (SQL_ALTER DROP_CONSTRAINT_PKS)
+    parseDropConstraint = do
+      constaintName <- PS.string "DROP" >> PS.spaces >> PS.string "CONSTRAINT" >> PS.spaces >> PS.manyTill PS.anyChar (PS.string ";")
+      if "pkey" `L.isSuffixOf` constaintName
+        then return (SQL_ALTER DROP_CONSTRAINT_PKS)
+        else return (SQL_ALTER $ DROP_CONSTRAINT (L.trim constaintName))
 
     parseAddPrimaryKey :: PS.Parser SQL_MANIPULATION
     parseAddPrimaryKey = do
@@ -717,13 +803,35 @@ sqlCleanedLineParser line
       return $ SQL_ALTER $ ADD_PRIMARY_KEYS pks
 
 migrationFileParserLineByLine :: [(String, String)] -> String -> String -> MigrationFile
-migrationFileParserLineByLine _sqlTypeWrtType _dbName lastSqlFile = MigrationFile "" [fieldDeff] allPks [] lastSqlFile
+migrationFileParserLineByLine _sqlTypeWrtType _dbName lastSqlFile = MigrationFile "" [fieldDeff] allPks allSecKeys pastIndexes lastSqlFile
   where
     fieldDeff = def {beamFields = beamFieldsFromSQL}
     allPks = foldl (\acc beamField -> if PrimaryKey `elem` beamField.bConstraints then beamField.bFieldName : acc else acc) [] beamFieldsFromSQL
     beamFieldsFromSQL = M.elems $ foldl (\acc sqlManipulation -> sqlManipulationApply acc sqlManipulation) M.empty allSqlManipulations
+    (pastIndexes, allSecKeys) = checkIndexStatus allSqlManipulations
     allSqlManipulations = map sqlCleanedLineParser cleanSQLines
     cleanSQLines = filter (\x -> not $ null x || "---" `L.isPrefixOf` x) $ lines lastSqlFile
+
+checkIndexStatus :: [SQL_MANIPULATION] -> (Set IndexDef, [String])
+checkIndexStatus manipulations = (S.fromList allIndexes, allSecKeys)
+  where
+    allSecKeys = map (head . S.toList . indexColumns) $ filter (\indexDef -> (not $ indexUnique indexDef) && (S.size $ indexColumns indexDef) == 1) allIndexes
+    allIndexes =
+      M.elems $
+        if null manipulations
+          then M.empty
+          else
+            foldl'
+              ( \accIndex sqlManipulation -> case sqlManipulation of
+                  SQL_ALTER sqlAlter -> case sqlAlter of
+                    ADD_CONSTRAINT indexName colNames isUnique ->
+                      M.insert indexName (IndexDef indexName (S.fromList colNames) isUnique) accIndex
+                    DROP_CONSTRAINT keyName -> M.delete keyName accIndex
+                    _ -> accIndex
+                  _ -> accIndex
+              )
+              M.empty
+              manipulations
 
 sqlManipulationApply :: Map String BeamField -> SQL_MANIPULATION -> Map String BeamField
 sqlManipulationApply mp = \case
@@ -739,6 +847,7 @@ sqlAlterApply mp = \case
   ALTER_COLUMN colName action -> alterColumnApply mp colName action
   DROP_CONSTRAINT_PKS -> M.map (\bf -> bf {bConstraints = filter (/= PrimaryKey) bf.bConstraints}) mp
   ADD_PRIMARY_KEYS pks -> foldl (\acc pkField -> M.adjust (\bf -> bf {bConstraints = PrimaryKey : bf.bConstraints}) (snakeCaseToCamelCase pkField) acc) mp pks
+  _ -> mp
 
 alterColumnApply :: Map String BeamField -> String -> ALTER_COLUMN_ACTION -> Map String BeamField
 alterColumnApply mp colName = \case
@@ -747,81 +856,6 @@ alterColumnApply mp colName = \case
   SET_DEFAULT val -> M.adjust (\bf -> bf {bDefaultVal = Just val}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
   DROP_DEFAULT -> M.adjust (\bf -> bf {bDefaultVal = Nothing}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
   CHANGE_TYPE newType -> M.adjust (\bf -> bf {bSqlType = newType}) (snakeCaseToCamelCase $ removeQuoteWrap colName) mp
-
-migrationFileParser :: [(String, String)] -> String -> String -> Parser e MigrationFile
-migrationFileParser sqlTypeWrtType dbName lastSqlFile = do
-  !tableName <- sqlCreateParser dbName
-  fields' <- many (sqlAlterTableAddColumn dbName sqlTypeWrtType False)
-  keys <- (sqlAlterAddPrimaryKeyParser dbName) <|> return ([], [])
-  fieldUpdates' <-
-    concat
-      <$> many (updateParser sqlTypeWrtType dbName)
-  let !(columnUpdates, newFields) = second catMaybes . first catMaybes $ unzip fieldUpdates'
-  let !deletedFields = L.nub . map fst . filter ((== DropColumn) . snd) $ mapMaybe fieldUpdates columnUpdates
-  let !finalFieldsDeleted =
-        filter
-          ( \delField ->
-              foldl'
-                ( \res updF ->
-                    case updF of
-                      (Just sqlUpdate, Nothing) -> if (fst <$> fieldUpdates sqlUpdate) == Just delField then (snd <$> fieldUpdates sqlUpdate) == Just DropColumn else res
-                      (Nothing, Just newField) -> if (fieldName newField) /= delField then res else False
-                      _ -> res
-                )
-                True
-                fieldUpdates'
-          )
-          deletedFields
-  let !fields = filter (\field -> fieldName field `notElem` finalFieldsDeleted) $ fields' <> newFields
-  let (pk, sk) =
-        foldl'
-          ( \(pkAcc, skAcc) columnUpdate -> case keysInPrimaryKey columnUpdate of
-              (x : xs) -> ([x], xs)
-              [] -> (pkAcc, skAcc)
-          )
-          keys
-          columnUpdates
-  let !finalFieldUpdates =
-        foldr
-          ( \sqlUpdate accMap -> do
-              case fieldUpdates sqlUpdate of
-                Nothing -> accMap
-                Just (fieldName, updateAction) -> do
-                  case M.lookup fieldName accMap of
-                    Just val -> M.insert fieldName (groupRelevant updateAction val) accMap
-                    Nothing -> M.insert fieldName (groupRelevant updateAction ([], [])) accMap
-          )
-          M.empty
-          columnUpdates
-  let !finalFields =
-        map
-          ( \field ->
-              field
-                { beamFields =
-                    map
-                      ( \beamField -> do
-                          let (notNullRelatedAcc, defaultRelatedAcc) = fromMaybe ([], []) $ M.lookup beamField.bFieldName finalFieldUpdates
-                          let ubf' =
-                                -- using head and last below because we are never going to get empty array below, could have used NonEmpty array, will be in next PR along with other refactor.
-                                case lastMay notNullRelatedAcc of
-                                  Just AddNotNull | NotNull `notElem` beamField.bConstraints -> beamField {bConstraints = NotNull : beamField.bConstraints}
-                                  Just DropNotNull -> beamField {bConstraints = filter (/= NotNull) beamField.bConstraints}
-                                  _ -> beamField
-                          case lastMay defaultRelatedAcc of
-                            Just DropDefault -> ubf' {bDefaultVal = Nothing}
-                            Just (AddDefault val) -> ubf' {bDefaultVal = Just val}
-                            _ -> ubf'
-                      )
-                      (beamFields field)
-                }
-          )
-          fields
-  pure $ MigrationFile tableName finalFields pk sk lastSqlFile
-  where
-    groupRelevant sqlUpdate (notNullRelatedAcc, defaultRelatedAcc)
-      | sqlUpdate `elem` [DropNotNull, AddNotNull] = (sqlUpdate : notNullRelatedAcc, defaultRelatedAcc)
-      | sqlUpdate `elem` [AddDefault "", DropDefault] = (notNullRelatedAcc, sqlUpdate : defaultRelatedAcc)
-      | otherwise = (notNullRelatedAcc, defaultRelatedAcc)
 
 runAnyParser :: Show a => Parser e a -> String -> IO (Maybe a)
 runAnyParser parser str = do
@@ -838,8 +872,7 @@ getOldSqlFile sqlTypeWrtType dbName filepath = do
       lastSqlFile <- BS.readFile filepath
       print ("loading old sql file" <> filepath :: String)
       pure $ Just $ migrationFileParserLineByLine sqlTypeWrtType dbName (BSU.toString lastSqlFile)
-    else -- go (runParser (migrationFileParser sqlTypeWrtType dbName (BSU.toString lastSqlFile)) $ cleanedFile lastSqlFile)
-      pure Nothing
+    else pure Nothing
   where
     cleanedFile = joinCleanWithNewLine . removeInlineComments . removeFullLineComments . clearExtraLines
     joinCleanWithNewLine ls = BS.append (BS.intercalate (BSU.fromString "\n") ls) (BSU.fromString "\n")
