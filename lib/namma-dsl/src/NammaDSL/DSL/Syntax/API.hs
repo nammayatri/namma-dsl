@@ -144,7 +144,7 @@ data Apis = Apis
   }
   deriving (Show)
 
-data ExtraOperations = EXTRA_API_TYPES_FILE deriving (Show, Eq, Read)
+data ExtraOperations = EXTRA_API_TYPES_FILE | EXTRA_API_COMMON_TYPES_FILE deriving (Show, Eq, Read)
 
 extraOperation :: String -> ExtraOperations
 extraOperation str = case readEither str of
@@ -158,6 +158,7 @@ type ApisM = BuilderM Apis
 data ApiRead = ApiRead
   { apiTypesImportPrefix :: String,
     extraApiTypesImportPrefix :: String,
+    extraApiCommonTypesImportPrefix :: String,
     apiServantImportPrefix :: String,
     apiServantDashboardImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,

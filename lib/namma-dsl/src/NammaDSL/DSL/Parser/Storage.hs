@@ -99,7 +99,7 @@ parseExtraTypes = do
   parseTypes
   _types <- gets (types . tableDef)
   let mkEnumTypeQualified enumTp =
-        FieldType $ L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj) . L.breakOn " ") (L.trim <$> L.splitOn "," enumTp.getFieldType)
+        FieldType $ L.intercalate "," $ map (uncurry (<>) . second (makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) (Just defaultImportModule) importObj) . L.breakOn " ") (L.trim <$> L.splitOn "," enumTp.getFieldType)
       mkQualifiedTypeObject = \(TypeObject recType _nm arrOfFields derive overrideDerives) ->
         TypeObject
           recType
@@ -109,7 +109,7 @@ parseExtraTypes = do
                   ( _n,
                     if _n.getFieldName == "enum"
                       then mkEnumTypeQualified _t
-                      else FieldType $ makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) defaultImportModule importObj _t.getFieldType
+                      else FieldType $ makeTypeQualified defaultTypeImportMap (Just moduleName) (Just allExcludeQualified) (Just dList) (Just defaultImportModule) importObj _t.getFieldType
                   )
               )
               arrOfFields
@@ -143,7 +143,7 @@ parseFields = do
             fieldKey = fromString fieldName
             parseFromTType = obj ^? ix acc_fromTType . _Object . ix fieldKey . _String . to (makeTF impObj)
         getbeamFields <- makeBeamFields fieldName haskellType
-        let typeQualifiedHaskellType = makeTypeQualified defaultTypeImportMap (Just moduleName) excludedList (Just dataList) defaultImportModule impObj haskellType
+        let typeQualifiedHaskellType = makeTypeQualified defaultTypeImportMap (Just moduleName) excludedList (Just dataList) (Just defaultImportModule) impObj haskellType
             fieldRelationAndModule =
               if has (ix acc_beamFields . _Object . ix fieldKey . _Object) obj
                 then Nothing
@@ -261,7 +261,7 @@ parseCachedQueries = do
   obj <- gets (.extraParseInfo.dataObject)
   defaultImportModule <- asks (.domainTypeModulePrefix)
   defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
-  let makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
+  let makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) (Just defaultImportModule) impObj
       rawCachedQueries = obj ^? ix acc_cachedQueries . _Value . to mkListObject
       parseKeyParam paramValue = case paramValue of
         pObj@(Object _) ->
@@ -357,7 +357,7 @@ parseQueries = do
   defaultImportModule <- asks (.domainTypeModulePrefix)
   defaultTypeImportMap <- asks (.storageDefaultTypeImportMapper)
   let bFields = concatMap beamFields fields
-      _makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) defaultImportModule impObj
+      _makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) (Just defaultImportModule) impObj
       mbQueries = obj ^? ix acc_queries . _Value . to mkListObject
       excludedQueries = fromMaybe [] $ obj ^? ix acc_excludedDefaultQueries . _Array . to V.toList . to (map valueToString)
       parseQuery query =
@@ -1108,7 +1108,7 @@ makeBeamFields fieldName haskellType = do
           bHashFieldName = fieldName ++ "Hash"
           bEncryptedFieldType = bool "Text" "Maybe Text" isFieldMaybeType
           bHashFieldType = bool "Kernel.External.Encryption.DbHash" "Maybe Kernel.External.Encryption.DbHash" isFieldMaybeType
-          qType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj
+          qType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) (Just defaultImportModule) impObj
           getToTType fn = obj ^? (ix acc_toTType . _Object) >>= preview (ix (fromString fn) . _String . to (makeTF impObj))
           bEncryptedFieldDefaultToTType = TransformerFunction ("(" <> fieldName <> bool " & " " <&> " (isMaybeType haskellType) <> "unEncrypted . encrypted)") PureT True
           bHashFieldDefaultToTType = TransformerFunction ("(" <> fieldName <> bool " & " " <&> " (isMaybeType haskellType) <> "hash)") PureT True
@@ -1150,8 +1150,8 @@ makeBeamFields fieldName haskellType = do
                 isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
              in BeamField
                   { bFieldName = fName,
-                    hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj haskellType,
-                    bFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) defaultImportModule impObj beamType,
+                    hFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) (Just defaultImportModule) impObj haskellType,
+                    bFieldType = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dataList) (Just defaultImportModule) impObj beamType,
                     bConstraints = constraints,
                     bFieldUpdates = [], -- not required while creating
                     bSqlType = sqlType,

@@ -37,15 +37,23 @@ import System.Directory (doesFileExist)
 import System.IO (readFile')
 import Prelude
 
-parseApis' :: ApiParserM ()
-parseApis' = do
+-- FIXME Parser should not depend from generator type. Making types qualified should be separated from parsing
+parseApis' :: ParserGeneratorType -> ApiParserM ()
+parseApis' generatorType = do
   parseModule'
   parseApiPrefix'
-  parseTypes'
+  parseTypes' generatorType
   parseAllApis'
-  makeApiTTPartsQualified'
-  parseImports'
   parseExtraOperations'
+  makeApiTTPartsQualified' generatorType
+  parseImports'
+
+data ParserGeneratorType = API_TYPES_PARSER | OTHER_PARSER
+
+getDefaultImportModule :: ParserGeneratorType -> ApiParserM (Maybe String)
+getDefaultImportModule = \case
+  OTHER_PARSER -> Just <$> asks apiTypesImportPrefix
+  API_TYPES_PARSER -> pure Nothing
 
 parseModule' :: ApiParserM ()
 parseModule' = do
@@ -67,15 +75,15 @@ parseExtraOperations' = do
   let parsedExtraOperations = fromMaybe [] $ obj ^? ix acc_extraOperations . _Array . to V.toList . to (map (extraOperation . valueToString))
   modify $ \s -> s & apisRes . extraOperations .~ parsedExtraOperations
 
-parseTypes' :: ApiParserM ()
-parseTypes' = do
+parseTypes' :: ParserGeneratorType -> ApiParserM ()
+parseTypes' generatorType = do
   obj <- gets (^. extraParseInfo . yamlObj)
   moduleName <- gets (^. apisRes . moduleName)
-  defaultImportModule <- asks apiTypesImportPrefix
+  defaultImportModule <- getDefaultImportModule generatorType
   defaultTypeImportMap <- asks apiDefaultTypeImportMapper
   let parsedTypeObjects = typesToTypeObject (obj ^? ix acc_types . _Value)
       parsedTypesDataNames' = map (\(TypeObject _ (nm, _) _) -> T.unpack nm) parsedTypeObjects
-      parsedTypeData = makeQualifiedTypesInTypes defaultTypeImportMap moduleName (T.pack defaultImportModule) parsedTypeObjects obj
+      parsedTypeData = makeQualifiedTypesInTypes defaultTypeImportMap moduleName (T.pack <$> defaultImportModule) parsedTypeObjects obj
   modify $ \s ->
     s
       & apisRes . apiTypes . types .~ parsedTypeData
@@ -198,7 +206,7 @@ extractComplexTypeImports' = do
             )
             tps
 
-apiParser' :: ApiRead -> FilePath -> IO Apis
+apiParser' :: ApiRead -> FilePath -> IO (Apis, Apis)
 apiParser' apiRead filepath = do
   contents <- BS.readFile filepath
   case Yaml.decodeEither' contents of
@@ -206,12 +214,15 @@ apiParser' apiRead filepath = do
     Right yml -> do
       let extraParseInfo = ExtraParseInfo yml []
           apiState = ApiState def extraParseInfo
-      _apisRes <$> evalParser parseApis' apiRead apiState
+      -- Hack for remove qualified name of current module inside of api types
+      apiDef <- _apisRes <$> evalParser (parseApis' OTHER_PARSER) apiRead apiState
+      apiDefApiTypes <- _apisRes <$> evalParser (parseApis' API_TYPES_PARSER) apiRead apiState
+      pure (apiDef, apiDefApiTypes)
 
-makeApiTTPartsQualified' :: ApiParserM ()
-makeApiTTPartsQualified' = do
+makeApiTTPartsQualified' :: ParserGeneratorType -> ApiParserM ()
+makeApiTTPartsQualified' generatorType = do
   obj <- gets (^. extraParseInfo . yamlObj)
-  defaultImportModule <- asks apiTypesImportPrefix
+  defaultImportModule <- getDefaultImportModule generatorType
   defaultTypeImportMap <- asks apiDefaultTypeImportMapper
   moduleName <- gets (^. apisRes . moduleName)
   parsedTypeDataNames <- gets (^. extraParseInfo . parsedTypesDataNames)
@@ -233,7 +244,7 @@ makeApiTTPartsQualified' = do
   modify $ \s -> s & apisRes . apis . traverse %~ mkQUrlApiTT
   modify $ \s -> s & apisRes . apis . traverse . apiHelperApi . _Just . getHelperAPI %~ mkQUrlApiTT
 
-makeQualifiedTypesInTypes :: [(String, String)] -> Text -> Text -> [TypeObject] -> Object -> [TypeObject]
+makeQualifiedTypesInTypes :: [(String, String)] -> Text -> Maybe Text -> [TypeObject] -> Object -> [TypeObject]
 makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModule input obj =
   map
     ( \(TypeObject rt (x, (y, z)) overrideDerives) ->
@@ -245,7 +256,7 @@ makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModul
                     ( a,
                       if a == "enum"
                         then mkEnumTypeQualified dataNames defaultTypeImportModule b
-                        else T.pack $ U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just dataNames) Nothing (T.unpack defaultTypeImportModule) obj (T.unpack b)
+                        else T.pack $ U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just dataNames) Nothing (T.unpack <$> defaultTypeImportModule) obj (T.unpack b)
                     )
                 )
                 y,
@@ -257,10 +268,10 @@ makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModul
     input
   where
     dataNames = map (\(TypeObject _ (nm, _) _) -> T.unpack nm) input
-    mkEnumTypeQualified :: [String] -> Text -> Text -> Text
+    mkEnumTypeQualified :: [String] -> Maybe Text -> Text -> Text
     mkEnumTypeQualified excluded defaultTypeImportModule enumTp =
       let individualEnums = T.strip <$> T.splitOn "," enumTp
-       in T.intercalate "," $ map (uncurry (<>) . second (T.pack . U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just excluded) Nothing (T.unpack defaultTypeImportModule) obj . T.unpack) . T.breakOn " ") individualEnums
+       in T.intercalate "," $ map (uncurry (<>) . second (T.pack . U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just excluded) Nothing (T.unpack <$> defaultTypeImportModule) obj . T.unpack) . T.breakOn " ") individualEnums
 
 extractComplexTypeImports :: Apis -> [Text]
 extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (api ^. apiTypes . types))
