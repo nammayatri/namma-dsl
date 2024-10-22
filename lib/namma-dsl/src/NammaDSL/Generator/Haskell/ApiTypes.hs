@@ -75,10 +75,10 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
-          _extensions = ["StandaloneKindSignatures" | apiReadKind apiRead == DASHBOARD],
+          _extensions = ["StandaloneKindSignatures" | apiReadKind apiRead == DASHBOARD] <> ["TemplateHaskell" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)],
           _moduleNm = apiTypesModuleNm,
           _moduleExports = Nothing,
-          _simpleImports = packageOverride simpleImp,
+          _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
@@ -112,6 +112,14 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
 
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
     qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
+
+    allSimpleImports :: [String]
+    allSimpleImports = mkDefaultImports <> simpleImp
+
+    mkDefaultImports :: [String]
+    mkDefaultImports =
+      ["Kernel.Utils.TH" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)]
+        <> ["Data.Aeson" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)]
 
     allQualifiedImports :: [String]
     allQualifiedImports =
@@ -170,6 +178,12 @@ getDerivingStrategy derive = do
     then TH.StockStrategy
     else TH.AnyclassStrategy
 
+isHttpInstanceDerived :: TypeObject -> Bool
+isHttpInstanceDerived (TypeObject _ (_, (_, derive)) _) = "HttpInstance" `elem` derive
+
+isHttpInstanceImportRequired :: [TypeObject] -> Bool
+isHttpInstanceImportRequired = any isHttpInstanceDerived
+
 generateHaskellTypes :: [TypeObject] -> Writer CodeUnit
 generateHaskellTypes = traverse_ processType
   where
@@ -181,7 +195,7 @@ generateHaskellTypes = traverse_ processType
     generateEnum :: TypeObject -> Text -> Writer CodeUnit
     generateEnum typeObj@(TypeObject recType (typeName, _) overrideDefaultDerive) values = do
       let enumValues = T.splitOn "," values -- TODO move to parsing
-      let _thTypeName = vE $ "''" <> T.unpack typeName
+      let thTypeName = vE $ "''" <> T.unpack typeName
       TH.decW . pure $ do
         let enumWithNestedTypes = any ((> 1) . length . T.words) enumValues
         let defaultStockDerives = bool (if enumWithNestedTypes then ["Generic"] else ["Eq", "Show", "Generic"]) [] overrideDefaultDerive
@@ -193,6 +207,8 @@ generateHaskellTypes = traverse_ processType
           Data -> TH.DataD [] (mkNameT typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (mkNameT enumValue) [])) $ catMaybes [stockDerives, anyclassDerives]
           Type -> error "Generate haskell domain types: expected Data but got Type"
       generateHideSecretsDefaultInstance typeObj
+      when (isHttpInstanceDerived typeObj) $
+        TH.spliceW $ vE "mkHttpInstancesForEnum" ~* thTypeName
 
     mkDerivClause :: TH.DerivStrategy -> [TH.Name] -> Maybe TH.DerivClause
     mkDerivClause _ [] = Nothing
@@ -200,9 +216,13 @@ generateHaskellTypes = traverse_ processType
 
     addRestDerivations :: TH.DerivStrategy -> TypeObject -> [TH.Name]
     addRestDerivations strategy (TypeObject _ (_, (_, derivations)) _) =
-      map mkNameT $
+      map (mkNameT . toInstanceName) $
         filter ((== strategy) . getDerivingStrategy) $
           filter (not . T.isPrefixOf "'") derivations
+
+    toInstanceName = \case
+      "HttpInstance" -> "Kernel.Prelude.ToParamSchema"
+      val -> val
 
     generateDataStructure :: TypeObject -> Writer CodeUnit
     generateDataStructure typeObj@(TypeObject recType (typeName, (fields, _)) overrideDefaultDerive) = do
@@ -212,15 +232,15 @@ generateHaskellTypes = traverse_ processType
         let defaultAnyclassDerives = bool ["ToJSON", "FromJSON", "ToSchema"] [] overrideDefaultDerive
         let anyclassDerives = mkDerivClause TH.AnyclassStrategy $ defaultAnyclassDerives <> addRestDerivations TH.AnyclassStrategy typeObj
 
-        let thTypeName = mkNameT typeName
+        let typeName' = mkNameT typeName
         case recType of
           NewType -> do
             let (f, t) = case fields of
                   [field] -> field
                   _ -> error $ "Generate data structure: expected exactly one record for NewType but got: " <> show fields
 
-            TH.NewtypeD [] thTypeName [] Nothing (TH.RecC thTypeName [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) $ catMaybes [stockDerives, anyclassDerives]
-          Data -> TH.DataD [] thTypeName [] Nothing [TH.RecC thTypeName (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] $ catMaybes [stockDerives, anyclassDerives]
+            TH.NewtypeD [] typeName' [] Nothing (TH.RecC typeName' [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) $ catMaybes [stockDerives, anyclassDerives]
+          Data -> TH.DataD [] typeName' [] Nothing [TH.RecC typeName' (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] $ catMaybes [stockDerives, anyclassDerives]
           Type -> case fields of -- FIXME refactor this in more type safe way
             [("type", t)] -> TH.TySynD (mkNameT typeName) [] (TH.ConT $ mkNameT t)
             _ -> error "Generate data structure: Type synonym definition should contain single \"type\" field"
