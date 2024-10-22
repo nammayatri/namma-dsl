@@ -65,5 +65,8 @@ $( makeAccKeysTH
     apiPrefix
     helperApiPrefix
     migrate
+    extraIndexes
+    unique
+    columns
     |]
  )

@@ -19,19 +19,44 @@ mkSnake = quietSnake . bFieldName
 -- Generates SQL for creating a table and altering it to add columns
 generateSQL :: Database -> Maybe MigrationFile -> TableDef -> Either SQL_ERROR String
 generateSQL database (Just oldSqlFile) tableDef = do
-  (updatedFields, newFields, deletedFields, pkChanged) <- getUpdatesAndRest oldSqlFile tableDef
+  (updatedFields, newFields, deletedFields, pkChanged, newIndexes, toBeDeletedIndexes) <- getUpdatesAndRest oldSqlFile tableDef
   let tableName = tableNameSql tableDef
       anyChanges = not (null (updatedFields <> newFields <> deletedFields))
+      anyIndexChanges = not (null (newIndexes <> toBeDeletedIndexes))
       updateQueries = generateUpdateSQL database tableName updatedFields
       pkChangeQuery = if pkChanged then "ALTER TABLE " <> database <> "." <> tableName <> " DROP CONSTRAINT " <> tableName <> "_pkey;\n" <> addKeySQL database tableDef else ""
+      upsertIndexes = upsertIndexesSQL database tableName toBeDeletedIndexes newIndexes
   newColumnQueries <- addColumnSQL True database tableName newFields
   let deleteQueries = generateDeleteSQL database tableName deletedFields
-  if anyChanges || pkChanged
-    then Right $ oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, deleteQueries, pkChangeQuery])
+  if anyChanges || pkChanged || anyIndexChanges
+    then Right $ oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, pkChangeQuery, deleteQueries, upsertIndexes])
     else Right $ oldSqlFile.rawLastSqlFile
 generateSQL database Nothing tableDef = do
   altrStmts <- alterTableSQL database tableDef
-  Right $ createTableSQL database tableDef ++ "\n" ++ altrStmts ++ "\n" ++ addKeySQL database tableDef
+  Right $ intercalate "\n" [createTableSQL database tableDef, altrStmts, addKeySQL database tableDef, upsertIndexesSQL database (tableNameSql tableDef) [] (indexes tableDef)]
+
+upsertIndexesSQL :: Database -> String -> [IndexDef] -> [IndexDef] -> String
+upsertIndexesSQL database tableNameSql delIndexes newIndexes =
+  intercalate "\n" (delIndexesStr <> newIndexesStr)
+  where
+    delIndexesStr =
+      map
+        ( \indexDef ->
+            if indexUnique indexDef
+              then "ALTER TABLE " <> tableName <> " DROP CONSTRAINT " <> indexName indexDef <> ";"
+              else "DROP INDEX " <> indexName indexDef <> ";"
+        )
+        delIndexes
+    newIndexesStr =
+      map
+        ( \indexDef ->
+            if indexUnique indexDef
+              then "ALTER TABLE " <> tableName <> " ADD CONSTRAINT " <> indexName indexDef <> " UNIQUE (" <> indexColsStr indexDef <> ");"
+              else "CREATE INDEX " <> indexName indexDef <> " ON " <> tableName <> " USING btree (" <> indexColsStr indexDef <> ");"
+        )
+        newIndexes
+    tableName = database <> "." <> tableNameSql
+    indexColsStr = intercalate ", " . map (wrapWithQuotes . quietSnake) . DS.toList . indexColumns
 
 updateStamp :: String
 updateStamp = "\n\n\n------- SQL updates -------\n\n"
@@ -80,7 +105,7 @@ whichChanges oldField newField = do
                   AddNotNull -> DS.member NotNull addedConstraints
            in Right $ filter isChangeApplicable [AddDefault "Not_Required_Here", DropNotNull, AddNotNull, DropDefault, TypeChange]
 
-getUpdatesAndRest :: MigrationFile -> TableDef -> Either SQL_ERROR ([BeamField], [BeamField], [BeamField], Bool)
+getUpdatesAndRest :: MigrationFile -> TableDef -> Either SQL_ERROR ([BeamField], [BeamField], [BeamField], Bool, [IndexDef], [IndexDef])
 getUpdatesAndRest oldSqlFile tableDef = do
   let newSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields tableDef)
   let oldSqlFields = M.fromList . map (\beamField -> (mkSnake beamField, beamField)) $ concatMap (\field -> field.beamFields) (fields_ oldSqlFile)
@@ -130,7 +155,10 @@ getUpdatesAndRest oldSqlFile tableDef = do
             )
             []
             oldSqlFields
-  return (updatedFields, newFields, deletedFields, isPkChanged)
+  let currIndexes = DS.fromList (indexes tableDef)
+  let newIndexes = DS.toList (DS.difference currIndexes (pastIndexes oldSqlFile))
+  let toBeDeletedIndexes = DS.toList (DS.difference (pastIndexes oldSqlFile) currIndexes)
+  return (updatedFields, newFields, deletedFields, isPkChanged, newIndexes, toBeDeletedIndexes)
 
 -- SQL for creating an empty table
 createTableSQL :: Database -> TableDef -> String

@@ -3,6 +3,7 @@ module NammaDSL.DSL.Syntax.Storage where
 import Data.Aeson (Object)
 import Data.Default
 import Data.Map (Map)
+import Data.Set (Set)
 import GHC.Generics (Generic)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
@@ -19,11 +20,12 @@ data MigrationFile = MigrationFile
     fields_ :: [FieldDef],
     primaryKeys :: [String],
     secondaryKeys :: [String],
+    pastIndexes :: Set IndexDef,
     rawLastSqlFile :: String
   }
   deriving (Show)
 
-data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE | EXTRA_CACHED_QUERY_FILE deriving (Show, Eq)
+data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE | EXTRA_CACHED_QUERY_FILE | GENERATE_INDEXES | NO_DEFAULT_INDEXES deriving (Show, Eq)
 
 data ITransformer = ITransformer
   { outputVariableName :: String,
@@ -59,12 +61,13 @@ data TableDef = TableDef
     beamTableInstance :: [Instance],
     domainTableInstance :: [Instance],
     extraOperations :: [ExtraOperations],
-    intermediateTransformers :: IntermediateTransformers
+    intermediateTransformers :: IntermediateTransformers,
+    indexes :: [IndexDef]
   }
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def
+  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def []
 
 data CachedQueryDef = CachedQueryDef
   { cQueryName :: String,
@@ -246,6 +249,13 @@ type Spaces = Int
 
 data SQL_MANIPULATION = SQL_CREATE | SQL_ALTER SQL_ALTER deriving (Show)
 
-data SQL_ALTER = ADD_COLUMN String String [ALTER_COLUMN_ACTION] | DROP_COLUMN String | ALTER_COLUMN String ALTER_COLUMN_ACTION | DROP_CONSTRAINT_PKS | ADD_PRIMARY_KEYS [String] deriving (Show)
+data SQL_ALTER = ADD_COLUMN String String [ALTER_COLUMN_ACTION] | DROP_COLUMN String | ALTER_COLUMN String ALTER_COLUMN_ACTION | DROP_CONSTRAINT_PKS | ADD_PRIMARY_KEYS [String] | DROP_CONSTRAINT String | ADD_CONSTRAINT String [String] Bool deriving (Show)
 
 data ALTER_COLUMN_ACTION = CHANGE_TYPE String | DROP_DEFAULT | SET_DEFAULT String | DROP_NOT_NULL | SET_NOT_NULL deriving (Show)
+
+data IndexDef = IndexDef
+  { indexName :: String,
+    indexColumns :: Set String,
+    indexUnique :: Bool
+  }
+  deriving (Show, Ord, Eq)
