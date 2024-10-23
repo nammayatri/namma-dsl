@@ -980,7 +980,7 @@ findOnlyQuery id createdAt requestId something = do
   CREATE INDEX app_dynamic_logic_element_idx_order ON atlas_app.app_dynamic_logic_element USING btree ("order");
   ```
 - If required to toggle off the above default case we can add `NO_DEFAULT_INDEXES` to extraOperations
-- To generate anything extra apart form the above cases we can use `extraIndexes` option:
+- To generate anything extra apart from the above cases we can use `extraIndexes` option:
   Syntax -
   ```yaml
   extraIndexes:

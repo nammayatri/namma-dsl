@@ -92,7 +92,7 @@ parseExtraIndexes = do
 mkIndexDef :: String -> [String] -> Bool -> Maybe String -> IndexDef
 mkIndexDef tableName cols isUnique name' = IndexDef name (S.fromList cols) isUnique
   where
-    name = fromMaybe (L.intercalate "_" ([tableName] <> ["unique" | isUnique] <> ("idx" : map quietSnake cols))) name'
+    name = fromMaybe (L.intercalate "_" ([tableName] <> ["unique" | isUnique] <> ("idx" : map quietSnake (cols & L.sort)))) name'
 
 parseExtraIndex :: Value -> StorageParserM IndexDef
 parseExtraIndex obj = do

@@ -259,3 +259,13 @@ data IndexDef = IndexDef
     indexUnique :: Bool
   }
   deriving (Show, Ord, Eq)
+
+data SqlReportedChanges = SqlReportedChanges
+  { updatedFields :: [BeamField],
+    newFields :: [BeamField],
+    deletedFields :: [BeamField],
+    isPkChanged :: Bool,
+    newIndexes :: [IndexDef],
+    toBeDeletedIndexes :: [IndexDef]
+  }
+  deriving (Show)
