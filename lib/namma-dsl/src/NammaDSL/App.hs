@@ -6,6 +6,7 @@ import Control.Lens ((.~), (^.))
 import Control.Monad (unless, when)
 import Control.Monad.Extra (whenJust)
 import Data.Function ((&))
+import Data.Functor ((<&>))
 import Data.List (isInfixOf)
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
@@ -27,7 +28,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.74"
+version = "1.0.75"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -69,11 +70,13 @@ runApiGenerator configPath yamlPath = do
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
             apiDomainHandlerDashboardImportPrefix = modulePrefix domainHandlerDashboard,
+            apiClientImportPrefix = modulePrefix servantApiClient,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
-            apiClientFunction = config ^. clientFunction,
+            apiServerName = config ^. serverName,
             apiReadKind = config ^. apiKind,
             apiEndpointPrefix = config ^. endpointPrefix,
-            apiFolderName = config ^. folderName
+            apiFolderName = config ^. folderName,
+            apiMigrationParams = config ^. migrationParams
           }
   apiDef <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead apiDef
@@ -100,16 +103,21 @@ runApiTreeGenerator configPath specModules = do
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
             apiDomainHandlerDashboardImportPrefix = modulePrefix domainHandlerDashboard,
+            apiClientImportPrefix = modulePrefix servantApiClient,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
-            apiClientFunction = config ^. clientFunction,
+            apiServerName = config ^. serverName,
             apiReadKind = config ^. apiKind,
             apiEndpointPrefix = config ^. endpointPrefix,
-            apiFolderName = config ^. folderName
+            apiFolderName = config ^. folderName,
+            apiMigrationParams = config ^. migrationParams
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_
     when'
-    [ (SERVANT_API_TREE, mkServantAPITree)
+    [ (API_TREE, mkAPITree),
+      (API_TREE_DASHBOARD, mkAPITreeDashboard),
+      (API_TREE_COMMON, mkAPITreeCommon),
+      (API_TREE_CLIENT, mkAPITreeClient)
     ]
 
 getHashObjectAtHEAD :: FilePath -> IO (Maybe String)
@@ -225,21 +233,35 @@ mkSQLFile appConfigs _storageRead tableDefs = do
     )
     tableDefs
 
+data FilePathAndDatabase = FilePathAndDatabase
+  { filePath :: FilePath,
+    database :: String,
+    fileName :: FilePath,
+    isLocal :: Bool
+  }
+
 mkApiSQLFile :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiSQLFile appConfigs apiRead apiDef = do
   when (appConfigs ^. apiKind == DASHBOARD) $ do
-    let filePathAndDatabase = appConfigs ^. output . sql
     let folderName' = fromMaybe (error "Folder name required for api migrations") $ apiFolderName apiRead
-    let filename = "API_" <> folderName' <> "_" <> T.unpack (apiDef ^. moduleName) ++ ".sql"
+    let fileName' = "API_" <> folderName' <> "_" <> T.unpack (apiDef ^. moduleName) ++ ".sql"
+    let localFileName = "Local_" <> fileName'
+    let filePathsAndDatabase =
+          concat $
+            (appConfigs ^. output . sql) <&> \(filePath, database) -> do
+              [ FilePathAndDatabase {filePath, database, fileName = fileName', isLocal = False},
+                FilePathAndDatabase {filePath, database, fileName = localFileName, isLocal = True}
+                ]
+
     mapM_
-      ( \(filePath', database') -> do
-          mbOldMigrationFile <- getOldApiSqlFile $ filePath' </> filename
-          let contents = generateApiSQL database' mbOldMigrationFile apiRead apiDef
+      ( \FilePathAndDatabase {..} -> do
+          mbOldMigrationFile <- getOldApiSqlFile $ filePath </> fileName
+          let contents = generateApiSQL database mbOldMigrationFile isLocal apiRead apiDef
           case contents of
-            Right content -> unless (null content) $ writeToFile filePath' filename content
+            Right content -> unless (null content) $ writeToFile filePath fileName content
             Left err -> error err
       )
-      filePathAndDatabase
+      filePathsAndDatabase
 
 mkServantAPI :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkServantAPI appConfigs apiRead apiDef = do
@@ -255,12 +277,33 @@ mkServantAPIDashboard appConfigs apiRead apiDef = do
       generateServantAPIDashboard' = generateServantAPIDashboard defaultImportsFromConfig apiRead
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPIDashboard' apiDef)
 
-mkServantAPITree :: AppConfigs -> ApiRead -> ApiTree -> IO ()
-mkServantAPITree appConfigs apiRead apiTree = do
+mkAPITree :: AppConfigs -> ApiRead -> ApiTree -> IO ()
+mkAPITree appConfigs apiRead apiTree = do
+  let filePath = appConfigs ^. output . servantApi ++ ".hs"
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TREE
+      generateAPITree' = generateAPITree defaultImportsFromConfig apiRead
+  writeToFile' filePath (show $ generateAPITree' apiTree)
+
+mkAPITreeDashboard :: AppConfigs -> ApiRead -> ApiTree -> IO ()
+mkAPITreeDashboard appConfigs apiRead apiTree = do
+  let filePath = appConfigs ^. output . servantApiDashboard ++ ".hs"
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TREE_DASHBOARD
+      generateAPITreeDashboard' = generateAPITreeDashboard defaultImportsFromConfig apiRead
+  writeToFile' filePath (show $ generateAPITreeDashboard' apiTree)
+
+mkAPITreeCommon :: AppConfigs -> ApiRead -> ApiTree -> IO ()
+mkAPITreeCommon appConfigs apiRead apiTree = do
   let filePath = appConfigs ^. output . apiRelatedTypes ++ ".hs"
-      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API_TREE
-      generateServantAPITree' = generateServantAPITree defaultImportsFromConfig apiRead
-  writeToFile' filePath (show $ generateServantAPITree' apiTree)
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TREE_COMMON
+      generateAPITreeCommon' = generateAPITreeCommon defaultImportsFromConfig apiRead
+  writeToFile' filePath (show $ generateAPITreeCommon' apiTree)
+
+mkAPITreeClient :: AppConfigs -> ApiRead -> ApiTree -> IO ()
+mkAPITreeClient appConfigs apiRead apiTree = do
+  let filePath = appConfigs ^. output . servantApiClient ++ ".hs"
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TREE_CLIENT
+      generateAPITreeClient' = generateAPITreeClient defaultImportsFromConfig apiRead
+  writeToFile' filePath (show $ generateAPITreeClient' apiTree)
 
 mkApiTypes :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiTypes appConfigs apiRead apiDef = do
