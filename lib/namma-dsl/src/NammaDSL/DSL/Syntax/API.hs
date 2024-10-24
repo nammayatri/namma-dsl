@@ -11,7 +11,7 @@ import Data.Default
 import Data.Map (Map)
 import Data.Text (Text)
 import GHC.Generics (Generic)
-import NammaDSL.Config (ApiKind (..))
+import NammaDSL.Config (ApiKind (..), ApiMigration)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 import Text.Read (readEither)
@@ -33,6 +33,7 @@ data AuthType
   | SafetyWebhookAuth DashboardAuthType
   | DashboardAuth DashboardAuthType
   | ApiAuth ServerName ApiEntity UserActionType
+  | ApiAuthV2
   deriving (Show)
 
 newtype ServerName = ServerName {getServerName :: String}
@@ -83,12 +84,6 @@ data ApiTT = ApiTT
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
     _apiMigrate :: [ApiMigration]
-  }
-  deriving (Show)
-
-data ApiMigration = ApiMigration
-  { _migrationName :: Text,
-    _migrationParam :: Maybe Text -- in general it can be JSON Value, for now String and Null supported
   }
   deriving (Show)
 
@@ -144,7 +139,7 @@ data Apis = Apis
   }
   deriving (Show)
 
-data ExtraOperations = EXTRA_API_TYPES_FILE deriving (Show, Eq, Read)
+data ExtraOperations = EXTRA_API_TYPES_FILE | EXTRA_API_COMMON_TYPES_FILE deriving (Show, Eq, Read)
 
 extraOperation :: String -> ExtraOperations
 extraOperation str = case readEither str of
@@ -158,15 +153,18 @@ type ApisM = BuilderM Apis
 data ApiRead = ApiRead
   { apiTypesImportPrefix :: String,
     extraApiTypesImportPrefix :: String,
+    extraApiCommonTypesImportPrefix :: String,
     apiServantImportPrefix :: String,
     apiServantDashboardImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,
     apiDomainHandlerDashboardImportPrefix :: String,
+    apiClientImportPrefix :: String,
     apiDefaultTypeImportMapper :: [(String, String)],
-    apiClientFunction :: Maybe String,
+    apiServerName :: Maybe String,
     apiReadKind :: ApiKind,
     apiEndpointPrefix :: Maybe String,
-    apiFolderName :: Maybe String
+    apiFolderName :: Maybe String,
+    apiMigrationParams :: [ApiMigration]
   }
 
 data ExtraParseInfo = ExtraParseInfo

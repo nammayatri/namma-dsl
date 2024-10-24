@@ -26,7 +26,6 @@ generateDomainHandlerDashboard :: DefaultImports -> ApiRead -> Apis -> Code
 generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
   where
-    clientFuncName = getClientFunctionName apiRead
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
     domainHandlerDashboardModulePrefix = apiDomainHandlerDashboardImportPrefix apiRead ++ "."
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
@@ -58,8 +57,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> storeTransactionImports
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
-        <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
-        <> [getClientModuleName clientFuncName]
+        <> [apiClientImportPrefix apiRead]
         <> multipartImports
     allSimpleImports :: [String]
     allSimpleImports =
@@ -75,6 +73,8 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
               Just (DashboardAuth _) -> False
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
+              Just (ApiAuthV2 {}) -> False
+              Just NoAuth | apiReadKind apiRead == DASHBOARD -> False
               _ -> True
         )
         (map _authType $ _apis input)
@@ -120,10 +120,8 @@ when_ True as = as
 
 getClientFunctionName :: ApiRead -> String
 getClientFunctionName apiRead = do
-  fromMaybe (error "clientFunction should be provided for dashboard api") $ apiClientFunction apiRead
-
-getClientModuleName :: String -> String
-getClientModuleName = fromMaybe (error "Client function name should contain module name") . figureOutImport
+  let folderName = fromMaybe (error "folderName should be provided for dashboard api") $ apiFolderName apiRead
+  apiClientImportPrefix apiRead #. "call" <> folderName <> "API"
 
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
@@ -134,13 +132,18 @@ mkCodeBody apiRead = do
 mkCodeBodyDomainHandlerDashboard :: ApiRead -> Apis -> Maybe String
 mkCodeBodyDomainHandlerDashboard apiRead input = do
   let clientFuncName = getClientFunctionName apiRead
+  let serverName = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead
   let allApis = input ^. apis
   interpreter input $ do
-    forM_ allApis $ handlerFunctionDef apiRead clientFuncName
+    forM_ allApis $ handlerFunctionDef serverName clientFuncName
 
-handlerFunctionDef :: ApiRead -> String -> ApiTT -> Writer CodeUnit
-handlerFunctionDef apiRead clientFuncName apiT = do
+handlerFunctionDef :: String -> String -> ApiTT -> Writer CodeUnit
+handlerFunctionDef serverName clientFuncName apiT = do
   input <- ask
+  useAuth <- case (apiT ^. authType) of
+    Just ApiAuth {} -> pure True
+    Just NoAuth -> pure False
+    _ -> error "Please use ApiAuth, or NoAuth in case of auth not required for dashboard api"
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
       signatureUnits = mkApiSignatureUnits apiT
@@ -153,7 +156,7 @@ handlerFunctionDef apiRead clientFuncName apiT = do
       TH.forallT [] [] $
         TH.appendArrow $ NE.fromList handlerTypes
     TH.funDW (TH.mkNameT functionName) $ do
-      let pats = vP "merchantShortId" : vP "opCity" : vP "apiTokenInfo" : generateParamsPat apiUnits
+      let pats = vP "merchantShortId" : vP "opCity" : [vP "apiTokenInfo" | useAuth] <> generateParamsPat apiUnits
       TH.clauseW pats $
         TH.normalB $
           TH.doEW $ do
@@ -162,23 +165,22 @@ handlerFunctionDef apiRead clientFuncName apiT = do
                     Just paramText -> vE paramText
                     Nothing -> error "Did not found request for validation"
               TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
-            vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
+            if useAuth
+              then vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
+              else letStmt "checkedMerchantId" $ vE "skipMerchantCityAccessCheck" ~* vE "merchantShortId"
             let transactionWrapper clientCall = case apiT ^. apiType of
                   GET -> clientCall
+                  _ | not useAuth -> clientCall
                   _ -> do
-                    let endpointPrefix' = fromMaybe (error "endpointPrefix required for dashboard api generation") $ apiEndpointPrefix apiRead
-                    let folderName' = fromMaybe (error "folderName required for dashboard api generation") $ apiFolderName apiRead
-                    let apiFolderName' = "Domain.Types.Transaction" #. endpointPrefix' <> folderName' <> "API"
-                    let apiTreeName' = apiTypesImportPrefix apiRead #. T.unpack moduleName' <> "API"
-                    let endpointName' = apiTypesImportPrefix apiRead #. T.unpack moduleName' #. Common.mkEndpointName apiT
                     vP "transaction"
                       <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (cE apiFolderName' ~* (cE apiTreeName' ~* cE endpointName'))
-                      ~* (cE "Kernel.Prelude.Just" ~* mkServerName (apiT ^. authType))
+                      ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
+                      ~* (cE "Kernel.Prelude.Just" ~* cE serverName)
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits "driverId"
                       ~* generateHandlerParam apiUnits "rideId"
                       ~* generateReqParam apiUnits
+                    -- TODO implement response trnsaction storing
                     TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
 
             transactionWrapper $
@@ -200,10 +202,6 @@ handlerFunctionDef apiRead clientFuncName apiT = do
                     let errStr = strE $ "Client call " <> clientCall <> " for separate helperApi couldn't be autogenerated. Logic yet to be decided"
                     vE "error" NE.:| errStr : vE "checkedMerchantId" : generateParamsExp apiUnits -- just for avoid unused vars error
   where
-    mkServerName :: Maybe AuthType -> Q TH.Exp
-    mkServerName (Just (ApiAuth serverName _ _)) = cE serverName.getServerName
-    mkServerName _ = error "ApiAuth expected for dashboard api"
-
     generateHandlerParam :: [ApiUnit] -> String -> Q TH.Exp
     generateHandlerParam apiUnits param = case findParamText apiUnits param of
       Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText

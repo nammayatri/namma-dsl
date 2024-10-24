@@ -52,7 +52,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> when_ ifTransactionStore ["Dashboard.Common" #. T.unpack (input ^. moduleName), "Domain.Types.Transaction"]
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
-        <> [extraApiTypesImportPrefix apiRead <> "." <> T.unpack (input ^. moduleName) | EXTRA_API_TYPES_FILE `elem` input ^. extraOperations]
+        <> [apiTypesImportPrefix apiRead]
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -70,6 +70,8 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
               Just (DashboardAuth _) -> False
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
+              Just (ApiAuthV2 {}) -> False
+              Just NoAuth | apiReadKind apiRead == DASHBOARD -> False
               _ -> True
         )
         (map _authType $ _apis input)
@@ -147,12 +149,16 @@ generateServantApiType generationType apiRead apiTT = do
   let moduleName' = input ^. moduleName
   tySynDW (TH.mkNameT $ mkApiName apiTT) [] $ do
     TH.appendInfixT ":>" . NE.fromList $
-      maybeToList (addAuthToApi generationType $ _authType apiTT)
+      maybeToList (addAuthToApi apiRead generationType apiTT)
         <> [cT (((apiTypesImportPrefix apiRead <> "." <> T.unpack moduleName' <> ".") <>) . T.unpack . mkApiName $ apiTT)]
 
 handlerFunctionDef :: GenerationType -> ApiRead -> ApiTT -> Writer CodeUnit
 handlerFunctionDef generationType apiRead apiT = do
   input <- ask
+  useAuth <- case (apiT ^. authType) of
+    Just ApiAuth {} -> pure True
+    Just NoAuth -> pure False
+    _ -> error "Please use ApiAuth, or NoAuth in case of auth not required for dashboard api"
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
       signatureUnits = mkApiSignatureUnits apiT
@@ -165,9 +171,9 @@ handlerFunctionDef generationType apiRead apiT = do
       TH.forallT [] [] $
         TH.appendArrow $ NE.fromList handlerTypes
     TH.funDW (TH.mkNameT functionName) $ do
-      let pats = vP "merchantShortId" : vP "opCity" : vP "apiTokenInfo" : generateParamsPat apiUnits
+      let pats = vP "merchantShortId" : vP "opCity" : [vP "apiTokenInfo" | useAuth] <> generateParamsPat apiUnits
       TH.clauseW pats $
         TH.normalB $
           generateWithFlowHandlerAPI True $ do
             let defExp = apiDomainHandlerDashboardImportPrefix apiRead #. T.unpack moduleName' #. T.unpack (handlerFunctionText apiT)
-            TH.appendE $ vE defExp NE.:| vE "merchantShortId" : vE "opCity" : vE "apiTokenInfo" : generateParamsExp apiUnits
+            TH.appendE $ vE defExp NE.:| vE "merchantShortId" : vE "opCity" : [vE "apiTokenInfo" | useAuth] <> generateParamsExp apiUnits

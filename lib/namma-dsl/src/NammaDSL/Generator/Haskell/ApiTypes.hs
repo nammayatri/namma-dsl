@@ -1,4 +1,4 @@
-module NammaDSL.Generator.Haskell.ApiTypes (generateApiTypes) where
+module NammaDSL.Generator.Haskell.ApiTypes (generateApiTypes, ApiTypesCode (..)) where
 
 import Control.Lens ((^.))
 import Control.Monad (when)
@@ -27,27 +27,99 @@ type Writer w = TH.Writer Apis w
 
 -- type Q w = TH.Q Apis w
 
-generateApiTypes :: DefaultImports -> ApiRead -> Apis -> Code
-generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input = generateCode generatorInput
+-- Optional fields available only for dashbaord for now
+data ApiTypesCode = ApiTypesCode
+  { reexportApiTypesCode :: Maybe Code,
+    apiTypesDefaultCode :: Code,
+    apiTypesExtraCode :: Maybe Code,
+    apiCommonTypesExtraCode :: Maybe Code
+  }
+
+generateApiTypes :: DefaultImports -> ApiRead -> Apis -> ApiTypesCode
+generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
+  ApiTypesCode {reexportApiTypesCode, apiTypesDefaultCode, apiTypesExtraCode, apiCommonTypesExtraCode}
   where
+    isDashboardGenerator = apiReadKind apiRead == DASHBOARD
+    isReexportCode = isDashboardGenerator
+    isExtraCode = isDashboardGenerator && (EXTRA_API_TYPES_FILE `elem` (input ^. extraOperations))
+    isExtraCommonCode = isDashboardGenerator && (EXTRA_API_COMMON_TYPES_FILE `elem` (input ^. extraOperations))
+    reexportApiTypesCode = bool Nothing (Just $ generateCode reexportGeneratorInput) isReexportCode
+    apiTypesDefaultCode = generateCode generatorInput
+    apiTypesExtraCode = bool Nothing (Just $ generateCode extraFileGeneratorInput) isExtraCode
+    apiCommonTypesExtraCode = bool Nothing (Just $ generateCode extraCommonFileGeneratorInput) isExtraCommonCode
     apiTypesModulePrefix = apiTypesImportPrefix apiRead ++ "."
+    extraApiTypesModulePrefix = extraApiTypesImportPrefix apiRead ++ "."
+    extraApiCommonTypesModulePrefix = extraApiCommonTypesImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
     packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+
+    reexportModuleNm = apiTypesModulePrefix <> T.unpack (_moduleName input)
+    apiTypesModuleNm = apiTypesModulePrefix <> (if isDashboardGenerator then "Endpoints." else "") <> T.unpack (_moduleName input)
+    extraApiTypesModuleNm = extraApiTypesModulePrefix <> T.unpack (_moduleName input)
+    extraApiCommonTypesModuleNm = extraApiCommonTypesModulePrefix <> T.unpack (_moduleName input)
+
+    reexportGeneratorInput :: GeneratorInput
+    reexportGeneratorInput =
+      GeneratorInput
+        { _ghcOptions = ["-Wno-unused-imports"],
+          _extensions = [],
+          _moduleNm = reexportModuleNm,
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = (<> " as ReExport") <$> ([apiTypesModuleNm] <> [extraApiTypesModuleNm | isExtraCode] <> [extraApiCommonTypesModuleNm | isExtraCommonCode]), -- Dashboard.Common sometimes caused conflicts, so removed from src-read-only
+          _qualifiedImports = [],
+          _packageImports,
+          _codeBody = mempty
+        }
 
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
-        { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
-          _extensions = [],
-          _moduleNm = apiTypesModulePrefix <> T.unpack (_moduleName input),
+        { _ghcOptions = ["-Wno-unused-imports"],
+          _extensions = ["StandaloneKindSignatures" | apiReadKind apiRead == DASHBOARD] <> ["TemplateHaskell" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)],
+          _moduleNm = apiTypesModuleNm,
           _moduleExports = Nothing,
-          _simpleImports = packageOverride simpleImp,
+          _simpleImports = packageOverride allSimpleImports,
           _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
         }
+
+    extraFileGeneratorInput :: GeneratorInput
+    extraFileGeneratorInput =
+      GeneratorInput
+        { _ghcOptions = ["-Wno-orphans", "-Wwarn=unused-imports"],
+          _extensions = [],
+          _moduleNm = extraApiTypesModuleNm,
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = [apiTypesModuleNm, "Dashboard.Common as ReExport", "Kernel.Prelude"] <> [extraApiCommonTypesModuleNm | isExtraCommonCode],
+          _qualifiedImports = [],
+          _packageImports,
+          _codeBody = mempty
+        }
+
+    extraCommonFileGeneratorInput :: GeneratorInput
+    extraCommonFileGeneratorInput =
+      GeneratorInput
+        { _ghcOptions = ["-Wwarn=unused-imports"],
+          _extensions = [],
+          _moduleNm = extraApiCommonTypesModuleNm,
+          _moduleExports = Just ["module ReExport"],
+          _simpleImports = ["Dashboard.Common as ReExport", "Kernel.Prelude"],
+          _qualifiedImports = [],
+          _packageImports,
+          _codeBody = mempty
+        }
+
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
     qualifiedModuleName = T.unpack ((T.pack apiTypesModulePrefix) <> _moduleName input)
+
+    allSimpleImports :: [String]
+    allSimpleImports = mkDefaultImports <> simpleImp
+
+    mkDefaultImports :: [String]
+    mkDefaultImports =
+      ["Kernel.Utils.TH" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)]
+        <> ["Data.Aeson" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)]
 
     allQualifiedImports :: [String]
     allQualifiedImports =
@@ -90,10 +162,10 @@ mkCodeBody apiRead = do
       generateHaskellTypes (input ^. apiTypes . types)
       when (apiReadKind apiRead == DASHBOARD) $ do
         generateAPITypeHelper API_TYPES apiRead
-        generateServantApiType `mapM_` (input ^. apis)
+        generateServantApiType apiRead `mapM_` (input ^. apis)
         generateClientsType
         generateMkClientsType
-        generateEndpoint
+        generateUserActionType
 
 isHideSecretsInstanceDerived :: TypeObject -> Bool
 isHideSecretsInstanceDerived (TypeObject _ (_, (_, derive)) _) = "'HideSecrets" `elem` derive
@@ -106,6 +178,12 @@ getDerivingStrategy derive = do
     then TH.StockStrategy
     else TH.AnyclassStrategy
 
+isHttpInstanceDerived :: TypeObject -> Bool
+isHttpInstanceDerived (TypeObject _ (_, (_, derive)) _) = "HttpInstance" `elem` derive
+
+isHttpInstanceImportRequired :: [TypeObject] -> Bool
+isHttpInstanceImportRequired = any isHttpInstanceDerived
+
 generateHaskellTypes :: [TypeObject] -> Writer CodeUnit
 generateHaskellTypes = traverse_ processType
   where
@@ -117,7 +195,7 @@ generateHaskellTypes = traverse_ processType
     generateEnum :: TypeObject -> Text -> Writer CodeUnit
     generateEnum typeObj@(TypeObject recType (typeName, _) overrideDefaultDerive) values = do
       let enumValues = T.splitOn "," values -- TODO move to parsing
-      let _thTypeName = vE $ "''" <> T.unpack typeName
+      let thTypeName = vE $ "''" <> T.unpack typeName
       TH.decW . pure $ do
         let enumWithNestedTypes = any ((> 1) . length . T.words) enumValues
         let defaultStockDerives = bool (if enumWithNestedTypes then ["Generic"] else ["Eq", "Show", "Generic"]) [] overrideDefaultDerive
@@ -129,6 +207,8 @@ generateHaskellTypes = traverse_ processType
           Data -> TH.DataD [] (mkNameT typeName) [] Nothing (enumValues <&> (\enumValue -> TH.NormalC (mkNameT enumValue) [])) $ catMaybes [stockDerives, anyclassDerives]
           Type -> error "Generate haskell domain types: expected Data but got Type"
       generateHideSecretsDefaultInstance typeObj
+      when (isHttpInstanceDerived typeObj) $
+        TH.spliceW $ vE "mkHttpInstancesForEnum" ~* thTypeName
 
     mkDerivClause :: TH.DerivStrategy -> [TH.Name] -> Maybe TH.DerivClause
     mkDerivClause _ [] = Nothing
@@ -136,9 +216,13 @@ generateHaskellTypes = traverse_ processType
 
     addRestDerivations :: TH.DerivStrategy -> TypeObject -> [TH.Name]
     addRestDerivations strategy (TypeObject _ (_, (_, derivations)) _) =
-      map mkNameT $
+      map (mkNameT . toInstanceName) $
         filter ((== strategy) . getDerivingStrategy) $
           filter (not . T.isPrefixOf "'") derivations
+
+    toInstanceName = \case
+      "HttpInstance" -> "Kernel.Prelude.ToParamSchema"
+      val -> val
 
     generateDataStructure :: TypeObject -> Writer CodeUnit
     generateDataStructure typeObj@(TypeObject recType (typeName, (fields, _)) overrideDefaultDerive) = do
@@ -148,15 +232,15 @@ generateHaskellTypes = traverse_ processType
         let defaultAnyclassDerives = bool ["ToJSON", "FromJSON", "ToSchema"] [] overrideDefaultDerive
         let anyclassDerives = mkDerivClause TH.AnyclassStrategy $ defaultAnyclassDerives <> addRestDerivations TH.AnyclassStrategy typeObj
 
-        let thTypeName = mkNameT typeName
+        let typeName' = mkNameT typeName
         case recType of
           NewType -> do
             let (f, t) = case fields of
                   [field] -> field
                   _ -> error $ "Generate data structure: expected exactly one record for NewType but got: " <> show fields
 
-            TH.NewtypeD [] thTypeName [] Nothing (TH.RecC thTypeName [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) $ catMaybes [stockDerives, anyclassDerives]
-          Data -> TH.DataD [] thTypeName [] Nothing [TH.RecC thTypeName (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] $ catMaybes [stockDerives, anyclassDerives]
+            TH.NewtypeD [] typeName' [] Nothing (TH.RecC typeName' [(mkNameT f, defaultBang, TH.ConT $ mkNameT t)]) $ catMaybes [stockDerives, anyclassDerives]
+          Data -> TH.DataD [] typeName' [] Nothing [TH.RecC typeName' (fields <&> \(f, t) -> (mkNameT f, defaultBang, TH.ConT $ mkNameT t))] $ catMaybes [stockDerives, anyclassDerives]
           Type -> case fields of -- FIXME refactor this in more type safe way
             [("type", t)] -> TH.TySynD (mkNameT typeName) [] (TH.ConT $ mkNameT t)
             _ -> error "Generate data structure: Type synonym definition should contain single \"type\" field"
@@ -170,13 +254,13 @@ generateHaskellTypes = traverse_ processType
             TH.clauseW [] $ TH.normalB (vE "Kernel.Prelude.identity")
 
 -- used in dashboard common apis
-generateServantApiType :: ApiTT -> Writer CodeUnit
-generateServantApiType api = do
+generateServantApiType :: ApiRead -> ApiTT -> Writer CodeUnit
+generateServantApiType apiRead api = do
   tySynDW (TH.mkNameT $ mkApiName api) [] $ do
-    apiTTToText API_TYPES api
+    apiTTToText apiRead API_TYPES api
   whenJust (api ^. apiHelperApi) $ \_ -> do
     tySynDW (TH.mkNameT $ mkApiNameHelper api) [] $ do
-      apiTTToTextHelper API_TYPES api
+      apiTTToTextHelper apiRead API_TYPES api
 
 generateClientsType :: Writer CodeUnit
 generateClientsType = do
@@ -219,8 +303,8 @@ generateMkClientsType = do
               let handlerPats = vP . T.unpack . handlerFunctionText <$> (apiTT NE.:| apiTTs)
               valDW (appendInfixP ":<|>" handlerPats) (normalB $ vE clientFuncName)
 
-generateEndpoint :: Writer CodeUnit
-generateEndpoint = do
+generateUserActionType :: Writer CodeUnit
+generateUserActionType = do
   input <- ask
   let mbSingleApiT = case input ^. apis of
         [] -> error "Spec module should contain at least one API"
@@ -228,14 +312,13 @@ generateEndpoint = do
         _ -> Nothing
 
   let modName = input ^. moduleName
-  let endpointTypeName = T.unpack modName <> "EndpointDSL" -- TODO remove DSL suffix after moving all apis
+  let userActionTypeName = T.unpack modName <> "UserActionType"
   dataDW
-    (TH.mkName endpointTypeName)
+    (TH.mkName userActionTypeName)
     []
     do
       forM_ (input ^. apis) $ \apiT -> do
-        -- we generate for GET apis also in order to avoid empty types
-        normalCW (TH.mkName $ Common.mkEndpointName apiT) []
+        normalCW (TH.mkName $ Common.mkUserActionTypeName apiT) []
     do
       derivClauseW (Just TH.StockStrategy) $ ConT <$> ["Show", "Read", "Generic", "Eq", "Ord"]
       derivClauseW (Just TH.AnyclassStrategy) $
@@ -243,16 +326,16 @@ generateEndpoint = do
 
   -- Autogenerated instances for types with single value work not as expected
   whenJust mbSingleApiT $ \singleApiT -> do
-    let singleEndpointName = Common.mkEndpointName singleApiT
-    instanceDW emptyContext (cT "ToJSON" ~~ cT endpointTypeName) $ do
+    let singleUserActionTypeName = Common.mkUserActionTypeName singleApiT
+    instanceDW emptyContext (cT "ToJSON" ~~ cT userActionTypeName) $ do
       funDW "toJSON" $
-        clauseW [cP singleEndpointName []] $
-          TH.normalB (cE "Data.Aeson.String" ~* strE singleEndpointName)
-    instanceDW emptyContext (cT "FromJSON" ~~ cT endpointTypeName) $ do
+        clauseW [cP singleUserActionTypeName []] $
+          TH.normalB (cE "Data.Aeson.String" ~* strE singleUserActionTypeName)
+    instanceDW emptyContext (cT "FromJSON" ~~ cT userActionTypeName) $ do
       funDW "parseJSON" $ do
-        clauseW [cP "Data.Aeson.String" [strP singleEndpointName]] $
-          TH.normalB (vE "pure" ~* cE singleEndpointName)
+        clauseW [cP "Data.Aeson.String" [strP singleUserActionTypeName]] $
+          TH.normalB (vE "pure" ~* cE singleUserActionTypeName)
         clauseW [wildP] $
-          TH.normalB (vE "fail" ~* strE (singleEndpointName <> " expected"))
+          TH.normalB (vE "fail" ~* strE (singleUserActionTypeName <> " expected"))
 
--- spliceW (vE "Kernel.Storage.Esqueleto.derivePersistField" ~* strE endpointTypeName)
+  spliceW (vE "Data.Singletons.TH.genSingletons" ~* listE [vE $ "''" <> userActionTypeName])
