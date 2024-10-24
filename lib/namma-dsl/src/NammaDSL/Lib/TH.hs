@@ -10,7 +10,7 @@ import Data.Proxy
 import Data.String
 import qualified Data.Text as T
 import Language.Haskell.Meta.Parse (parseExp)
-import Language.Haskell.TH as Reexport hiding (Code, Q, compE, forallT, listE, listT, normalB, parensT, runQ, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT, wildP)
+import Language.Haskell.TH as Reexport hiding (Code, Q, appTypeE, compE, forallT, listE, listT, normalB, parensT, runQ, sigE, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT, wildP)
 import qualified Language.Haskell.TH as TH
 import NammaDSL.Lib.Types
 import Text.Read (readEither)
@@ -42,6 +42,9 @@ cP :: String -> [Q r TH.Pat] -> Q r TH.Pat
 cP name patsQ = do
   pats <- sequenceA patsQ
   pure $ TH.ConP (TH.mkName name) [] pats
+
+sigE :: Q r TH.Exp -> Q r TH.Type -> Q r TH.Exp
+sigE = liftA2 TH.SigE
 
 -- hack for record wild cards
 wildRecordsP :: String -> Q r TH.Pat
@@ -81,6 +84,9 @@ infixr 1 -->
 
 --priority should be higher then for other operators
 infixl 9 ~*
+
+appTypeE :: Q r TH.Exp -> Q r TH.Type -> Q r TH.Exp
+appTypeE = liftA2 TH.AppTypeE
 
 (~~) :: Q r TH.Type -> Q r TH.Type -> Q r TH.Type
 (~~) = liftA2 TH.AppT
@@ -358,9 +364,10 @@ appendT = foldl1 (~~)
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB
 
-letStmt :: TH.Name -> TH.Exp -> Writer r TH.Stmt
-letStmt vName rhsExp = do
+letStmt :: TH.Name -> Q r TH.Exp -> Writer r TH.Stmt
+letStmt vName rhsExpQ = do
   let valP = TH.VarP vName
+  rhsExp <- lift rhsExpQ
   tell [TH.LetS [TH.ValD valP (TH.NormalB rhsExp) []]]
 
 compE :: Writer r TH.Stmt -> Q r TH.Exp
@@ -395,6 +402,8 @@ tupleT a = pure (TH.TupleT a)
 -- hack for record dots
 (#.) :: String -> String -> String
 (#.) a b = a <> "." <> b
+
+infixr 6 #.
 
 mkNameT :: T.Text -> Name
 mkNameT = TH.mkName . T.unpack

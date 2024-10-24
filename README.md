@@ -97,6 +97,17 @@ This tutorial provides a comprehensive guide to understanding and working with t
            ```
            **Note:** Path param types should be mentioned in the **params** part below.
         - `name`: API name. Sometimes two different APIs have the same API name auto generated from path, so it can be overwritten (optional)
+
+          **Note:** Be careful when you change `apiName` for already existing API. When `apName` changed, `Endpoint` and `UserActonType` generation will be also changed, old data should be migrated as follow:
+          ```
+          migrate:
+            endpoint: <oldEndpoint>
+            userActionType: <oldUserActionType>
+          ```
+          Typically,`<oldEndpoint>` and `<oldUserActionType>` are the same values in this format:
+          ```
+          PROVIDER_MANAGEMENT/BOOKING/POST_BOOKING_CANCEL_ALL_STUCK
+          ```
         - `response`:
           - `type`: Type of response
         - `request`:

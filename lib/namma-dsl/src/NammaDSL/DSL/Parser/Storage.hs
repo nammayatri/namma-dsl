@@ -512,7 +512,7 @@ storageParser :: StorageRead -> FilePath -> IO [TableDef]
 storageParser storageRead filepath = do
   contents <- BS.readFile filepath
   case Yaml.decodeEither' contents of
-    Left _ -> error "Not a Valid Yaml"
+    Left _ -> error $ "Not a Valid Yaml: " <> filepath
     Right yml -> do
       let modelList = toModelList yml
           dList = fst <$> modelList

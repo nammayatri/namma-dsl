@@ -44,7 +44,8 @@ apiAuthTypeMapperDomainHandler :: ApiTT -> [TH.Q r TH.Type]
 apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
   Just (DashboardAuth _) -> pure $ cT "TokenInfo"
   Just ApiTokenAuth -> pure $ cT "Verified"
-  Just ApiAuth {} -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
+  Just ApiAuth {} -> error "ApiAuth is deprecated, use ApiAuthV2"
+  Just ApiAuthV2 {} -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
   Just NoAuth -> []
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
   Just (TokenAuth tp) -> case tp of
@@ -56,7 +57,8 @@ apiAuthTypeMapperServant :: GenerationType -> ApiTT -> [TH.Q r TH.Type]
 apiAuthTypeMapperServant generationType apiT = case _authType apiT of
   Just (DashboardAuth _) -> pure $ cT "TokenInfo"
   Just ApiTokenAuth -> pure $ cT "Verified"
-  Just ApiAuth {} -> case generationType of
+  Just ApiAuth {} -> error "ApiAuth is deprecated, use ApiAuthV2"
+  Just ApiAuthV2 {} -> case generationType of
     SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
@@ -99,29 +101,40 @@ handlerFunctionText apiTT = flip fromMaybe (headToLower <$> apiTT ^. apiName) $ 
     urlPartToName (UnitPath name) = (T.toUpper . T.singleton . T.head) name <> T.tail name
     urlPartToName _ = ""
 
-addAuthToApi :: GenerationType -> Maybe AuthType -> Maybe (Q r TH.Type)
-addAuthToApi generationType authtype = case authtype of
+addAuthToApi :: ApiRead -> GenerationType -> ApiTT -> Maybe (Q r TH.Type)
+addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just AdminTokenAuth -> Just $ cT "AdminTokenAuth"
   Just ApiTokenAuth -> Just $ cT "ApiTokenAuth"
   Just (TokenAuth _) -> Just $ cT "TokenAuth"
   Just (SafetyWebhookAuth dashboardAuthType) -> Just $ cT "SafetyWebhookAuth" ~~ cT' (show dashboardAuthType)
   Just (DashboardAuth dashboardAuthType) -> Just $ cT "DashboardAuth" ~~ cT' (show dashboardAuthType)
-  Just (ApiAuth sn ae uat) -> case generationType of
-    SERVANT_API_DASHBOARD -> Just $ cT "ApiAuth" ~~ cT' (show sn) ~~ cT' (show ae) ~~ cT' (show uat)
+  Just (ApiAuth _ _ _) -> error "ApiAuth is deprecated, use ApiAuthV2"
+  Just ApiAuthV2 -> case generationType of
+    SERVANT_API_DASHBOARD -> do
+      let sn = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead
+      -- TODO use short synonyms
+      let apiTreeModule = apiTypesImportPrefix apiRead
+      let apiTypesModule = apiTypesImportPrefix apiRead #. T.unpack (apiTT ^. apiModuleName)
+      let (folderUserActionType, moduleUserActionType, endpointUserActionType) = either error id $ mkFullUserActionType apiRead apiTT
+      let uat =
+            appendInfixT (TH.mkName "/") $
+              cT' (folderUserActionType)
+                NE.:| [cT' (apiTreeModule #. moduleUserActionType), cT' $ apiTypesModule #. endpointUserActionType]
+      Just $ cT "ApiAuth" ~~ cT' sn ~~ cT' "DSL" ~~ uat
     _ -> Nothing -- auth already added in common folder
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
 
 type IsHelperApi = Bool
 
-apiTTToTextHelper :: GenerationType -> ApiTT -> Q r TH.Type
-apiTTToTextHelper generationType = withHelperApi (apiTTToText generationType)
+apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
+apiTTToTextHelper apiRead generationType = withHelperApi (apiTTToText apiRead generationType)
 
 textToType :: Text -> Q r TH.Type
 textToType ty = TH.appendT $ NE.fromList $ cT <$> words (T.unpack ty)
 
-apiTTToText :: GenerationType -> ApiTT -> Q r TH.Type
-apiTTToText generationType apiTT = do
+apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
+apiTTToText apiRead generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
@@ -130,7 +143,7 @@ apiTTToText generationType apiTT = do
       headerText = map headerToText (_header apiTT)
 
   TH.appendInfixT ":>" . NE.fromList $
-    maybeToList (addAuthToApi generationType $ _authType apiTT)
+    maybeToList (addAuthToApi apiRead generationType apiTT)
       <> urlPartsText
       <> headerText
       <> maybeToList apiMultipartText
@@ -171,7 +184,7 @@ generateAPIType' isHelperApi generationType apiRead = do
   tySynDW "API" [] $ do
     case apiReadKind apiRead of
       UI -> do
-        let apiTTToText_ = apiTTToText generationType
+        let apiTTToText_ = apiTTToText apiRead generationType
         appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
       DASHBOARD -> do
         let apiTTToText_ = cT . T.unpack . (if isHelperApi then mkApiNameHelper else mkApiName)
@@ -298,5 +311,17 @@ mkEndpointName :: ApiTT -> String
 mkEndpointName apiT = do
   T.unpack (mkApiName apiT) <> "Endpoint"
 
+mkUserActionTypeName :: ApiTT -> String
+mkUserActionTypeName = screamingSnake . T.unpack . mkApiName
+
 screamingSnake :: String -> String
 screamingSnake = map Char.toUpper . quietSnake
+
+mkFullUserActionType :: ApiRead -> ApiTT -> Either String (String, String, String)
+mkFullUserActionType apiRead apiTT = do
+  endpointPrefix <- maybe (Left "Endpoint prefix required for dashboard api generation") pure $ apiEndpointPrefix apiRead
+  folderName <- maybe (Left "Folder name required for dashboard api generation") pure $ apiFolderName apiRead
+  let folderUserActionType = screamingSnake endpointPrefix <> "_" <> screamingSnake folderName
+  let moduleUserActionType = screamingSnake $ T.unpack (apiTT ^. apiModuleName)
+  let endpointUserActionType = mkUserActionTypeName apiTT
+  pure (folderUserActionType, moduleUserActionType, endpointUserActionType)
