@@ -19,6 +19,8 @@ import Prelude
 
 type Writer w = TH.Writer Apis w
 
+type Q w = TH.Q Apis w
+
 generateServantAPIDashboard :: DefaultImports -> ApiRead -> Apis -> Code
 generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
@@ -174,6 +176,9 @@ handlerFunctionDef generationType apiRead apiT = do
       let pats = vP "merchantShortId" : vP "opCity" : [vP "apiTokenInfo" | useAuth] <> generateParamsPat apiUnits
       TH.clauseW pats $
         TH.normalB $
-          generateWithFlowHandlerAPI True $ do
+          generateWithFlowHandlerAPI $ do
             let defExp = apiDomainHandlerDashboardImportPrefix apiRead #. T.unpack moduleName' #. T.unpack (handlerFunctionText apiT)
             TH.appendE $ vE defExp NE.:| vE "merchantShortId" : vE "opCity" : [vE "apiTokenInfo" | useAuth] <> generateParamsExp apiUnits
+
+generateWithFlowHandlerAPI :: Q TH.Exp -> Q TH.Exp
+generateWithFlowHandlerAPI = (vE "withFlowHandlerAPI'" ~$)

@@ -306,11 +306,6 @@ instance Importable Text where
 instance Importable String where
   getImportSignature = head . words
 
-generateWithFlowHandlerAPI :: Bool -> (Q r TH.Exp -> Q r TH.Exp)
-generateWithFlowHandlerAPI = \case
-  True -> (vE "withFlowHandlerAPI'" ~$)
-  False -> (vE "withFlowHandlerAPI" ~$)
-
 mkEndpointName :: ApiTT -> String
 mkEndpointName apiT = do
   T.unpack (mkApiName apiT) <> "Endpoint"
