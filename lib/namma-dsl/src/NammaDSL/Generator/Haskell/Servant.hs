@@ -201,7 +201,12 @@ generateAPIHandler apiRead = do
           let pats = generateParamsPat paramsNumber
           TH.clauseW pats $
             TH.normalB $
-              generateWithFlowHandlerAPI (isDashboardAuth apiT) $
+              generateWithFlowHandlerAPI (apiReadKind apiRead) (isDashboardAuth apiT) $
                 TH.appendE $
                   vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
                     NE.:| generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+
+generateWithFlowHandlerAPI :: ApiKind -> Bool -> (Q TH.Exp -> Q TH.Exp)
+generateWithFlowHandlerAPI UI True = (vE "withFlowHandlerAPI'" ~$)
+generateWithFlowHandlerAPI UI False = (vE "withFlowHandlerAPI" ~$)
+generateWithFlowHandlerAPI DASHBOARD _ = (vE "withDashboardFlowHandlerAPI" ~$)
