@@ -8,8 +8,9 @@ import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (..), DefaultImports (..))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (API_TREE_CLIENT, API_TYPES))
 import NammaDSL.DSL.Syntax.API
+import NammaDSL.Generator.Haskell.Common (generatePackageImport)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -24,6 +25,7 @@ type Writer w = TH.Writer ApiTree w
 generateAPITreeClient :: DefaultImports -> ApiRead -> ApiTree -> Code
 generateAPITreeClient (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input = generateCode generatorInput
   where
+    generationType = API_TREE_CLIENT
     apiTypesModulePrefix = apiTypesImportPrefix apiRead ++ "."
 
     generatorInput :: GeneratorInput
@@ -34,17 +36,20 @@ generateAPITreeClient (DefaultImports qualifiedImp simpleImp _packageImports _) 
           _moduleNm = apiClientImportPrefix apiRead,
           _moduleExports = Nothing,
           _simpleImports = simpleImp,
-          _qualifiedImports = removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _qualifiedImports = apiTypesImports <> removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
         }
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
 
     allQualifiedImports :: [String]
-    allQualifiedImports =
-      nub $
-        ((apiTypesModulePrefix <>) <$> specModules input)
-          <> qualifiedImp
+    allQualifiedImports = nub qualifiedImp
+
+    apiTypesModules :: [String]
+    apiTypesModules = (apiTypesModulePrefix <>) <$> specModules input
+
+    apiTypesImports :: [String]
+    apiTypesImports = (generatePackageImport generationType API_TYPES (apiPackageMapping apiRead) <>) <$> apiTypesModules
 
 mkCodeBody :: ApiRead -> ApiTreeM ()
 mkCodeBody apiRead = do

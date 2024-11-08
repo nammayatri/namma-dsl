@@ -26,16 +26,16 @@ generateDomainHandlerDashboard :: DefaultImports -> ApiRead -> Apis -> Code
 generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
   where
+    generationType = DOMAIN_HANDLER_DASHBOARD
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
     domainHandlerDashboardModulePrefix = apiDomainHandlerDashboardImportPrefix apiRead ++ "."
-    domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+    packageOverride = checkForPackageOverrides generationType (apiPackageMapping apiRead) (input ^. importPackageOverrides)
 
     generatorInput :: GeneratorInput
     generatorInput =
       GeneratorInput
-        { _ghcOptions = ["-Wno-orphans", "-Wno-unused-imports"],
+        { _ghcOptions = ["-Wwarn=unused-imports"],
           _extensions = [],
           _moduleNm = domainHandlerDashboardModulePrefix <> T.unpack (_moduleName input),
           _moduleExports = Just $ T.unpack . handlerFunctionText <$> input ^. apis,
@@ -47,13 +47,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
 
     allQualifiedImports :: [String]
     allQualifiedImports =
-      [ domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
-          <> " as "
-          <> domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
-      ]
-        <> nub (qualifiedImp <> figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)))
+      nub (qualifiedImp <> figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)))
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> storeTransactionImports
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
@@ -103,9 +97,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
     storeTransactionImports =
       when_
         (any (\apiT -> apiT ^. apiType /= GET) $ input ^. apis)
-        [ apiTypesImportPrefix apiRead,
-          apiTypesImportPrefix apiRead #. T.unpack (_moduleName input),
-          "Domain.Types.Transaction"
+        [ "Domain.Types.Transaction"
         ]
 
     ifValidationRequired :: Bool

@@ -11,7 +11,7 @@ import Data.List (isInfixOf)
 import qualified Data.List.Extra as L
 import Data.List.NonEmpty (NonEmpty ((:|)), fromList)
 import Data.Maybe (fromMaybe)
-import NammaDSL.Config (DefaultImports (..))
+import NammaDSL.Config (DefaultImports (..), GenerationType (BEAM_TABLE))
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
@@ -29,10 +29,11 @@ generateBeamTable :: DefaultImports -> StorageRead -> TableDef -> Code
 generateBeamTable (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
   generateCode generatorInput
   where
+    generationType = BEAM_TABLE
     codeBody' = generateCodeBody mkCodeBody tableDef
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix <> "."
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+    packageOverride = checkForPackageOverrides generationType (storagePackageMapping storageRead) (importPackageOverrides tableDef)
 
     generatorInput :: GeneratorInput
     generatorInput =

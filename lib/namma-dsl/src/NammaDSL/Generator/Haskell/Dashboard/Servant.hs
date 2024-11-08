@@ -7,7 +7,7 @@ import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe, isJust, maybeToList)
 import qualified Data.Text as T
-import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (SERVANT_API_DASHBOARD))
+import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (API_TREE_COMMON, API_TYPES, SERVANT_API_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.Generator.Haskell.Common
 import NammaDSL.GeneratorCore
@@ -30,7 +30,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
     servantApiDashboardModulePrefix = apiServantDashboardImportPrefix apiRead ++ "."
     domainHandlerDashboardModulePrefix = apiDomainHandlerDashboardImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+    packageOverride = checkForPackageOverrides generationType (apiPackageMapping apiRead) (input ^. importPackageOverrides)
 
     generatorInput :: GeneratorInput
     generatorInput =
@@ -40,7 +40,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
           _moduleNm = servantApiDashboardModulePrefix <> T.unpack (_moduleName input),
           _moduleExports = Just ["API", "handler"],
           _simpleImports = packageOverride allSimpleImports,
-          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          _qualifiedImports = apiTypesImport <> apiTreeCommonImport <> packageOverride (removeUnusedQualifiedImports codeBody' allQualifiedImports),
           _packageImports,
           _codeBody = codeBody'
         }
@@ -50,11 +50,10 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
       [ domainHandlerDashboardModulePrefix
           <> T.unpack (_moduleName input)
       ]
-        <> nub (qualifiedImp <> figureOutImports (T.unpack <$> concatMap handlerSignature (_apis input)) <> apiTypesImport)
+        <> nub (qualifiedImp <> filter (/= apiTypesModule) (figureOutImports $ T.unpack <$> concatMap handlerSignature (_apis input)))
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> when_ ifTransactionStore ["Dashboard.Common" #. T.unpack (input ^. moduleName), "Domain.Types.Transaction"]
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
-        <> [apiTypesImportPrefix apiRead]
 
     allSimpleImports :: [String]
     allSimpleImports =
@@ -62,8 +61,14 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
         <> simpleImp
 
+    apiTreeCommonImport :: [String]
+    apiTreeCommonImport = [generatePackageImport generationType API_TREE_COMMON (apiPackageMapping apiRead) <> apiTypesImportPrefix apiRead]
+
+    apiTypesModule :: String
+    apiTypesModule = apiTypesImportPrefix apiRead #. T.unpack (_moduleName input)
+
     apiTypesImport :: [String]
-    apiTypesImport = [apiTypesImportPrefix apiRead #. T.unpack (_moduleName input)] -- we need API type from this module
+    apiTypesImport = [generatePackageImport generationType API_TYPES (apiPackageMapping apiRead) <> apiTypesModule]
     ifNotDashboard :: Bool
     ifNotDashboard =
       any

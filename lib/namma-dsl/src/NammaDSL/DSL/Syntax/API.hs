@@ -11,7 +11,7 @@ import Data.Default
 import Data.Map (Map)
 import Data.Text (Text)
 import GHC.Generics (Generic)
-import NammaDSL.Config (ApiKind (..), ApiMigration)
+import NammaDSL.Config (ApiKind (..), ApiMigration, GenerationType)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 import Text.Read (readEither)
@@ -164,7 +164,8 @@ data ApiRead = ApiRead
     apiReadKind :: ApiKind,
     apiEndpointPrefix :: Maybe String,
     apiFolderName :: Maybe String,
-    apiMigrationParams :: [ApiMigration]
+    apiMigrationParams :: [ApiMigration],
+    apiPackageMapping :: [(GenerationType, String)]
   }
 
 data ExtraParseInfo = ExtraParseInfo

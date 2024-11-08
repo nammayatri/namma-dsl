@@ -26,11 +26,12 @@ generateServantAPI :: DefaultImports -> ApiRead -> Apis -> Code
 generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   generateCode generatorInput
   where
+    generationType = SERVANT_API
     codeBody' = generateCodeBody (mkCodeBody apiRead) input
     servantApiModulePrefix = apiServantImportPrefix apiRead ++ "."
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+    packageOverride = checkForPackageOverrides generationType (apiPackageMapping apiRead) (input ^. importPackageOverrides)
 
     generatorInput :: GeneratorInput
     generatorInput =

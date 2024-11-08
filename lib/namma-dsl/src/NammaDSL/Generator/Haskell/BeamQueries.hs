@@ -16,7 +16,7 @@ import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
 import qualified Data.Text as Text
 --import qualified Debug.Trace as DT
-import NammaDSL.Config (DefaultImports (..))
+import NammaDSL.Config (DefaultImports (..), GenerationType (BEAM_QUERIES))
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
@@ -111,6 +111,7 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) st
                         & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
           }
   where
+    generationType = BEAM_QUERIES
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix ++ "."
     domainTypeModulePrefix = storageRead.domainTypeModulePrefix ++ "."
     queryModulePrefix = storageRead.queryModulePrefix ++ "."
@@ -123,7 +124,7 @@ generateBeamQueries (DefaultImports qualifiedImp simpleImp _packageImports _) st
     readOnlyCodeModuleName = queryModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
 
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+    packageOverride = checkForPackageOverrides generationType (storagePackageMapping storageRead) (importPackageOverrides tableDef)
 
     commonGeneratorInput :: GeneratorInput
     commonGeneratorInput =

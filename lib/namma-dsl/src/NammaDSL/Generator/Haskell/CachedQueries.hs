@@ -21,7 +21,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Text as T
 import qualified Data.Text as Text
-import NammaDSL.Config (DefaultImports (..))
+import NammaDSL.Config (DefaultImports (..), GenerationType (CACHED_QUERIES))
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
 import NammaDSL.GeneratorCore
@@ -90,6 +90,7 @@ generateCachedQueries (DefaultImports qualifiedImp simpleImp _packageImports _) 
                             & \cgi -> cgi & qualifiedImports %~ makeProperQualifiedImports (cgi ^. codeBody)
                     }
   where
+    generationType = CACHED_QUERIES
     beamTypeModulePrefix = storageRead.beamTypeModulePrefix ++ "."
     domainTypeModulePrefix = storageRead.domainTypeModulePrefix ++ "."
     queryModulePrefix = storageRead.queryModulePrefix ++ "."
@@ -97,7 +98,7 @@ generateCachedQueries (DefaultImports qualifiedImp simpleImp _packageImports _) 
     readOnlyCodeModuleName = cachedQueryModulePrefix ++ (capitalize $ tableNameHaskell tableDef)
 
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+    packageOverride = checkForPackageOverrides generationType (storagePackageMapping storageRead) (importPackageOverrides tableDef)
 
     allQualifiedImports :: [String]
     allQualifiedImports =
