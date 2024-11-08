@@ -39,6 +39,7 @@ generateApiTypes :: DefaultImports -> ApiRead -> Apis -> ApiTypesCode
 generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRead input =
   ApiTypesCode {reexportApiTypesCode, apiTypesDefaultCode, apiTypesExtraCode, apiCommonTypesExtraCode}
   where
+    generationType = API_TYPES
     isDashboardGenerator = apiReadKind apiRead == DASHBOARD
     isReexportCode = isDashboardGenerator
     isExtraCode = isDashboardGenerator && (EXTRA_API_TYPES_FILE `elem` (input ^. extraOperations))
@@ -51,7 +52,7 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
     extraApiTypesModulePrefix = extraApiTypesImportPrefix apiRead ++ "."
     extraApiCommonTypesModulePrefix = extraApiCommonTypesImportPrefix apiRead ++ "."
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (input ^. importPackageOverrides)
+    packageOverride = checkForPackageOverrides generationType (apiPackageMapping apiRead) (input ^. importPackageOverrides)
 
     reexportModuleNm = apiTypesModulePrefix <> T.unpack (_moduleName input)
     apiTypesModuleNm = apiTypesModulePrefix <> (if isDashboardGenerator then "Endpoints." else "") <> T.unpack (_moduleName input)

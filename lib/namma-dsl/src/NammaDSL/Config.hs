@@ -96,7 +96,8 @@ data AppConfigs = AppConfigs
     _serverName :: Maybe String, -- required for dashboard client calls
     _endpointPrefix :: Maybe String,
     _folderName :: Maybe String,
-    _migrationParams :: [ApiMigration]
+    _migrationParams :: [ApiMigration],
+    _packageMapping :: [(GenerationType, String)]
   }
   deriving (Generic, Show, FromDhall)
 

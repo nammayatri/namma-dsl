@@ -299,6 +299,24 @@ Generated import in haskell:
 import "dashboard-api" Domain.Types.DataType1
 ```
 
+Sometimes we may need to skip package override when we generate in the same package. Then we should specify package mapping in `dhall` configs:
+
+```dsl-config.dhall
+  , _packageMapping =
+      [ { _1 = GeneratorType.API_TYPES, _2 = "dashboard-api" }
+        { _1 = GeneratorType.SERVANT_API, _2 = "rider-app" }
+      ]
+```
+
+Generated import in haskell for `API_TYPES`:
+```haskell
+import "this" Domain.Types.DataType1
+```
+Generated import in haskell for `SERVANT_API`:
+```haskell
+import "dashboard-api" Domain.Types.DataType1
+```
+
 ---
 #### Fields
 

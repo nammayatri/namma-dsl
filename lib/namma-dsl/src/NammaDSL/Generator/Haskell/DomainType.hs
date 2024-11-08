@@ -12,7 +12,7 @@ import qualified Data.List as L
 import qualified Data.List.Extra as L
 import Data.List.NonEmpty (fromList)
 import Data.Maybe
-import NammaDSL.Config (DefaultImports (..))
+import NammaDSL.Config (DefaultImports (..), GenerationType (DOMAIN_TYPE))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
 import NammaDSL.Generator.Haskell.Common (checkForPackageOverrides)
@@ -36,12 +36,13 @@ generateDomainType :: DefaultImports -> StorageRead -> TableDef -> DomainTypeCod
 generateDomainType (DefaultImports qualifiedImp simpleImp _packageImports _) storageRead tableDef =
   DomainTypeCode defaultCode extraDomainCode
   where
+    generationType = DOMAIN_TYPE
     isExtraCode = EXTRA_DOMAIN_TYPE_FILE `elem` (extraOperations tableDef)
     defaultCode = generateCode generatorInput
     extraDomainCode = bool Nothing (Just $ generateCode extraFileGeneratorInput) isExtraCode
     domainTypeModulePrefix = storageRead.domainTypeModulePrefix
     packageOverride :: [String] -> [String]
-    packageOverride = checkForPackageOverrides (importPackageOverrides tableDef)
+    packageOverride = checkForPackageOverrides generationType (storagePackageMapping storageRead) (importPackageOverrides tableDef)
 
     moduleName' = bool (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef ++ " (module " ++ (domainTypeModulePrefix ++ "." ++ tableNameHaskell tableDef) ++ ", module ReExport)") isExtraCode
     extraFileModuleName = domainTypeModulePrefix ++ ".Extra." ++ tableNameHaskell tableDef

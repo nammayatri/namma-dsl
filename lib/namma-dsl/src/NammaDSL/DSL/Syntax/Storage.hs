@@ -5,6 +5,7 @@ import Data.Default
 import Data.Map (Map)
 import Data.Set (Set)
 import GHC.Generics (Generic)
+import NammaDSL.Config (GenerationType)
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.GeneratorCore
 import Prelude
@@ -234,12 +235,13 @@ data StorageRead = StorageRead
     extraDefaultFields :: [(String, String)],
     storageDefaultTypeImportMapper :: [(String, String)],
     defaultCachedQueryKeyPfx :: String,
-    srcFileStatus :: FileState
+    srcFileStatus :: FileState,
+    storagePackageMapping :: [(GenerationType, String)]
   }
   deriving (Show)
 
 instance Default StorageRead where
-  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW
+  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW []
 
 type StorageParserM = ParserM StorageRead StorageState
 

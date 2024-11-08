@@ -28,7 +28,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.80"
+version = "1.0.81"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -45,7 +45,8 @@ runStorageGenerator configPath yamlPath = do
             extraDefaultFields = _extraDefaultFields (config ^. storageConfig),
             storageDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
             defaultCachedQueryKeyPfx = config ^. storageConfig . defaultCachedQueryKeyPrefix,
-            srcFileStatus = fileStatus
+            srcFileStatus = fileStatus,
+            storagePackageMapping = config ^. packageMapping
           }
   tableDefs <- storageParser storageRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
@@ -77,7 +78,8 @@ runApiGenerator configPath yamlPath = do
             apiReadKind = config ^. apiKind,
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName,
-            apiMigrationParams = config ^. migrationParams
+            apiMigrationParams = config ^. migrationParams,
+            apiPackageMapping = config ^. packageMapping
           }
   (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
@@ -111,7 +113,8 @@ runApiTreeGenerator configPath specModules = do
             apiReadKind = config ^. apiKind,
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName,
-            apiMigrationParams = config ^. migrationParams
+            apiMigrationParams = config ^. migrationParams,
+            apiPackageMapping = config ^. packageMapping
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_

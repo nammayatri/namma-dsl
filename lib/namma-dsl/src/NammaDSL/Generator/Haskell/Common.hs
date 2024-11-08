@@ -6,7 +6,7 @@ import Control.Monad.Reader (ask)
 import qualified Data.Char as Char
 import Data.List.Extra (find, nub, snoc)
 import qualified Data.List.NonEmpty as NE
-import Data.Map (Map, lookup)
+import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, maybeToList)
 import Data.String (IsString)
 import Data.Text (Text)
@@ -19,7 +19,7 @@ import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils
 import Text.Casing (camel, quietSnake)
-import Prelude hiding (lookup)
+import Prelude
 
 _Maybe :: TH.Q r TH.Type
 _Maybe = cT "Kernel.Prelude.Maybe"
@@ -79,8 +79,17 @@ getRecordType = \case
   Data -> "data"
   Type -> "type"
 
-checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => Map a a -> [a] -> [a]
-checkForPackageOverrides packageOverrides = map (\x -> maybe x (\a -> "\"" <> a <> "\" " <> x) (lookup (getImportSignature x) packageOverrides))
+checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => GenerationType -> [(GenerationType, a)] -> M.Map a a -> [a] -> [a]
+checkForPackageOverrides generatorType packageMapping packageOverrides = map (\x -> maybe x (\a -> "\"" <> (if lookup generatorType packageMapping == Just a then "this" else a) <> "\" " <> x) (M.lookup (getImportSignature x) packageOverrides))
+
+generatePackageImport :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => GenerationType -> GenerationType -> [(GenerationType, a)] -> a
+generatePackageImport currentGenerator importGenerator packageMapping = do
+  let mbCurrentPackage = lookup currentGenerator packageMapping
+  let mbImportPackage = lookup importGenerator packageMapping
+  case mbImportPackage of
+    Just importPackage | mbCurrentPackage /= mbImportPackage -> "\"" <> importPackage <> "\" "
+    Just _ -> "\"this\" "
+    Nothing -> ""
 
 mkApiNameHelper :: ApiTT -> Text
 mkApiNameHelper apiT = case apiT ^. apiHelperApi of
