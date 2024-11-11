@@ -236,7 +236,7 @@ mkApiSignatureUnitsHelper = withHelperApi mkApiSignatureUnits
 mkApiSignatureUnits :: ApiTT -> [ApiSignatureUnit]
 mkApiSignatureUnits input = do
   let urlTypeText = map urlToText (_urlParts input)
-      headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) ty) (_header input)
+      headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) (headerTypeConversion ty)) (_header input)
       reqTypeText = reqTypeToText <$> input ^. apiReqType
       resTypeText = respTypeToText $ input ^. apiResType
       multipartTypeText = multipartTypeToText <$> _apiMultipartType input
@@ -263,6 +263,9 @@ mkApiSignatureUnits input = do
 
     respTypeToText :: ApiRes -> ApiSignatureUnit
     respTypeToText = ApiSignatureUnit ResponseUnit . _apiResTypeName
+
+    headerTypeConversion :: Text -> Text
+    headerTypeConversion tc = "Kernel.Prelude.Maybe (" <> tc <> ")"
 
 handlerSignatureHelper :: ApiTT -> [Text]
 handlerSignatureHelper = withHelperApi handlerSignature
