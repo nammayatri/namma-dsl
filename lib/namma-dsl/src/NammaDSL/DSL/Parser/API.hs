@@ -113,7 +113,7 @@ parseAllApis' = do
           mQuery = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParam a b True))) obj
           allApiParts = endpoint <> query <> mQuery
 
-          headers = fromMaybe [] (preview (ix acc_headers ._Array . to (mkHeaderList . V.toList)) obj)
+          headers = fromMaybe [] (preview (ix acc_headers . _Value . to mkListFromSingleton . to (map (\(a, b) -> Header a b))) obj)
 
           requestValidation = preview (ix acc_validation . _String) obj
 
@@ -316,15 +316,6 @@ extractString (Array arr) = case V.toList arr of
   [String t] -> "[" <> t <> "]"
   _ -> error $ "Unexpected type in array: " <> show arr
 extractString v = error $ "Non-string type found in field definition: " <> show v
-
-mkHeaderList :: [Value] -> [HeaderType]
-mkHeaderList val =
-  map
-    ( \case
-        Object obj -> fromMaybe (error "Header fields missing") $ Header <$> (obj ^? ix acc_name . _String) <*> (obj ^? ix acc_type . _String)
-        _ -> error "Header is not of correct format"
-    )
-    val
 
 getAuthType :: Text -> AuthType
 getAuthType = \case

@@ -136,6 +136,12 @@ This tutorial provides a comprehensive guide to understanding and working with t
           {pathParam1}: {pathParam1Type}
           {pathParam2}: {pathParam2Type}
           ```
+        - `headers`: List of headers
+          ```
+          headers:
+           - {header1}: {headerType1}
+           - {header2}: {headerType2}
+          ```
         - `helperApi`: Recursively contains dashboard helper API in the same format as main API  (optional, specific for dashboard)
         - `validation`: Qualified name for request validation function (optional)
 - Example:
