@@ -648,8 +648,11 @@ generateQueryReturnType storageRead kvFunction tableNameHaskell = do
 
 getWhereClauseQueryParam :: WhereClause -> [QueryParam]
 getWhereClauseQueryParam EmptyWhere = []
-getWhereClauseQueryParam (Leaf (qp, tp)) = if tp == Just In || tp == Just (Not In) then [qp {qpType = "[" <> qp.qpType <> "]", qpExtParam = qp.qpExtParam <&> makePrmArray}] else [qp]
+getWhereClauseQueryParam (Leaf (qp, tp)) = [whereClauseQueryParamModifier qp tp]
 getWhereClauseQueryParam (Query (_, clauses)) = concatMap getWhereClauseQueryParam clauses
+
+whereClauseQueryParamModifier :: QueryParam -> Maybe Operator -> QueryParam
+whereClauseQueryParamModifier qp tp = if tp == Just In || tp == Just (Not In) then qp {qpType = "[" <> qp.qpType <> "]", qpExtParam = qp.qpExtParam <&> makePrmArray} else qp
 
 makePrmArray :: Param -> Param
 makePrmArray (Variable n t) = Variable n ("[" <> t <> "]")
@@ -732,8 +735,9 @@ correctEqField optionalFieldName field' tp beamField
 -- Function to process each clause
 generateClause :: [FieldDef] -> Bool -> WhereClause -> [Q TH.Exp]
 generateClause _ _ EmptyWhere = []
-generateClause allFields isFullObjInp (Leaf (qp, op)) =
-  let field = qp.qpName
+generateClause allFields isFullObjInp (Leaf (qp', op)) =
+  let qp = whereClauseQueryParamModifier qp' op
+      field = qp.qpName
       tp = qp.qpType
       ext = qp.qpExtParam
       isBeam = qp.qpIsBeam
