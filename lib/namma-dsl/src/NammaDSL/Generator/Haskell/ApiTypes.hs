@@ -76,7 +76,7 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
-          _extensions = ["StandaloneKindSignatures" | apiReadKind apiRead == DASHBOARD] <> ["TemplateHaskell" | isHttpInstanceImportRequired (input ^. apiTypes ^. types)],
+          _extensions = ["StandaloneKindSignatures" | apiReadKind apiRead == DASHBOARD],
           _moduleNm = apiTypesModuleNm,
           _moduleExports = Nothing,
           _simpleImports = packageOverride allSimpleImports,

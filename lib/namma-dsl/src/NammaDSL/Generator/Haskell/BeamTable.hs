@@ -39,7 +39,7 @@ generateBeamTable (DefaultImports qualifiedImp simpleImp _packageImports _) stor
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"],
-          _extensions = ["DerivingStrategies", "TemplateHaskell", "StandaloneDeriving"],
+          _extensions = ["StandaloneDeriving"],
           _moduleNm = beamTypeModulePrefix <> capitalize (tableNameHaskell tableDef),
           _moduleExports = Nothing,
           _simpleImports = packageOverride simpleImp,
