@@ -381,7 +381,7 @@ makeQueryParam fds bfs val = case val of
             let (fdR, extInf) = getValAndExt sval
              in if extInf == "B" -- Beam Case
                   then
-                    let bf = fromMaybe (error "Beam Field not found") $ find (\b -> bFieldName b == fd) bfs
+                    let bf = fromMaybe (error $ "Beam Field not found: " <> show fd <> ": " <> show bfs) $ find (\b -> bFieldName b == fd) bfs
                      in QueryParam {qpName = fd, qpType = bFieldType bf, qpExtParam = Just (Variable fdR (bFieldType bf)), qpIsBeam = True}
                   else -- Normal Case
 
