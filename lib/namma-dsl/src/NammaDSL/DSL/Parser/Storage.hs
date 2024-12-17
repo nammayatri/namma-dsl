@@ -376,7 +376,7 @@ makeQueryParam fds bfs val = case val of
   rawC@(Object _) ->
     let (fd, sval) = fromMaybe (error "Invalid Query Param") $ headMay (mkList rawC)
      in if ("|C" `L.isInfixOf` sval)
-          then QueryParam {qpName = fd, qpType = mempty, qpExtParam = Just (parseConstantParam sval), qpIsBeam = True}
+          then QueryParam {qpName = fd, qpType = mempty, qpExtParam = Just (parseConstantParam sval), qpIsBeam = False} -- True
           else
             let (fdR, extInf) = getValAndExt sval
              in if extInf == "B" -- Beam Case
