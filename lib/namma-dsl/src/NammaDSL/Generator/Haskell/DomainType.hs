@@ -62,7 +62,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _packageImports _) sto
     generatorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports"] <> ["-Wno-dodgy-exports" | isExtraCode],
-          _extensions = ["ApplicativeDo", "TemplateHaskell"],
+          _extensions = ["ApplicativeDo"],
           _moduleNm = moduleName',
           _moduleExports = Nothing,
           _simpleImports = packageOverride $ preventSameModuleImports $ allSimpleImports <> [(extraFileModuleName ++ " as ReExport") | isExtraCode],
@@ -74,7 +74,7 @@ generateDomainType (DefaultImports qualifiedImp simpleImp _packageImports _) sto
     extraFileGeneratorInput =
       GeneratorInput
         { _ghcOptions = ["-Wno-unused-imports", "-Wno-dodgy-exports"],
-          _extensions = ["ApplicativeDo", "TemplateHaskell"],
+          _extensions = ["ApplicativeDo"],
           _moduleNm = extraFileModuleName,
           _moduleExports = Nothing,
           _simpleImports = packageOverride $ allSimpleImports,
