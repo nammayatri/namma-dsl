@@ -742,15 +742,15 @@ generateClause allFields isFullObjInp (Leaf (qp, op)) =
           let fieldDef = fromMaybe (error $ "Param not found in data type " <> field) $ find (\f -> fieldName f == field) allFields
           beamFields fieldDef <&> \bfield ->
             cE "Se.Is"
-              ~* vE ("Beam." <> bFieldName bfield)
-              ~$ operator (fromMaybe Eq op)
+              ~* vE ("Beam1." <> bFieldName bfield)
+              ~$ operator (fromMaybe Eq op) -- 1
               ~* (if isFullObjInp then correctSetField Nothing field tp bfield else correctEqField Nothing field tp bfield)
         Just prm ->
           if isBeam
             then
               [ cE "Se.Is"
-                  ~* vE ("Beam." <> field)
-                  ~$ operator (fromMaybe Eq op)
+                  ~* vE ("Beam2." <> field)
+                  ~$ operator (fromMaybe Eq op) -- 2
                   ~* directPassParamToExpr prm
               ]
             else
@@ -760,14 +760,14 @@ generateClause allFields isFullObjInp (Leaf (qp, op)) =
                     Constant n t -> if t == PString then "\"" <> n <> "\"" else n
                in beamFields fieldDef <&> \bfield ->
                     cE "Se.Is"
-                      ~* vE ("Beam." <> bFieldName bfield)
-                      ~$ operator (fromMaybe Eq op)
+                      ~* vE ("Beam3." <> bFieldName bfield)
+                      ~$ operator (fromMaybe Eq op) -- 3
                       ~* (if isFullObjInp then correctSetField (Just getParamVal) field tp bfield else correctEqField (Just getParamVal) field tp bfield)
 generateClause allFields isFullObjInp (Query (op, clauses)) = do
   let expList = concat (generateClause allFields isFullObjInp <$> clauses) -- is it correct concat?
   if op `elem` comparisonOperator
     then expList
-    else [operator op ~* TH.listE expList]
+    else [operator op ~* vE "beam4" ~* TH.listE expList] -- 4
 
 generateToTTypeFuncs :: Writer CodeUnit
 generateToTTypeFuncs = do
