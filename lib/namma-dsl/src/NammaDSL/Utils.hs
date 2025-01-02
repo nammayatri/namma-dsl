@@ -68,7 +68,7 @@ writeToFileIfNotExists directoryPath fileName content = do
     filePath = directoryPath ++ "/" ++ fileName
 
 typeDelimiter :: String
-typeDelimiter = "() []"
+typeDelimiter = "() []'"
 
 isMaybeType :: String -> Bool
 isMaybeType tp = L.isPrefixOf "Maybe " tp || L.isPrefixOf "Data.Maybe.Maybe " tp || L.isPrefixOf "Kernel.Prelude.Maybe " tp
@@ -136,7 +136,7 @@ makeTypeQualified defaultTypeImport moduleName excludedList dList defaultImportM
       | '.' `elem` word || ',' `elem` word = word
       | isJust moduleName && isJust excludedList && word `elem` fromJust excludedList = maybe "" (++ ("." ++ fromJust moduleName ++ ".")) defaultImportModule ++ word
       | isJust dList && L.elem word (fromJust dList) = maybe "" (++ ("." ++ word ++ ".")) defaultImportModule ++ word
-      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e", "s"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
+      | otherwise = maybe (if word `elem` ["", ")", "(", " ", "[", "]", "e", "s", "'"] then word else error ("\"" ++ word ++ "\" type not determined")) (\x -> x <> "." <> word) (getQualifiedImport word)
 
 figureOutImports :: [String] -> [String]
 figureOutImports fieldTypes =

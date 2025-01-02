@@ -1199,7 +1199,7 @@ findBeamType :: String -> String
 findBeamType str = concatMap (typeMapper . L.trimStart) (split (whenElt (`elem` typeDelimiter)) str)
   where
     typeDelimiter :: String
-    typeDelimiter = "()[]"
+    typeDelimiter = "()[]'"
     typeMapper :: String -> String
     typeMapper hkType
       | L.isPrefixOf "Id " hkType || L.isPrefixOf "Kernel.Types.Id.Id " hkType = "Text"
