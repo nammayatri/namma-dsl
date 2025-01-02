@@ -199,7 +199,7 @@ extractComplexTypeImports' = do
        in concatMap
             ( ( \potentialImport ->
                   if isEnum
-                    then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) (T.unpack potentialImport)
+                    then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() [],'" :: String)) (T.unpack potentialImport)
                     else [potentialImport]
               )
                 . snd
@@ -285,7 +285,7 @@ extractComplexTypeImports api = figureOutImports (concatMap figureOutImports' (a
        in concatMap
             ( ( \potentialImport ->
                   if isEnum
-                    then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() []," :: String)) (T.unpack potentialImport)
+                    then fmap T.pack $ filter ('.' `elem`) $ splitWhen (`elem` ("() [],'" :: String)) (T.unpack potentialImport)
                     else [potentialImport]
               )
                 . snd
