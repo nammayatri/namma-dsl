@@ -44,15 +44,19 @@ main = do
 processingWhereClause :: TableDef -> IO ()
 processingWhereClause tableDef = do
   let whereClauseLs = whereClause <$> queries tableDef
-  --     primaryKeyLs = primaryKey tableDef
-  --     secondaryKeyLs = secondaryKey tableDef
-  --     caseWhereClause whereClause' =
-  --       case whereClause' of
-  --         EmptyWhere -> putStrLn "Going on"
-  --         Leaf (queryParam, _) -> processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs
-  --         _ -> putStrLn "Another result"
-  -- mapM_ caseWhereClause whereClauseLs
-  print $ map getColumnsFromWhereClause whereClauseLs
+      primaryKeyLs = primaryKey tableDef
+      secondaryKeyLs = secondaryKey tableDef
+      caseWhereClause whereClause' =
+        case whereClause' of
+          EmptyWhere -> putStrLn "Going on"
+          Leaf (queryParam, _) -> processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs
+          Query _ -> do
+            let fildNameLs = getColumnsFromWhereClause whereClause'
+                bool = any (`elem` secondaryKeyLs) fildNameLs || all (`elem` fildNameLs) primaryKeyLs
+            putStrLn $ if bool then "Going on" else "Huston, we have a problem"
+  mapM_ caseWhereClause whereClauseLs
+
+-- print $ map getColumnsFromWhereClause whereClauseLs
 
 processingWhereClauseLeaf :: QueryParam -> [String] -> [String] -> IO ()
 processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs = do
