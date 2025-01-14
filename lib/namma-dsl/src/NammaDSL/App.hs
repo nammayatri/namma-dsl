@@ -3,7 +3,7 @@
 module NammaDSL.App (module NammaDSL.App, module ReExport) where
 
 import Control.Lens ((.~), (^.))
-import Control.Monad (forM_, unless, when)
+import Control.Monad (unless, when)
 import Control.Monad.Extra (whenJust)
 import Data.Function ((&))
 import Data.Functor ((<&>))
@@ -29,7 +29,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.83"
+version = "1.0.84"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -50,7 +50,7 @@ runStorageGenerator configPath yamlPath = do
             storagePackageMapping = config ^. packageMapping
           }
   tableDefs <- storageParser storageRead yamlPath
-  forM_ tableDefs checkKVConstraints
+  checkKVConstraints tableDefs
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
   mapM_
     when'

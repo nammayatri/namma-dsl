@@ -109,6 +109,7 @@ library
     , data-default
     , dhall
     , directory
+    , either
     , extra
     , filepath
     , flatparse
@@ -230,6 +231,7 @@ test-suite namma-dsl-tests
     , data-default
     , dhall
     , directory
+    , either
     , extra
     , filepath
     , flatparse
