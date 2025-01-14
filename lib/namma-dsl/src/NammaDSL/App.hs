@@ -3,7 +3,7 @@
 module NammaDSL.App (module NammaDSL.App, module ReExport) where
 
 import Control.Lens ((.~), (^.))
-import Control.Monad (unless, when)
+import Control.Monad (forM_, unless, when)
 import Control.Monad.Extra (whenJust)
 import Data.Function ((&))
 import Data.Functor ((<&>))
@@ -14,6 +14,7 @@ import qualified Data.Text as T
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
+import NammaDSL.DSL.Parser.Storage.KVConstraints
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common as ReExport
 import NammaDSL.DSL.Syntax.Storage
@@ -49,6 +50,7 @@ runStorageGenerator configPath yamlPath = do
             storagePackageMapping = config ^. packageMapping
           }
   tableDefs <- storageParser storageRead yamlPath
+  forM_ tableDefs checkKVConstraints
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
   mapM_
     when'

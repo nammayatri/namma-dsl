@@ -63,12 +63,13 @@ data TableDef = TableDef
     domainTableInstance :: [Instance],
     extraOperations :: [ExtraOperations],
     intermediateTransformers :: IntermediateTransformers,
-    indexes :: [IndexDef]
+    indexes :: [IndexDef],
+    disableKVQueryConstraints :: Bool
   }
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def []
+  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def [] False
 
 data CachedQueryDef = CachedQueryDef
   { cQueryName :: String,

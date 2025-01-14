@@ -31,6 +31,7 @@ library
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
+      NammaDSL.DSL.Parser.Storage.KVConstraints
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
@@ -151,6 +152,7 @@ test-suite namma-dsl-tests
       NammaDSL.Config
       NammaDSL.DSL.Parser.API
       NammaDSL.DSL.Parser.Storage
+      NammaDSL.DSL.Parser.Storage.KVConstraints
       NammaDSL.DSL.Syntax.API
       NammaDSL.DSL.Syntax.Common
       NammaDSL.DSL.Syntax.Storage
