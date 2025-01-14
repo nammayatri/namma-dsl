@@ -18,20 +18,20 @@ FleetMemberAssociation:
     fleetOwnerId: SecondaryKey
 
   queries:
-    # findByfleetMemberIdAndFleetOwnerId:
-    #   kvFunction: findOneWithKV
-    #   where:
-    #     and: [fleetMemberId, fleetOwnerId, enabled]
+    findByfleetMemberIdAndFleetOwnerId:
+      kvFunction: findOneWithKV
+      where:
+        and: [fleetMemberId, fleetOwnerId, enabled]
 
     findAllMemberByFleetOwnerId:
       kvFunction: findAllWithKV
       where: fleetOwnerId
 
-    # updateFleetMemberActiveStatus:
-    #   kvFunction: updateOneWithKV
-    #   params: [enabled]
-    #   where:
-    #     and: [fleetMemberId, fleetOwnerId]
+    updateFleetMemberActiveStatus:
+      kvFunction: updateOneWithKV
+      params: [enabled]
+      where:
+        and: [fleetMemberId, fleetOwnerId]
 
     deleteByMemberId:
       kvFunction: deleteWithKV

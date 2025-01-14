@@ -44,14 +44,15 @@ main = do
 processingWhereClause :: TableDef -> IO ()
 processingWhereClause tableDef = do
   let whereClauseLs = whereClause <$> queries tableDef
-      primaryKeyLs = primaryKey tableDef
-      secondaryKeyLs = secondaryKey tableDef
-      caseWhereClause whereClause' =
-        case whereClause' of
-          EmptyWhere -> putStrLn "Going on"
-          Leaf (queryParam, _) -> processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs
-          _ -> putStrLn "Another result"
-  mapM_ caseWhereClause whereClauseLs
+  --     primaryKeyLs = primaryKey tableDef
+  --     secondaryKeyLs = secondaryKey tableDef
+  --     caseWhereClause whereClause' =
+  --       case whereClause' of
+  --         EmptyWhere -> putStrLn "Going on"
+  --         Leaf (queryParam, _) -> processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs
+  --         _ -> putStrLn "Another result"
+  -- mapM_ caseWhereClause whereClauseLs
+  print $ map getColumnsFromWhereClause whereClauseLs
 
 processingWhereClauseLeaf :: QueryParam -> [String] -> [String] -> IO ()
 processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs = do
@@ -59,3 +60,17 @@ processingWhereClauseLeaf queryParam primaryKeyLs secondaryKeyLs = do
   if fildName `elem` secondaryKeyLs || fildName `elem` primaryKeyLs
     then putStrLn "Going on"
     else putStrLn "Huston, we have a problem"
+
+getColumnsFromWhereClause :: WhereClause -> [String]
+getColumnsFromWhereClause where_ =
+  case where_ of
+    EmptyWhere -> []
+    Leaf (queryParam, _) -> [qpName queryParam]
+    Query (operator, whereLs_) ->
+      case operator of
+        Or -> []
+        _ -> concatMap getColumnsFromWhereClause whereLs_
+
+-- data WhereClause = EmptyWhere | Leaf (QueryParam, Maybe Operator) | Query (Operator, [WhereClause]) deriving (Show)
+
+-- data Operator = And | Or | In | Eq | GreaterThan | LessThan | GreaterThanOrEq | LessThanOrEq | Not Operator deriving (Show, Eq)
