@@ -71,5 +71,6 @@ getColumnsFromWhereClause = \case
   Storage.EmptyWhere -> []
   Storage.Leaf (_queryParam, Just Storage.Or) -> []
   Storage.Leaf (queryParam, _) -> [queryParam.qpName]
-  Storage.Query (Storage.Or, _whereList) -> []
-  Storage.Query (_op, whereList) -> concatMap getColumnsFromWhereClause whereList
+  Storage.Query (Storage.And, whereList) -> concatMap getColumnsFromWhereClause whereList
+  Storage.Query (Storage.Eq, whereList) -> concatMap getColumnsFromWhereClause whereList
+  Storage.Query (_, _whereList) -> []
