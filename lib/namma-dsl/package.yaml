@@ -93,6 +93,7 @@ dependencies:
   - haskell-src-meta
   - regex-compat
   - haskell-src-exts
+  - either
 
 ghc-options:
   - -Wall
