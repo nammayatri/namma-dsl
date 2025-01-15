@@ -15,12 +15,12 @@ data RecordType
   | Type
   deriving (Show, Eq)
 
-data ParseError = InternalError String | YamlError String | KVConstraintError String
+data ParseError = InternalError String | YamlError String | KVConstraintError
 
 instance Show ParseError where
   show (InternalError s) = "Internal Error: " ++ s
   show (YamlError s) = "Yaml Error: " ++ s
-  show (KVConstraintError s) = "KV constraint Error: " ++ s
+  show KVConstraintError = "KV constraint Error"
 
 instance Exception ParseError
 

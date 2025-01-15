@@ -1,30 +1,33 @@
 module NammaDSL.DSL.Parser.Storage.KVConstraints (checkKVConstraints) where
 
 import Control.Exception (throwIO)
+import Control.Monad (unless)
 import Data.Either.Validation
 import Data.List (intercalate)
 import Data.Traversable (for)
 import NammaDSL.DSL.Syntax.Common
 import qualified NammaDSL.DSL.Syntax.Storage as Storage
+import NammaDSL.Utils
 import Prelude
-
-putStrLn' :: String -> String -> IO ()
-putStrLn' colorCode text = putStrLn $ "\x1b[" ++ colorCode ++ "m" ++ text ++ "\x1b[0m"
 
 checkKVConstraints :: [Storage.TableDef] -> IO ()
 checkKVConstraints tableDefs = do
   case for tableDefs validateKVConstraints of
-    Failure info -> do
-      throwIO $
-        KVConstraintError $
-          "Neither primary nor secondary keys were found in where clause:\n"
-            <> intercalate ";\n" (show <$> info)
-            <> ".\nGeneration failed"
-    Success info -> do
+    Failure (info :: [KVConstraintInfo]) -> do
+      putStrLnRed $
+        "KV constraint failed. All primary keys or at least one secondary key should be found in non empty where clause:\n"
+          <> intercalate ";\n" (("  " <>) . show <$> info)
+          <> ".\nGeneration failed"
+      throwIO $ KVConstraintError
+    Success (info :: [[KVConstraintInfo]]) -> do
       -- TODO Just for debug purpose, remove later
-      putStrLn' "32" $
+      putStrLnGreen $
         "KV constraint applied successfully:\n"
-          <> intercalate ";\n" (show <$> info)
+          <> intercalate ";\n" (("  " <>) . show <$> concat info)
+      let skippedTables = map (.tableNameHaskell) $ filter (.disableKVQueryConstraints) tableDefs
+      unless (null skippedTables) $
+        putStrLnYellow $
+          "WARNING: skipped KV constraint for following tables: " <> intercalate ", " skippedTables
       pure ()
 
 data KVConstraintInfo = KVConstraintInfo
@@ -70,19 +73,3 @@ getColumnsFromWhereClause = \case
   Storage.Leaf (queryParam, _) -> [queryParam.qpName]
   Storage.Query (Storage.Or, _whereList) -> []
   Storage.Query (_op, whereList) -> concatMap getColumnsFromWhereClause whereList
-
--- kvQueryPrimaryKeyConstraint :: [String] -> WhereClause -> Bool
--- kvQueryPrimaryKeyConstraint _keys EmptyWhere = True
--- kvQueryPrimaryKeyConstraint _keys (Leaf (_qp, Nothing)) = False -- error "TODO"
--- kvQueryPrimaryKeyConstraint _keys (Leaf (_qp, (Just _op))) = False -- error "TODO"
--- kvQueryPrimaryKeyConstraint _keys (Query (_op, _ws)) = False -- error "TODO"
-
--- kvQuerySecondaryKeyConstraint :: [String] -> WhereClause -> Bool
--- kvQuerySecondaryKeyConstraint _keys EmptyWhere = True
--- kvQuerySecondaryKeyConstraint _keys _where_ = False -- error "TODO"
-
--- fetchPrimaryKeys :: [BeamField] -> [String]
--- fetchPrimaryKeys _fields = error "TODO"
-
--- fetchSecondaryKeys :: [BeamField] -> [String]
--- fetchSecondaryKeys = error "TODO"
