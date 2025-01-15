@@ -69,8 +69,10 @@ isEmptyWhere _ = False
 getColumnsFromWhereClause :: Storage.WhereClause -> [String]
 getColumnsFromWhereClause = \case
   Storage.EmptyWhere -> []
-  Storage.Leaf (_queryParam, Just Storage.Or) -> []
-  Storage.Leaf (queryParam, _) -> [queryParam.qpName]
+  Storage.Leaf (queryParam, Just Storage.And) -> [queryParam.qpName]
+  Storage.Leaf (queryParam, Just Storage.Eq) -> [queryParam.qpName]
+  Storage.Leaf (queryParam, Nothing) -> [queryParam.qpName]
+  Storage.Leaf (_queryParam, Just _) -> []
   Storage.Query (Storage.And, whereList) -> concatMap getColumnsFromWhereClause whereList
   Storage.Query (Storage.Eq, whereList) -> concatMap getColumnsFromWhereClause whereList
   Storage.Query (_, _whereList) -> []
