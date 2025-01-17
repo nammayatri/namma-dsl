@@ -12,6 +12,8 @@ import Prelude
 
 checkKVConstraints :: [Storage.TableDef] -> IO ()
 checkKVConstraints tableDefs = do
+  -- TODO only for debug, remove
+  putStrLnGreen $ show tableDefs
   case for tableDefs validateKVConstraints of
     Failure (info :: [KVConstraintInfo]) -> do
       putStrLnRed $
