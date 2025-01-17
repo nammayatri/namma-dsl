@@ -43,18 +43,20 @@ validateKVConstraints :: Storage.TableDef -> Validation [KVConstraintInfo] [KVCo
 validateKVConstraints tableDef = do
   if tableDef.disableKVQueryConstraints
     then Success []
-    else for tableDef.queries $ \query -> do
-      -- unless (kvQueryConstraints (concat $ beamFields <$> fields table) (whereClause query)) $ do
-      let whereColumns = getColumnsFromWhereClause query.whereClause
-      let info =
-            KVConstraintInfo
-              { tableName = tableDef.tableNameHaskell,
-                queryName = query.queryName,
-                whereColumns,
-                primaryKeys = tableDef.primaryKey,
-                secondaryKeys = tableDef.secondaryKey
-              }
-      if (kvQueryConstraints tableDef (isEmptyWhere query.whereClause) whereColumns) then Success info else Failure [info]
+    else do
+      let filteredQueries = filter (\query -> query.kvFunction `notElem` excludedDbFunctions) tableDef.queries
+      for filteredQueries $ \query -> do
+        -- unless (kvQueryConstraints (concat $ beamFields <$> fields table) (whereClause query)) $ do
+        let whereColumns = getColumnsFromWhereClause query.whereClause
+        let info =
+              KVConstraintInfo
+                { tableName = tableDef.tableNameHaskell,
+                  queryName = query.queryName,
+                  whereColumns,
+                  primaryKeys = tableDef.primaryKey,
+                  secondaryKeys = tableDef.secondaryKey
+                }
+        if (kvQueryConstraints tableDef (isEmptyWhere query.whereClause) whereColumns) then Success info else Failure [info]
 
 kvQueryConstraints :: Storage.TableDef -> Bool -> [String] -> Bool
 kvQueryConstraints table isEmpty whereColumns = do
@@ -76,3 +78,11 @@ getColumnsFromWhereClause = \case
   Storage.Query (Storage.And, whereList) -> concatMap getColumnsFromWhereClause whereList
   Storage.Query (Storage.Eq, whereList) -> concatMap getColumnsFromWhereClause whereList
   Storage.Query (_, _whereList) -> []
+
+excludedDbFunctions :: [String]
+excludedDbFunctions =
+  [ "findOneWithDb",
+    "findAllWithDb",
+    "findAllWithOptionsDb",
+    "deleteWithDb"
+  ]
