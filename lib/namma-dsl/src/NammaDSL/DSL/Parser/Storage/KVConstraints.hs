@@ -3,7 +3,9 @@ module NammaDSL.DSL.Parser.Storage.KVConstraints (checkKVConstraints) where
 import Control.Exception (throwIO)
 import Control.Monad (unless)
 import Data.Either.Validation
-import Data.List (intercalate)
+import Data.Functor ((<&>))
+import Data.List (find, intercalate)
+import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import NammaDSL.DSL.Syntax.Common
 import qualified NammaDSL.DSL.Syntax.Storage as Storage
@@ -12,8 +14,6 @@ import Prelude
 
 checkKVConstraints :: [Storage.TableDef] -> IO ()
 checkKVConstraints tableDefs = do
-  -- TODO only for debug, remove
-  putStrLnGreen $ show tableDefs
   case for tableDefs validateKVConstraints of
     Failure (info :: [KVConstraintInfo]) -> do
       putStrLnRed $
@@ -48,8 +48,7 @@ validateKVConstraints tableDef = do
     else do
       let filteredQueries = filter (\query -> query.kvFunction `notElem` excludedDbFunctions) tableDef.queries
       for filteredQueries $ \query -> do
-        -- unless (kvQueryConstraints (concat $ beamFields <$> fields table) (whereClause query)) $ do
-        let whereColumns = getColumnsFromWhereClause query.whereClause
+        let whereColumns = getBeamColumnsFromWhereClause tableDef.fields query.whereClause
         let info =
               KVConstraintInfo
                 { tableName = tableDef.tableNameHaskell,
@@ -69,6 +68,12 @@ kvQueryConstraints table isEmpty whereColumns = do
 isEmptyWhere :: Storage.WhereClause -> Bool
 isEmptyWhere Storage.EmptyWhere = True
 isEmptyWhere _ = False
+
+getBeamColumnsFromWhereClause :: [Storage.FieldDef] -> Storage.WhereClause -> [String]
+getBeamColumnsFromWhereClause fields whereClause = do
+  let haskellFields = getColumnsFromWhereClause whereClause
+  flip concatMap haskellFields $ \haskellField -> do
+    (<&> (.bFieldName)) . fromMaybe [] . (<&> (.beamFields)) . find (\field -> field.fieldName == haskellField) $ fields
 
 getColumnsFromWhereClause :: Storage.WhereClause -> [String]
 getColumnsFromWhereClause = \case
