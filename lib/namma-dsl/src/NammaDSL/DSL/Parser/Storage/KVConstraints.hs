@@ -12,12 +12,14 @@ import qualified NammaDSL.DSL.Syntax.Storage as Storage
 import NammaDSL.Utils
 import Prelude
 
-checkKVConstraints :: [Storage.TableDef] -> IO ()
-checkKVConstraints tableDefs = do
+checkKVConstraints :: FilePath -> [Storage.TableDef] -> IO ()
+checkKVConstraints yamlPath tableDefs = do
   case for tableDefs validateKVConstraints of
     Failure (info :: [KVConstraintInfo]) -> do
       putStrLnRed $
-        "KV constraint failed. All primary keys or at least one secondary key should be found in non empty where clause:\n"
+        "KV constraint failed: "
+          <> yamlPath
+          <> "\nAll primary keys or at least one secondary key should be found in non empty where clause:\n"
           <> intercalate ";\n" (("  " <>) . show <$> info)
           <> ".\nGeneration failed"
       throwIO $ KVConstraintError

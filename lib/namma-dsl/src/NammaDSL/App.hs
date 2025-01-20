@@ -50,7 +50,7 @@ runStorageGenerator configPath yamlPath = do
             storagePackageMapping = config ^. packageMapping
           }
   tableDefs <- storageParser storageRead yamlPath
-  checkKVConstraints tableDefs
+  checkKVConstraints yamlPath tableDefs
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
   mapM_
     when'
