@@ -91,5 +91,6 @@ excludedDbFunctions =
   [ "findOneWithDb",
     "findAllWithDb",
     "findAllWithOptionsDb",
+    "updateWithDb",
     "deleteWithDb"
   ]

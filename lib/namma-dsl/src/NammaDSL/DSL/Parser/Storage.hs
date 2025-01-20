@@ -12,7 +12,7 @@ module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, r
 import Control.Lens.Combinators
 import Control.Lens.Operators
 import Control.Monad (unless, when)
-import Control.Monad.Extra (whenJust)
+-- import Control.Monad.Extra (whenJust)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
@@ -69,7 +69,8 @@ parseTableDef = do
   parseRelationalTableNamesHaskell
   parseExtraOperations
   parseExtraIndexes
-  parseKVConstraintsFlag
+
+-- parseKVConstraintsFlag
 
 parseExtraIndexes :: StorageParserM ()
 parseExtraIndexes = do
@@ -1289,9 +1290,9 @@ getAllFieldsUsedInQueries queries = do
           Just (FieldDef {..}) -> map bFieldName beamFields
           Nothing -> []
 
-parseKVConstraintsFlag :: StorageParserM ()
-parseKVConstraintsFlag = do
-  obj <- gets (dataObject . extraParseInfo)
-  let mbDisableKVQueryConstraints' = obj ^? ix acc_disableKVQueryConstraints . _Bool
-  whenJust mbDisableKVQueryConstraints' $ \disableKVQueryConstraints' -> do
-    modify $ \s -> s {tableDef = (tableDef s) {disableKVQueryConstraints = disableKVQueryConstraints'}}
+-- parseKVConstraintsFlag :: StorageParserM ()
+-- parseKVConstraintsFlag = do
+--   obj <- gets (dataObject . extraParseInfo)
+--   let mbDisableKVQueryConstraints' = obj ^? ix acc_disableKVQueryConstraints . _Bool
+--   whenJust mbDisableKVQueryConstraints' $ \disableKVQueryConstraints' -> do
+--     modify $ \s -> s {tableDef = (tableDef s) {disableKVQueryConstraints = disableKVQueryConstraints'}}
