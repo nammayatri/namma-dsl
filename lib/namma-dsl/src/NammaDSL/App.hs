@@ -14,6 +14,7 @@ import qualified Data.Text as T
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
+import NammaDSL.DSL.Parser.Storage.KVConstraints
 import NammaDSL.DSL.Syntax.API
 import NammaDSL.DSL.Syntax.Common as ReExport
 import NammaDSL.DSL.Syntax.Storage
@@ -28,7 +29,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.83"
+version = "1.0.84"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -49,6 +50,7 @@ runStorageGenerator configPath yamlPath = do
             storagePackageMapping = config ^. packageMapping
           }
   tableDefs <- storageParser storageRead yamlPath
+  checkKVConstraints yamlPath tableDefs
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
   mapM_
     when'

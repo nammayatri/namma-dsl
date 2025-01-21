@@ -29,7 +29,11 @@ generateSQL database (Just oldSqlFile) tableDef = do
   newColumnQueries <- addColumnSQL True database tableName newFields
   let deleteQueries = generateDeleteSQL database tableName deletedFields
   if anyChanges || isPkChanged || anyIndexChanges
-    then Right $ oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" (filter (not . null) [updateQueries, newColumnQueries, pkChangeQuery, deleteQueries, upsertIndexes])
+    then do
+      let sqlContent = filter (not . null) [updateQueries, newColumnQueries, pkChangeQuery, deleteQueries, upsertIndexes]
+      if not $ null sqlContent
+        then Right $ oldSqlFile.rawLastSqlFile ++ updateStamp ++ intercalate "\n" sqlContent
+        else Right $ oldSqlFile.rawLastSqlFile
     else Right $ oldSqlFile.rawLastSqlFile
 generateSQL database Nothing tableDef = do
   altrStmts <- alterTableSQL database tableDef
