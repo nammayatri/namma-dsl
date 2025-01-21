@@ -68,5 +68,6 @@ $( makeAccKeysTH
     extraIndexes
     unique
     columns
+    disableKVQueryRestrictions
     |]
  )
