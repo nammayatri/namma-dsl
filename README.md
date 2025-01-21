@@ -605,6 +605,11 @@ import "dashboard-api" Domain.Types.DataType1
             - field4
             - field5
   ```
+    **Note:** KV queries have restriction for Where Clause:
+
+    **KV queries should contain at least one of secondary keys or all primary keys in non empty Where Clause** (only `and` and `eq` operators cosidered when keys searched).
+
+    If this restriction does not satisfied for any query, then generator will fail with KV restriction Error. User should either change KV function to corresponding DB function, or add secondary key for table. User should be carefull when defining secondary key, ensure that the key does not have **one to many** mapping with high number of entries.
 - Fields that are used in params and where clause can be of 3 types:
    - Domain Type Fields: Normal fields in the domain type. On this fields domain to beam convertion function will be applied.
    - Beam Type Fields: We can directly pass beam type fields to params and where clause by adding a **|B**
