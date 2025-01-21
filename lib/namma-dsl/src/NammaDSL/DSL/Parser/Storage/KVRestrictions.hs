@@ -1,4 +1,4 @@
-module NammaDSL.DSL.Parser.Storage.KVConstraints (checkKVConstraints) where
+module NammaDSL.DSL.Parser.Storage.KVRestrictions (checkKVRestrictions) where
 
 import Control.Exception (throwIO)
 import Control.Monad (unless)
@@ -12,29 +12,29 @@ import qualified NammaDSL.DSL.Syntax.Storage as Storage
 import NammaDSL.Utils
 import Prelude
 
-checkKVConstraints :: FilePath -> [Storage.TableDef] -> IO ()
-checkKVConstraints yamlPath tableDefs = do
-  case for tableDefs validateKVConstraints of
-    Failure (info :: [KVConstraintInfo]) -> do
+checkKVRestrictions :: FilePath -> [Storage.TableDef] -> IO ()
+checkKVRestrictions yamlPath tableDefs = do
+  case for tableDefs validateKVRestrictions of
+    Failure (info :: [KVRestrictionInfo]) -> do
       putStrLnRed $
-        "KV constraint failed: "
+        "KV Restriction failed: "
           <> yamlPath
           <> "\nAll primary keys or at least one secondary key should be found in non empty where clause:\n"
           <> intercalate ";\n" (("  " <>) . show <$> info)
           <> ".\nGeneration failed"
-      throwIO $ KVConstraintError
-    Success (info :: [[KVConstraintInfo]]) -> do
+      throwIO $ KVRestrictionError
+    Success (info :: [[KVRestrictionInfo]]) -> do
       -- TODO Just for debug purpose, remove later
       putStrLnGreen $
-        "KV constraint applied successfully:\n"
+        "KV Restriction applied successfully:\n"
           <> intercalate ";\n" (("  " <>) . show <$> concat info)
-      let skippedTables = map (.tableNameHaskell) $ filter (.disableKVQueryConstraints) tableDefs
+      let skippedTables = map (.tableNameHaskell) $ filter (.disableKVQueryRestrictions) tableDefs
       unless (null skippedTables) $
         putStrLnYellow $
-          "WARNING: skipped KV constraint for following tables: " <> intercalate ", " skippedTables
+          "WARNING: skipped KV Restriction for following tables: " <> intercalate ", " skippedTables
       pure ()
 
-data KVConstraintInfo = KVConstraintInfo
+data KVRestrictionInfo = KVRestrictionInfo
   { tableName :: String,
     queryName :: String,
     whereColumns :: [String],
@@ -43,26 +43,26 @@ data KVConstraintInfo = KVConstraintInfo
   }
   deriving (Show)
 
-validateKVConstraints :: Storage.TableDef -> Validation [KVConstraintInfo] [KVConstraintInfo]
-validateKVConstraints tableDef = do
-  if tableDef.disableKVQueryConstraints
+validateKVRestrictions :: Storage.TableDef -> Validation [KVRestrictionInfo] [KVRestrictionInfo]
+validateKVRestrictions tableDef = do
+  if tableDef.disableKVQueryRestrictions
     then Success []
     else do
       let filteredQueries = filter (\query -> query.kvFunction `notElem` excludedDbFunctions) tableDef.queries
       for filteredQueries $ \query -> do
         let whereColumns = getBeamColumnsFromWhereClause tableDef.fields query.whereClause
         let info =
-              KVConstraintInfo
+              KVRestrictionInfo
                 { tableName = tableDef.tableNameHaskell,
                   queryName = query.queryName,
                   whereColumns,
                   primaryKeys = tableDef.primaryKey,
                   secondaryKeys = tableDef.secondaryKey
                 }
-        if (kvQueryConstraints tableDef (isEmptyWhere query.whereClause) whereColumns) then Success info else Failure [info]
+        if (kvQueryRestrictions tableDef (isEmptyWhere query.whereClause) whereColumns) then Success info else Failure [info]
 
-kvQueryConstraints :: Storage.TableDef -> Bool -> [String] -> Bool
-kvQueryConstraints table isEmpty whereColumns = do
+kvQueryRestrictions :: Storage.TableDef -> Bool -> [String] -> Bool
+kvQueryRestrictions table isEmpty whereColumns = do
   isEmpty
     || all (`elem` whereColumns) table.primaryKey
     || any (`elem` whereColumns) table.secondaryKey

@@ -64,7 +64,7 @@ data TableDef = TableDef
     extraOperations :: [ExtraOperations],
     intermediateTransformers :: IntermediateTransformers,
     indexes :: [IndexDef],
-    disableKVQueryConstraints :: Bool
+    disableKVQueryRestrictions :: Bool
   }
   deriving (Show, Generic)
 
