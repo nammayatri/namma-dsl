@@ -18,7 +18,7 @@ import Data.Bool
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Default
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, nub)
 import Data.List.Extra (dropPrefix)
 import Data.List.Split (splitWhen)
 import qualified Data.Map.Strict as M
@@ -138,8 +138,15 @@ parseAllApis' = do
               A.String str -> ApiMigration (toText k) (Just str)
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
+          apiErrors = case preview (ix acc_errors) obj of
+            Nothing -> []
+            Just A.Null -> []
+            Just (A.String str) -> [str]
+            Just (A.Array arr) -> map (fromMaybe (error "Expected errors as Null, String or Array of String") . preview _String) $ V.toList arr
+            _ -> error "Expected errors as Null, String or Array of String"
+          uniqueApiErrors = if length (nub apiErrors) /= length apiErrors then error "Expected unique errors" else apiErrors
 
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations
+      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations uniqueApiErrors
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq

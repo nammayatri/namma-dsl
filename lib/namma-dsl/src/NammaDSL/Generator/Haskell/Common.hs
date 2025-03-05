@@ -148,7 +148,8 @@ textToType ty = TH.appendT $ NE.fromList $ cT <$> words (T.unpack ty)
 
 apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
 apiTTToText apiRead generationType apiTT = do
-  let urlPartsText = map urlPartToText (_urlParts apiTT)
+  let errorPartToText = errorPartsToText (_apiErrors apiTT)
+      urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
       apiReqText = apiReqToText <$> apiTT ^. apiReqType
@@ -157,12 +158,17 @@ apiTTToText apiRead generationType apiTT = do
 
   TH.appendInfixT ":>" . NE.fromList $
     maybeToList (addAuthToApi apiRead generationType apiTT)
+      <> maybeToList errorPartToText
       <> urlPartsText
       <> headerText
       <> maybeToList apiMultipartText
       <> maybeToList apiReqText
       <> [apiResText]
   where
+    errorPartsToText :: [Text] -> Maybe (Q r TH.Type)
+    errorPartsToText [] = Nothing
+    errorPartsToText errs = Just $ cT "Throws" ~~ promotedListT (T.unpack . (<> "T") <$> errs)
+
     urlPartToText :: UrlParts -> Q r TH.Type
     urlPartToText (UnitPath path) = strT (T.unpack path)
     urlPartToText (Capture path ty) = cT "Capture" ~~ strT (T.unpack path) ~~ textToType ty
