@@ -1,5 +1,6 @@
 module NammaDSL.DSL.Syntax.Common where
 
+import Control.Exception
 import Control.Monad.RWS
 import Control.Monad.Trans.Except
 import Data.Default
@@ -14,11 +15,14 @@ data RecordType
   | Type
   deriving (Show, Eq)
 
-data ParseError = InternalError String | YamlError String
+data ParseError = InternalError String | YamlError String | KVRestrictionError
 
 instance Show ParseError where
   show (InternalError s) = "Internal Error: " ++ s
   show (YamlError s) = "Yaml Error: " ++ s
+  show KVRestrictionError = "KV restriction Error"
+
+instance Exception ParseError
 
 type ParserM r s = RWST r () s (ExceptT ParseError IO)
 

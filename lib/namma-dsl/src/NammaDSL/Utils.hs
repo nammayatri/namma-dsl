@@ -361,3 +361,11 @@ parseModeConfig =
           )
           LHE.knownExtensions
     }
+
+putStrLn' :: String -> String -> IO ()
+putStrLn' colorCode text = putStrLn $ "\x1b[" ++ colorCode ++ "m" ++ text ++ "\x1b[0m"
+
+putStrLnRed, putStrLnGreen, putStrLnYellow :: String -> IO ()
+putStrLnRed = putStrLn' "31"
+putStrLnGreen = putStrLn' "32"
+putStrLnYellow = putStrLn' "33"
