@@ -70,24 +70,30 @@ mkApiMigrationKeys database apiTT = do
 generateMigration :: Bool -> ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR (Maybe String)
 generateMigration isLocal' apiRead apiTT migrationKey = do
   case find (\m -> m.name == migration migrationKey) allSupportedMigrations of
-    Just SupportedMigration {generate, isLocal} -> if isLocal == isLocal' then Just <$> generate apiRead apiTT migrationKey else pure Nothing
+    Just SupportedMigration {generate, isLocal, deprecate, errorMessage, name} -> do
+      if isLocal == isLocal'
+        then if deprecate then Left $ errorMessage name else Just <$> generate apiRead apiTT migrationKey
+        else pure Nothing
     Nothing -> Left $ "Only " <> show (name <$> allSupportedMigrations) <> " migrations supported"
 
 -- supported migrations implementation
 
 data SupportedMigration = SupportedMigration
   { name :: T.Text,
+    deprecate :: Bool,
+    errorMessage :: T.Text -> SQL_ERROR,
     isLocal :: Bool,
     generate :: ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR String
   }
 
 allSupportedMigrations :: [SupportedMigration]
-allSupportedMigrations =
-  [ SupportedMigration {name = "endpoint", isLocal = False, generate = generateEndpointMigration},
-    SupportedMigration {name = "endpointV2", isLocal = False, generate = generateEndpointV2Migration},
-    SupportedMigration {name = "userActionType", isLocal = False, generate = generateUserActionTypeMigration},
-    SupportedMigration {name = "localAccessForRoleId", isLocal = True, generate = generatelocalAccessForRoleIdMigration}
-  ]
+allSupportedMigrations = do
+  let errorMessage name = "Migration \"" <> T.unpack name <> "\" is deprecated. Should not be used for new apis, only when move api from manual code to DSL. Please remove it from spec"
+  [ SupportedMigration {name = "endpoint", isLocal = False, generate = generateEndpointMigration, deprecate = True, errorMessage},
+    SupportedMigration {name = "endpointV2", isLocal = False, generate = generateEndpointV2Migration, deprecate = True, errorMessage},
+    SupportedMigration {name = "userActionType", isLocal = False, generate = generateUserActionTypeMigration, deprecate = True, errorMessage},
+    SupportedMigration {name = "localAccessForRoleId", isLocal = True, generate = generatelocalAccessForRoleIdMigration, deprecate = False, errorMessage}
+    ]
 
 generateEndpointMigration :: ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR String
 generateEndpointMigration apiRead apiTT migrationKey = do
