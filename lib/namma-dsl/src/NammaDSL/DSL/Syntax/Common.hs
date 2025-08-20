@@ -27,7 +27,7 @@ evalParser p r s = do
   res <- runExceptT $ fst <$> execRWST p r s
   either (die . show) pure res
 
-throwError :: ParseError -> ParserM r s ()
+throwError :: ParseError -> ParserM r s a
 throwError err = lift $ throwE err
 
 -- to store pin point error location --

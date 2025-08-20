@@ -271,3 +271,11 @@ data SqlReportedChanges = SqlReportedChanges
     toBeDeletedIndexes :: [IndexDef]
   }
   deriving (Show)
+
+kvFunctionsWithOptions :: [String]
+kvFunctionsWithOptions =
+  [ "findAllWithOptionsKV",
+    "findAllWithOptionsKV'",
+    "findAllWithOptionsKVScheduler",
+    "findAllWithOptionsDb"
+  ]

@@ -5,7 +5,7 @@ import Control.Monad (forM_, when)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (SERVANT_API))
@@ -50,12 +50,10 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
     allQualifiedImports =
       [ domainHandlerModulePrefix
           <> T.unpack (_moduleName input)
-          <> " as "
-          <> domainHandlerModulePrefix
-          <> T.unpack (_moduleName input)
       ]
         <> nub (qualifiedImp <> figureOutImports allHandlersSignatures <> apiTypesImport)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
+        <> multipartImports
 
     allHandlersSignatures :: [String]
     allHandlersSignatures = case apiReadKind apiRead of
@@ -110,6 +108,12 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
             UI -> "API"
             DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
       Just [apiTypeName, "handler"]
+
+    multipartImports :: [String]
+    multipartImports = do
+      if apiReadKind apiRead == UI && any (isJust . (^. apiMultipartType)) (input ^. apis)
+        then ["Kernel.ServantMultipart"]
+        else []
 
 mkCodeBody :: ApiRead -> ApisM ()
 mkCodeBody apiRead = do
