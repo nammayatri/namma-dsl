@@ -580,7 +580,7 @@ generateBeamQuery storageRead allHaskellFields tableNameHaskell query = do
 
 orderAndLimit :: QueryDef -> [Q TH.Exp]
 orderAndLimit query = do
-  if query.kvFunction `elem` ["findAllWithOptionsKV", "findAllWithOptionsKV'", "findAllWithOptionsKVScheduler", "findAllWithOptionsDb"]
+  if query.kvFunction `elem` kvFunctionsWithOptions
     then do
       let order = cE ("Se." <> show (maybe (snd defaultOrderBy) snd query.orderBy)) ~* vE ("Beam." <> (maybe (fst defaultOrderBy) fst query.orderBy))
       [order, vE "limit", vE "offset"]
@@ -626,7 +626,7 @@ withFunctionSignature storageRead query tableNameHaskell stmts = do
 
 addLimitParams :: QueryDef -> [(String, String)]
 addLimitParams query =
-  if query.kvFunction `elem` ["findAllWithOptionsKV", "findAllWithOptionsKV'", "findAllWithOptionsKVScheduler", "findAllWithOptionsDb"]
+  if query.kvFunction `elem` kvFunctionsWithOptions
     then [("limit", "Maybe Int"), ("offset", "Maybe Int")]
     else []
 
@@ -637,7 +637,7 @@ generateQueryReturnType storageRead kvFunction tableNameHaskell = do
   if kvFunction `elem` ["findOneWithKV", "findOneWithKVScheduler", "findOneWithDb"]
     then cT "Maybe" ~~ dType
     else
-      if kvFunction `elem` ["findAllWithKV", "findAllWithKVScheduler", "findAllWithOptionsKV", "findAllWithOptionsKV'", "findAllWithOptionsKVScheduler", "findAllWithDb", "findAllWithOptionsDb", "findAllWithKVAndConditionalDB"]
+      if kvFunction `elem` (["findAllWithKV", "findAllWithKVScheduler", "findAllWithDb", "findAllWithKVAndConditionalDB"] <> kvFunctionsWithOptions)
         then TH.listT ~~ dType
         else _UnitType
 

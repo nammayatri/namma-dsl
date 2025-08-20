@@ -11,7 +11,7 @@ module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, r
 
 import Control.Lens.Combinators
 import Control.Lens.Operators
-import Control.Monad (unless, when)
+import Control.Monad (forM, unless, when)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
@@ -410,18 +410,20 @@ parseQueries = do
       _makeTypeQualified' = makeTypeQualified defaultTypeImportMap (Just moduleName) (Just excludedList) (Just dList) (Just defaultImportModule) impObj
       mbQueries = obj ^? ix acc_queries . _Value . to mkListObject
       excludedQueries = fromMaybe [] $ obj ^? ix acc_excludedDefaultQueries . _Array . to V.toList . to (map valueToString)
-      parseQuery query =
+      parseQuery query = do
         let queryName = fst query
             queryDataObj = snd query
             kvFunction = fromMaybe (error "kvFunction is neccessary") (queryDataObj ^? ix acc_kvFunction . _String)
             params = addDefaultUpdatedAtToQueryParams kvFunction fields $ fromMaybe [] (queryDataObj ^? ix acc_params . _Array . to V.toList . to (map (makeQueryParam fields bFields)))
             whereClause = fromMaybe EmptyWhere (queryDataObj ^? ix acc_where . to (parseWhereClause (makeQueryParam fields bFields) "eq"))
-            orderBy = queryDataObj ^? ix acc_orderBy . to (parseOrderBy fields)
-            takeFullObjectAsParam = fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
+        orderBy <- forM (queryDataObj ^? ix acc_orderBy) $ parseOrderBy moduleName queryName kvFunction fields
+        let takeFullObjectAsParam = fromMaybe False (queryDataObj ^? ix acc_fullObjectAsParam . _Bool)
             typeConstraint = queryDataObj ^? ix acc_typeConstraint . _String
-         in QueryDef queryName kvFunction params whereClause orderBy takeFullObjectAsParam typeConstraint
+        pure $ QueryDef queryName kvFunction params whereClause orderBy takeFullObjectAsParam typeConstraint
   case mbQueries of
-    Just queries -> modify $ \s -> s {tableDef = (tableDef s) {queries = map parseQuery queries}}
+    Just queries -> do
+      modQueries <- mapM parseQuery queries
+      modify $ \s -> s {tableDef = (tableDef s) {queries = modQueries}}
     Nothing -> pure ()
   modify $ \s -> s {tableDef = (tableDef s) {excludedDefaultQueries = excludedQueries}}
   where
@@ -440,14 +442,17 @@ parseQueries = do
                 searchUpdatedAtType
         else params
 
-    parseOrderBy :: [FieldDef] -> Value -> (String, Order)
-    parseOrderBy fields (String st) = do
+    parseOrderBy :: String -> String -> String -> [FieldDef] -> Value -> StorageParserM (String, Order)
+    parseOrderBy moduleName queryName kvFunction _ _
+      | kvFunction `notElem` kvFunctionsWithOptions =
+        throwError (YamlError $ "Module name: " <> moduleName <> "; query name: " <> queryName <> ": invalid kv function for ordered query: " <> kvFunction <> "; recommended function: findAllWithOptionsKV; allowed functions: " <> L.intercalate "," kvFunctionsWithOptions)
+    parseOrderBy _ _ _ fields (String st) = do
       let ((key_, _), _) = searchForKey fields (T.unpack st)
-      (key_, Desc)
-    parseOrderBy fields (Object obj) = do
+      pure (key_, Desc)
+    parseOrderBy _ _ _ fields (Object obj) = do
       let obj' = KM.toList obj
-      extractFieldOrder fields obj'
-    parseOrderBy _ val = error $ "Invalid orderBy: Must be a string or an object: " <> show val
+      pure $ extractFieldOrder fields obj'
+    parseOrderBy moduleName queryName _ _ val = throwError (YamlError $ "Module name: " <> moduleName <> "; query name: " <> queryName <> ": invalid orderBy: Must be a string or an object: " <> show val)
 
 parseImportPackageOverrides :: StorageParserM ()
 parseImportPackageOverrides = do
