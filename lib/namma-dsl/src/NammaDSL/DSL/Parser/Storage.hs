@@ -12,6 +12,7 @@ module NammaDSL.DSL.Parser.Storage (storageParser, getOldSqlFile, debugParser, r
 import Control.Lens.Combinators
 import Control.Lens.Operators
 import Control.Monad (forM, unless, when)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import Data.Aeson.Key (fromString, toString)
@@ -1078,14 +1079,24 @@ beamFieldsWithExtractors fieldName haskellType extractorFuncs = do
   moduleName <- gets (.extraParseInfo.domainName)
   domainTypeModulePrefix <- asks (.domainTypeModulePrefix)
   definedTypes <- (fromMaybe []) <$> gets (.tableDef.types)
+  when (fieldName == "analyticsConfigs" || fieldName == "arrivalTimeBufferOfVehicle") $ do
+    liftIO $ putStrLn $ "definedTypes:" <> show (definedTypes <&> (\(TypeObject _ (TypeName nm) arrOfFields _ _) -> "; nm: " <> nm <> "; isNotEnum: " <> show (all (\(FieldName k, _) -> k /= "enum") arrOfFields)))
+    liftIO $ putStrLn $ "domainTypeModulePrefix:" <> show domainTypeModulePrefix
+    liftIO $ putStrLn $ "moduleName:" <> show moduleName
   obj <- gets (.extraParseInfo.dataObject)
   let beamFieldObj = obj ^? (ix acc_beamFields . _Object)
       qualified tp = domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ tp
       findIfComplexType tpp = find (\(TypeObject _ (TypeName nm) arrOfFields _ _) -> (nm == tpp || tpp == domainTypeModulePrefix ++ "." ++ moduleName ++ "." ++ nm) && all (\(FieldName k, _) -> k /= "enum") arrOfFields) definedTypes
-  case beamFieldObj >>= preview (ix (fromString fieldName) . _Object . to Object . to mkList) of
-    Just arrOfFields ->
+  res <- case beamFieldObj >>= preview (ix (fromString fieldName) . _Object . to Object . to mkList) of
+    Just arrOfFields -> do
+      when (fieldName == "analyticsConfigs" || fieldName == "arrivalTimeBufferOfVehicle") $ do
+        liftIO $ putStrLn $ "arrOfFields: " <> show arrOfFields
+
       pure $ foldl (\acc (nm, tpp) -> acc ++ [(nm, tpp, [])]) [] arrOfFields
-    Nothing ->
+    Nothing -> do
+      when (fieldName == "analyticsConfigs" || fieldName == "arrivalTimeBufferOfVehicle") $ do
+        liftIO $ putStrLn $ "findIfComplexType haskellType: " <> show haskellType <> ":::" <> show (findIfComplexType haskellType)
+
       case findIfComplexType haskellType of
         Just (TypeObject _ _nm arrOfFields _ _) -> do
           foldlM
@@ -1097,6 +1108,9 @@ beamFieldsWithExtractors fieldName haskellType extractorFuncs = do
             arrOfFields
         Nothing ->
           pure [(fromMaybe fieldName (beamFieldObj >>= preview (ix (fromString fieldName) . _String)), haskellType, extractorFuncs)]
+  when (fieldName == "analyticsConfigs" || fieldName == "arrivalTimeBufferOfVehicle") $ do
+    liftIO $ putStrLn $ "res: " <> show res
+  pure res
   where
     capitalise :: String -> String
     capitalise [] = []
