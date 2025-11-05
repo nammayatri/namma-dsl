@@ -827,7 +827,7 @@ defaultQueryDefs tableDef =
   ]
   where
     getAllFieldNamesWithTypesExcludingPks :: [String] -> [FieldDef] -> [QueryParam]
-    getAllFieldNamesWithTypesExcludingPks pks fieldDefs = map (\fieldDef -> (QueryParam (fieldName fieldDef) (haskellType fieldDef) Nothing False)) $ filter (\fieldDef -> fieldName fieldDef `notElem` pks) fieldDefs
+    getAllFieldNamesWithTypesExcludingPks pks fieldDefs = map (\fieldDef -> (QueryParam (fieldName fieldDef) (haskellType fieldDef) Nothing False)) $ filter (\fieldDef -> fieldName fieldDef `notElem` (pks ++ ["createdAt"])) fieldDefs
 
     getAllPrimaryKeyWithTypes :: [String] -> [FieldDef] -> [(QueryParam, Maybe Operator)]
     getAllPrimaryKeyWithTypes pks fieldDefs = map (\fieldDef -> (QueryParam {qpName = fieldName fieldDef, qpType = haskellType fieldDef, qpExtParam = Nothing, qpIsBeam = False}, Nothing)) $ filter (\fieldDef -> fieldName fieldDef `elem` pks) fieldDefs
