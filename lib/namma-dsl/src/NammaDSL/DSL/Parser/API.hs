@@ -104,6 +104,7 @@ parseAllApis' = do
       obj <- preview (_Object) val
       let params = fromMaybe KM.empty $ preview (ix acc_params ._Object) obj
           endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
+          endpointText = fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
           auth = getAuthType <$> preview (ix acc_auth . _String) obj
 
           req = parseRequest obj
@@ -139,7 +140,7 @@ parseAllApis' = do
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
 
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations
+      return $ ApiTT allApiParts apiTp apiName endpointText auth headers multipart req res helperApi apiKind moduleName requestValidation migrations
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq

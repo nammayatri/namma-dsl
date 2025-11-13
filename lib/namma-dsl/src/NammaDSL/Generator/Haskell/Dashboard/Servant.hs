@@ -119,10 +119,23 @@ mkCodeBody generationType apiRead = do
   let allApis = input ^. apis
   tellM . fromMaybe mempty $
     interpreter input $ do
+      generateApiListComment
       generateAPIType SERVANT_API_DASHBOARD apiRead
       generateAPIHandler apiRead
       forM_ allApis $ generateServantApiType generationType apiRead
       forM_ allApis $ handlerFunctionDef generationType apiRead
+
+generateApiListComment :: Writer CodeUnit
+generateApiListComment = do
+  input <- ask
+  let moduleName' = input ^. moduleName
+  commentW $ T.unpack moduleName' <> "APIs:"
+  let apiPrefix' =
+        T.unpack $
+          fromMaybe (headToLower $ input ^. moduleName) $
+            input ^. apiPrefix
+  forM_ (input ^. apis) \api -> do
+    commentW $ show (api ^. apiType) <> " /" <> apiPrefix' <> T.unpack (api ^. apiEndpoint)
 
 generateAPIHandler :: ApiRead -> Writer CodeUnit
 generateAPIHandler apiRead = do
