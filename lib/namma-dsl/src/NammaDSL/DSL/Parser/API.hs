@@ -339,6 +339,7 @@ getAuthType = \case
     case T.words authType of
       ["ApiAuth", sn, ae, uat] -> ApiAuth (ServerName $ T.unpack sn) (ApiEntity $ T.unpack ae) (UserActionType $ T.unpack uat)
       ["ApiAuthV2"] -> ApiAuthV2
+      ["ApiAuthV3"] -> ApiAuthV3
       _ -> error $ "Not a valid auth type: " <> T.unpack authType
 
 getApiType :: Text -> ApiType

@@ -78,6 +78,7 @@ generateServantAPIDashboard (DefaultImports qualifiedImp simpleImp _packageImpor
               Just (SafetyWebhookAuth _) -> False
               Just (ApiAuth {}) -> False
               Just (ApiAuthV2 {}) -> False
+              Just (ApiAuthV3 {}) -> False
               Just NoAuth | apiReadKind apiRead == DASHBOARD -> False
               _ -> True
         )
@@ -164,8 +165,9 @@ handlerFunctionDef generationType apiRead apiT = do
   input <- ask
   useAuth <- case (apiT ^. authType) of
     Just ApiAuthV2 {} -> pure True
+    Just ApiAuthV3 {} -> pure True
     Just NoAuth -> pure False
-    _ -> error "Please use ApiAuthV2, or NoAuth in case of auth not required for dashboard api"
+    _ -> error "Please use ApiAuthV2, ApiAuthV3, or NoAuth in case of auth not required for dashboard api"
   let moduleName' = input ^. moduleName
   let functionName = handlerFunctionText apiT
       signatureUnits = mkApiSignatureUnits apiT

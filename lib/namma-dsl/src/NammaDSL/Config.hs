@@ -97,7 +97,9 @@ data AppConfigs = AppConfigs
     _endpointPrefix :: Maybe String,
     _folderName :: Maybe String,
     _migrationParams :: [ApiMigration],
-    _packageMapping :: [(GenerationType, String)]
+    _packageMapping :: [(GenerationType, String)],
+    _apiDashboardPrefix :: Maybe String, -- prefix for API.Dashboard module (default: "API.Dashboard")
+    _serverNameTypePrefix :: Maybe String -- prefix for ServerName type (default: "Domain.Types.ServerName")
   }
   deriving (Generic, Show, FromDhall)
 

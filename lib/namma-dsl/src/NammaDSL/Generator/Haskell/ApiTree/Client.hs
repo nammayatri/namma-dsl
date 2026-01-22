@@ -109,7 +109,7 @@ generateMkClientsType apiRead = do
               let clientNames = specModulesNE <&> (\specModule -> vP $ T.unpack $ headToLower (T.pack specModule) <> "ClientDSL")
               valDW (appendInfixP ":<|>" clientNames) $
                 normalB $ do
-                  let folderApiType = cT $ "API.Dashboard" #. folderName' <> "DSLAPI"
+                  let folderApiType = cT $ dashboardApiModulePrefix apiRead #. folderName' <> "DSLAPI"
                   vE "Tools.Client.clientWithMerchantAndCity" ~* (sigE (cE "Proxy") $ cT "Proxy" ~~ folderApiType) ~* vE "merchantId" ~* vE "city" ~* vE "token"
 
 generateCallClientFunc :: ApiRead -> Writer CodeUnit
@@ -135,6 +135,6 @@ generateCallClientFunc apiRead = do
             `appTypeE` cT "_"
             `appTypeE` cT "m"
             `appTypeE` cT "r"
-            ~* cE ("Domain.Types.ServerName" #. serverName)
+            ~* cE (serverNameTypeModulePrefix apiRead #. serverName)
             ~* parenE (vE folderFuncName ~* vE "merchantId" ~* vE "city")
             ~* strE funcName

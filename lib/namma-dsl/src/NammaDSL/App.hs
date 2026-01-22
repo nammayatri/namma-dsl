@@ -28,7 +28,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.84"
+version = "1.0.85"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -79,7 +79,9 @@ runApiGenerator configPath yamlPath = do
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName,
             apiMigrationParams = config ^. migrationParams,
-            apiPackageMapping = config ^. packageMapping
+            apiPackageMapping = config ^. packageMapping,
+            dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
+            serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix)
           }
   (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
@@ -114,7 +116,9 @@ runApiTreeGenerator configPath specModules = do
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName,
             apiMigrationParams = config ^. migrationParams,
-            apiPackageMapping = config ^. packageMapping
+            apiPackageMapping = config ^. packageMapping,
+            dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
+            serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix)
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_

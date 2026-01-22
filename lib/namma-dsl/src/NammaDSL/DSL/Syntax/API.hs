@@ -34,6 +34,7 @@ data AuthType
   | DashboardAuth DashboardAuthType
   | ApiAuth ServerName ApiEntity UserActionType
   | ApiAuthV2
+  | ApiAuthV3
   deriving (Show)
 
 newtype ServerName = ServerName {getServerName :: String}
@@ -165,7 +166,9 @@ data ApiRead = ApiRead
     apiEndpointPrefix :: Maybe String,
     apiFolderName :: Maybe String,
     apiMigrationParams :: [ApiMigration],
-    apiPackageMapping :: [(GenerationType, String)]
+    apiPackageMapping :: [(GenerationType, String)],
+    dashboardApiModulePrefix :: String, -- prefix for API.Dashboard module (default: "API.Dashboard")
+    serverNameTypeModulePrefix :: String -- prefix for ServerName type (default: "Domain.Types.ServerName")
   }
 
 data ExtraParseInfo = ExtraParseInfo
