@@ -5,6 +5,7 @@ module NammaDSL.Lib.TH (module NammaDSL.Lib.TH, module Reexport) where
 import Control.Applicative
 import Control.Monad.Writer hiding (Writer)
 import Data.Data (Typeable, typeRep)
+import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy
 import Data.String
@@ -413,6 +414,9 @@ strT = pure . TH.LitT . TH.StrTyLit
 
 promotedList1T :: String -> Q r TH.Type
 promotedList1T str = cT $ "'[" <> str <> "]"
+
+promotedListT :: [String] -> Q r TH.Type
+promotedListT str = cT $ "'[" <> intercalate ", " str <> "]"
 
 lambdaCaseE :: [Q r TH.Match] -> Q r TH.Exp
 lambdaCaseE = fmap TH.LamCaseE . sequenceA
