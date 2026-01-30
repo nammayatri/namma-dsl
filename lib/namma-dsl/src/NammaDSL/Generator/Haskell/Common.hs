@@ -46,6 +46,7 @@ apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
   Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> error "ApiAuth is deprecated, use ApiAuthV2"
   Just ApiAuthV2 {} -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
+  Just ApiAuthV3 {} -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
   Just NoAuth -> case apiT ^. apiTypeKind of
     DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
     UI -> []
@@ -61,6 +62,10 @@ apiAuthTypeMapperServant generationType apiT = case _authType apiT of
   Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> error "ApiAuth is deprecated, use ApiAuthV2"
   Just ApiAuthV2 {} -> case generationType of
+    SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
+    DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
+    _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
+  Just ApiAuthV3 {} -> case generationType of
     SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
     _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
@@ -122,21 +127,33 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just (SafetyWebhookAuth dashboardAuthType) -> Just $ cT "SafetyWebhookAuth" ~~ cT' (show dashboardAuthType)
   Just (DashboardAuth dashboardAuthType) -> Just $ cT "DashboardAuth" ~~ cT' (show dashboardAuthType)
   Just (ApiAuth _ _ _) -> error "ApiAuth is deprecated, use ApiAuthV2"
-  Just ApiAuthV2 -> case generationType of
-    SERVANT_API_DASHBOARD -> do
-      let sn = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead
-      -- TODO use short synonyms
-      let apiTreeModule = apiTypesImportPrefix apiRead
-      let apiTypesModule = apiTypesImportPrefix apiRead #. T.unpack (apiTT ^. apiModuleName)
-      let (folderUserActionType, moduleUserActionType, endpointUserActionType) = either error id $ mkFullUserActionType apiRead apiTT
-      let uat =
-            appendInfixT (TH.mkName "/") $
-              cT' (folderUserActionType)
-                NE.:| [cT' (apiTreeModule #. moduleUserActionType), cT' $ apiTypesModule #. endpointUserActionType]
-      Just $ cT "ApiAuth" ~~ cT' sn ~~ cT' "DSL" ~~ uat
-    _ -> Nothing -- auth already added in common folder
+  Just ApiAuthV2 -> buildApiAuth apiRead generationType apiTT True
+  Just ApiAuthV3 -> buildApiAuth apiRead generationType apiTT False
   Just NoAuth -> Nothing
   Nothing -> Just $ cT "TokenAuth"
+  where
+    buildApiAuth :: ApiRead -> GenerationType -> ApiTT -> Bool -> Maybe (Q r TH.Type)
+    buildApiAuth apiRead' generationType' apiTT' includeDSL = case generationType' of
+      SERVANT_API_DASHBOARD -> do
+        let sn = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead'
+        let baseAuth = cT "ApiAuth" ~~ cT' sn
+        if includeDSL
+          then do
+            -- ApiAuthV2: Use nested path structure
+            -- TODO use short synonyms
+            let apiTreeModule = apiTypesImportPrefix apiRead'
+            let apiTypesModule = apiTypesImportPrefix apiRead' #. T.unpack (apiTT' ^. apiModuleName)
+            let (folderUserActionType, moduleUserActionType, endpointUserActionType) = either error id $ mkFullUserActionType apiRead' apiTT'
+            let uat =
+                  appendInfixT (TH.mkName "/") $
+                    cT' (folderUserActionType)
+                      NE.:| [cT' (apiTreeModule #. moduleUserActionType), cT' $ apiTypesModule #. endpointUserActionType]
+            Just $ baseAuth ~~ cT' "DSL" ~~ uat
+          else do
+            -- ApiAuthV3: Use simple enum value
+            let fullEnumName = mkFullUserActionTypeEnum apiRead' apiTT'
+            Just $ baseAuth ~~ cT' fullEnumName
+      _ -> Nothing -- auth already added in common folder
 
 type IsHelperApi = Bool
 
@@ -336,3 +353,17 @@ mkFullUserActionType apiRead apiTT = do
   let moduleUserActionType = screamingSnake $ T.unpack (apiTT ^. apiModuleName)
   let endpointUserActionType = mkUserActionTypeName apiTT
   pure (folderUserActionType, moduleUserActionType, endpointUserActionType)
+
+-- | Constructs the full UserActionType enum name for ApiAuthV3
+-- Uses the last part (endpointUserActionType) from ApiAuthV2 and inserts the folder name
+-- Example: POST_ADMIN_PERSON_CREATE from endpointUserActionType="POST_PERSON_CREATE" and folderName="Admin"
+mkFullUserActionTypeEnum :: ApiRead -> ApiTT -> String
+mkFullUserActionTypeEnum apiRead apiTT = do
+  let folderName = fromMaybe (error "Folder name required for dashboard api generation") $ apiFolderName apiRead
+  let folderPart = screamingSnake folderName -- e.g., "ADMIN"
+  let endpointUserActionType = mkUserActionTypeName apiTT -- e.g., "POST_PERSON_CREATE" (last part of ApiAuthV2)
+  -- Insert folder name after HTTP method: POST_PERSON_CREATE -> POST_ADMIN_PERSON_CREATE
+  let endpointParts = T.splitOn "_" (T.pack endpointUserActionType)
+  case endpointParts of
+    (httpMethod : rest) -> T.unpack $ T.intercalate "_" (httpMethod : T.pack folderPart : rest)
+    _ -> endpointUserActionType -- Fallback if structure is unexpected
