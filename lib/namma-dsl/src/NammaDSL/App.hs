@@ -31,7 +31,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.85"
+version = "1.0.86"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -92,7 +92,8 @@ runApiGenerator configPath yamlPath = do
             apiPackageMapping = config ^. packageMapping,
             dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
             serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix),
-            apiCapabilityBaseline = mbCapabilityBaseline
+            apiCapabilityBaseline = mbCapabilityBaseline,
+            isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate)
           }
   (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
@@ -131,7 +132,8 @@ runApiTreeGenerator configPath specModules = do
             dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
             serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix),
             -- The tree generator emits no API SQL, so the baseline is irrelevant here.
-            apiCapabilityBaseline = Nothing
+            apiCapabilityBaseline = Nothing,
+            isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate)
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_

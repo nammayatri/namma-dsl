@@ -174,7 +174,8 @@ data ApiRead = ApiRead
     -- Endpoint ids exempt from the `capability` requirement because they were
     -- mapped in bulk when the capability framework landed. Nothing = the spec
     -- has no baseline configured, so the requirement is not enforced at all.
-    apiCapabilityBaseline :: Maybe (Set Text)
+    apiCapabilityBaseline :: Maybe (Set Text),
+    isApiTreeClientGenerated :: Bool
   }
 
 data ExtraParseInfo = ExtraParseInfo
