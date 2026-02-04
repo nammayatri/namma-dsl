@@ -169,7 +169,8 @@ data ApiRead = ApiRead
     apiPackageMapping :: [(GenerationType, String)],
     dashboardApiModulePrefix :: String, -- prefix for API.Dashboard module (default: "API.Dashboard")
     serverNameTypeModulePrefix :: String, -- prefix for ServerName type (default: "Domain.Types.ServerName")
-    isApiTreeClientGenerated :: Bool
+    isApiTreeClientGenerated :: Bool,
+    apiImportsMapping :: [(String, Maybe String)]
   }
 
 data ExtraParseInfo = ExtraParseInfo
