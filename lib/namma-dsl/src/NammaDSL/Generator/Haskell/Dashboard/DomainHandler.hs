@@ -6,7 +6,7 @@ import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing, maybeToList)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
@@ -98,14 +98,13 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
     storeTransactionImports =
       when_
         (any (\apiT -> apiT ^. apiType /= GET) $ input ^. apis)
-        [ "Domain.Types.Transaction"
-        ]
+        (maybeToList $ findModuleName "Domain.Types.Transaction" (apiImportsMapping apiRead))
 
     ifValidationRequired :: Bool
     ifValidationRequired = any (\apiT -> isJust $ apiT ^. requestValidation) $ input ^. apis
 
     multipartImports :: [String]
-    multipartImports = ["Dashboard.Common" | apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)]
+    multipartImports = [findModuleNameWithDefault "Dashboard.Common" (apiImportsMapping apiRead) | apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)]
 
 when_ :: Bool -> [a] -> [a]
 when_ False _ = []
@@ -127,12 +126,11 @@ mkCodeBodyDomainHandlerDashboard apiRead input = do
   let clientFuncName = getClientFunctionName apiRead
   let serverName = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead
   let allApis = input ^. apis
-  let isApiTreeClientGenerated_ = isApiTreeClientGenerated apiRead
   interpreter input $ do
-    forM_ allApis $ handlerFunctionDef serverName clientFuncName isApiTreeClientGenerated_
+    forM_ allApis $ handlerFunctionDef apiRead serverName clientFuncName
 
-handlerFunctionDef :: String -> String -> Bool -> ApiTT -> Writer CodeUnit
-handlerFunctionDef serverName clientFuncName isApiTreeClientGenerated apiT = do
+handlerFunctionDef :: ApiRead -> String -> String -> ApiTT -> Writer CodeUnit
+handlerFunctionDef apiRead serverName clientFuncName apiT = do
   input <- ask
   useAuth <- case (apiT ^. authType) of
     Just ApiAuthV2 {} -> pure True
@@ -163,7 +161,7 @@ handlerFunctionDef serverName clientFuncName isApiTreeClientGenerated apiT = do
             if useAuth
               then do
                 let checkMerchantExp = vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
-                if isApiTreeClientGenerated
+                if isApiTreeClientGenerated apiRead
                   then vP "checkedMerchantId" <-- checkMerchantExp
                   else TH.noBindSW $ vE "Kernel.Prelude.void" ~$ checkMerchantExp
               else letStmt "checkedMerchantId" $ vE "skipMerchantCityAccessCheck" ~* vE "merchantShortId"
@@ -171,17 +169,19 @@ handlerFunctionDef serverName clientFuncName isApiTreeClientGenerated apiT = do
                   GET -> clientCall
                   _ | not useAuth -> clientCall
                   _ -> do
+                    let sharedLogicTransaction = findModuleNameWithDefault "SharedLogic.Transaction" (apiImportsMapping apiRead)
+                    let mbDomainTypesTransaction = findModuleName "Domain.Types.Transaction" (apiImportsMapping apiRead)
                     vP "transaction"
-                      <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
+                      <-- vE (sharedLogicTransaction <> ".buildTransaction")
+                      ~* maybe (vE "apiTokenInfo.userActionType") (\domainTypesTransaction -> vE (domainTypesTransaction <> ".castEndpoint") ~* vE "apiTokenInfo.userActionType") mbDomainTypesTransaction
                       ~* (cE "Kernel.Prelude.Just" ~* cE serverName)
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits "driverId"
                       ~* generateHandlerParam apiUnits "rideId"
                       ~* generateReqParam apiUnits
                     -- TODO implement response transaction storing
-                    TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
-            if isApiTreeClientGenerated
+                    TH.noBindSW $ vE (sharedLogicTransaction <> ".withTransactionStoring") ~* vE "transaction" ~$ TH.doEW clientCall
+            if isApiTreeClientGenerated apiRead
               then do
                 transactionWrapper $
                   TH.noBindSW $ do
@@ -190,7 +190,7 @@ handlerFunctionDef serverName clientFuncName isApiTreeClientGenerated apiT = do
                       then do
                         let clientCallWithBoundary =
                               if isJust (apiT ^. apiMultipartType)
-                                then (vE "Dashboard.Common.addMultipartBoundary" ~* strE "XXX00XXX") ~. vE clientCall
+                                then (vE (findModuleNameWithDefault "Dashboard.Common" (apiImportsMapping apiRead) <> ".addMultipartBoundary") ~* strE "XXX00XXX") ~. vE clientCall
                                 else vE clientCall
                         TH.appendE $
                           vE clientFuncName
@@ -214,4 +214,4 @@ handlerFunctionDef serverName clientFuncName isApiTreeClientGenerated apiT = do
     generateReqParam :: [ApiUnit] -> Q TH.Exp
     generateReqParam apiUnits = case findRequest apiUnits of
       Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
-      Nothing -> cE "SharedLogic.Transaction.emptyRequest"
+      Nothing -> cE (findModuleNameWithDefault "SharedLogic.Transaction" (apiImportsMapping apiRead) <> ".emptyRequest")

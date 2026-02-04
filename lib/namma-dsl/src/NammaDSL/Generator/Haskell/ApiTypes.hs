@@ -86,26 +86,28 @@ generateApiTypes (DefaultImports qualifiedImp simpleImp _packageImports _) apiRe
         }
 
     extraFileGeneratorInput :: GeneratorInput
-    extraFileGeneratorInput =
+    extraFileGeneratorInput = do
+      let mbDashboardCommon = findModuleName "Dashboard.Common" (apiImportsMapping apiRead)
       GeneratorInput
         { _ghcOptions = ["-Wno-orphans", "-Wwarn=unused-imports"],
           _extensions = [],
           _moduleNm = extraApiTypesModuleNm,
-          _moduleExports = Just ["module ReExport"],
-          _simpleImports = [apiTypesModuleNm, "Dashboard.Common as ReExport", "Kernel.Prelude"] <> [extraApiCommonTypesModuleNm | isExtraCommonCode],
+          _moduleExports = if isJust mbDashboardCommon then Just ["module ReExport"] else Nothing,
+          _simpleImports = [apiTypesModuleNm, "Kernel.Prelude"] <> maybe [] (\dashboardCommon -> [dashboardCommon <> " as ReExport"]) mbDashboardCommon <> [extraApiCommonTypesModuleNm | isExtraCommonCode],
           _qualifiedImports = [],
           _packageImports,
           _codeBody = mempty
         }
 
     extraCommonFileGeneratorInput :: GeneratorInput
-    extraCommonFileGeneratorInput =
+    extraCommonFileGeneratorInput = do
+      let mbDashboardCommon = findModuleName "Dashboard.Common" (apiImportsMapping apiRead)
       GeneratorInput
         { _ghcOptions = ["-Wwarn=unused-imports"],
           _extensions = [],
           _moduleNm = extraApiCommonTypesModuleNm,
-          _moduleExports = Just ["module ReExport"],
-          _simpleImports = ["Dashboard.Common as ReExport", "Kernel.Prelude"],
+          _moduleExports = if isJust mbDashboardCommon then Just ["module ReExport"] else Nothing,
+          _simpleImports = ["Kernel.Prelude"] <> maybe [] (\dashboardCommon -> [dashboardCommon <> " as ReExport"]) mbDashboardCommon,
           _qualifiedImports = [],
           _packageImports,
           _codeBody = mempty
