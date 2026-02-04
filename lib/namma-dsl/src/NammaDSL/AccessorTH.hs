@@ -62,6 +62,7 @@ $( makeAccKeysTH
     validation
     multipart
     helperApi
+    helperApiExtra
     apiPrefix
     helperApiPrefix
     migrate

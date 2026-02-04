@@ -81,6 +81,7 @@ data ApiTT = ApiTT
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
     _apiHelperApi :: Maybe HelperApiTT,
+    _apiHelperApiExtra :: HelperApiTTExtra,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
@@ -106,12 +107,22 @@ data ApiMigrationKey = ApiMigrationKey
 newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
   deriving (Show)
 
+newtype HelperApiTTExtra = HelperApiTTExtra
+  { _urlPartsExtra :: [UrlPartsExtra]
+  }
+  deriving (Show)
+
+data UrlPartsExtra = QueryParamExtra Text Text Bool
+  deriving (Show)
+
 newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
 $(makeLenses ''ApiTT)
 
 $(makeLenses ''HelperApiTT)
+
+$(makeLenses ''HelperApiTTExtra)
 
 $(makeLenses ''ApiMigration)
 
