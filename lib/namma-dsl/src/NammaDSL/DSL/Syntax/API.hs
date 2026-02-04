@@ -175,7 +175,8 @@ data ApiRead = ApiRead
     -- mapped in bulk when the capability framework landed. Nothing = the spec
     -- has no baseline configured, so the requirement is not enforced at all.
     apiCapabilityBaseline :: Maybe (Set Text),
-    isApiTreeClientGenerated :: Bool
+    isApiTreeClientGenerated :: Bool,
+    apiImportsMapping :: [(String, Maybe String)]
   }
 
 data ExtraParseInfo = ExtraParseInfo

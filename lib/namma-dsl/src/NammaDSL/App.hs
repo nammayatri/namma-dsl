@@ -93,7 +93,8 @@ runApiGenerator configPath yamlPath = do
             dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
             serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix),
             apiCapabilityBaseline = mbCapabilityBaseline,
-            isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate)
+            isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate),
+            apiImportsMapping = config ^. importsMapping
           }
   (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
@@ -133,7 +134,8 @@ runApiTreeGenerator configPath specModules = do
             serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix),
             -- The tree generator emits no API SQL, so the baseline is irrelevant here.
             apiCapabilityBaseline = Nothing,
-            isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate)
+            isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate),
+            apiImportsMapping = config ^. importsMapping
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_
