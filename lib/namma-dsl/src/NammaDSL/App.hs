@@ -46,7 +46,8 @@ runStorageGenerator configPath yamlPath = do
             storageDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
             defaultCachedQueryKeyPfx = config ^. storageConfig . defaultCachedQueryKeyPrefix,
             srcFileStatus = fileStatus,
-            storagePackageMapping = config ^. packageMapping
+            storagePackageMapping = config ^. packageMapping,
+            cacheFlowType = fromMaybe "CacheFlow" (config ^. storageConfig . cacheFlowType)
           }
   tableDefs <- storageParser storageRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs

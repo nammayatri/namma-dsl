@@ -236,12 +236,13 @@ data StorageRead = StorageRead
     storageDefaultTypeImportMapper :: [(String, String)],
     defaultCachedQueryKeyPfx :: String,
     srcFileStatus :: FileState,
-    storagePackageMapping :: [(GenerationType, String)]
+    storagePackageMapping :: [(GenerationType, String)],
+    cacheFlowType :: String
   }
   deriving (Show)
 
 instance Default StorageRead where
-  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW []
+  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW [] "CacheFlow"
 
 type StorageParserM = ParserM StorageRead StorageState
 

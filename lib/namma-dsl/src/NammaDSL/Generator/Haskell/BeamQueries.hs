@@ -260,6 +260,7 @@ generateDefaultCreateQuery storageRead = do
   let name = tableNameHaskell tableDef
   let withIdFields = getAllFieldsWithIdRelation (fields tableDef)
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
+  let _CacheFlow = mkCacheFlow storageRead.cacheFlowType
   let fungSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired']) (pure . vT) tableDef.defaultQueryTypeConstraint
   TH.decsW $ do
     TH.sigDW "create" $ do
@@ -302,8 +303,8 @@ _EsqDBFlow = cT "EsqDBFlow" ~~ vT "m" ~~ vT "r"
 _MonadFlow :: Q TH.Type
 _MonadFlow = cT "MonadFlow" ~~ vT "m"
 
-_CacheFlow :: Q TH.Type
-_CacheFlow = cT "CacheFlow" ~~ vT "m" ~~ vT "r"
+mkCacheFlow :: String -> Q TH.Type
+mkCacheFlow cacheFlowType = cT cacheFlowType ~~ vT "m" ~~ vT "r"
 
 _HasSchemaName :: String -> Q TH.Type
 _HasSchemaName tableName = cT "HasSchemaName" ~~ cT ("Beam." <> tableName <> "T")
@@ -318,6 +319,7 @@ generateDefaultCreateManyQuery storageRead = do
   let isHasSchemaNameRequired' = isHasSchemaNameRequired def
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
   let dName = domainTypeModulePrefix ++ name ++ "." ++ name
+  let _CacheFlow = mkCacheFlow storageRead.cacheFlowType
   let fungSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [_HasSchemaName name | isHasSchemaNameRequired']) (pure . vT) (defaultQueryTypeConstraint def)
   TH.decsW $ do
     TH.sigDW "createMany" $ do
@@ -604,6 +606,7 @@ withFunctionSignature storageRead query tableNameHaskell stmts = do
                   ((params query) ++ getWhereClauseQueryParam (whereClause query))
             )
   let domainTypeModulePrefix = storageRead.domainTypeModulePrefix <> "."
+  let _CacheFlow = mkCacheFlow storageRead.cacheFlowType
   let defaultFuncSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow] <> [(_HasSchemaName tableNameHaskell) | isHasSchemaNameRequired']) (pure . vT) (def.defaultQueryTypeConstraint)
   let funcSign = maybe defaultFuncSign (pure . vT) (typeConstraint query)
   TH.decsW $ do

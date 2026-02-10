@@ -168,6 +168,7 @@ generatorSelector = \case
 
 generateDeleteCachedQuery :: StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit
 generateDeleteCachedQuery storageRead tableDef cachedQuery = do
+  let _CacheFlow = mkCacheFlow storageRead.cacheFlowType
   let _funcSign = maybe ([_CacheFlow]) (pure . vT) (cachedQuery.ctypeConstraint)
       _functionParamFields =
         filter
@@ -205,6 +206,7 @@ generateDeleteCachedQuery storageRead tableDef cachedQuery = do
 
 generateCachedQuery :: StorageRead -> TableDef -> CachedQueryDef -> Writer CodeUnit
 generateCachedQuery storageRead tableDef cachedQuery = do
+  let _CacheFlow = mkCacheFlow storageRead.cacheFlowType
   let _funcSign = maybe ([_EsqDBFlow, _MonadFlow, _CacheFlow]) (pure . vT) (cachedQuery.ctypeConstraint)
       dType =
         ( \tp -> case cachedQuery.cacheDataType of
@@ -378,8 +380,8 @@ _EsqDBFlow = cT "EsqDBFlow" ~~ vT "m" ~~ vT "r"
 _MonadFlow :: Q TH.Type
 _MonadFlow = cT "MonadFlow" ~~ vT "m"
 
-_CacheFlow :: Q TH.Type
-_CacheFlow = cT "CacheFlow" ~~ vT "m" ~~ vT "r"
+mkCacheFlow :: String -> Q TH.Type
+mkCacheFlow cacheFlowType = cT cacheFlowType ~~ vT "m" ~~ vT "r"
 
 _HasSchemaName :: String -> Q TH.Type
 _HasSchemaName tableName = cT "HasSchemaName" ~~ cT ("Beam." <> tableName <> "T")
