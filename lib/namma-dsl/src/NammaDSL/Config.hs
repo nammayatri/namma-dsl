@@ -62,7 +62,8 @@ $(makeLenses ''OutputPath)
 data StorageConfig = StorageConfig
   { _sqlTypeMapper :: [(String, String)],
     _extraDefaultFields :: [(String, String)],
-    _defaultCachedQueryKeyPrefix :: String
+    _defaultCachedQueryKeyPrefix :: String,
+    _cacheFlowType :: Maybe String
   }
   deriving (Generic, Show, FromDhall)
 
