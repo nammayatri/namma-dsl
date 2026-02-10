@@ -81,6 +81,7 @@ data ApiTT = ApiTT
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
     _apiHelperApi :: Maybe HelperApiTT,
+    _apiHelperApiExtra :: HelperApiTTExtra,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
@@ -106,12 +107,22 @@ data ApiMigrationKey = ApiMigrationKey
 newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
   deriving (Show)
 
+newtype HelperApiTTExtra = HelperApiTTExtra
+  { _urlPartsExtra :: [UrlPartsExtra]
+  }
+  deriving (Show)
+
+data UrlPartsExtra = QueryParamExtra Text Text Bool
+  deriving (Show)
+
 newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
 $(makeLenses ''ApiTT)
 
 $(makeLenses ''HelperApiTT)
+
+$(makeLenses ''HelperApiTTExtra)
 
 $(makeLenses ''ApiMigration)
 
@@ -168,7 +179,9 @@ data ApiRead = ApiRead
     apiMigrationParams :: [ApiMigration],
     apiPackageMapping :: [(GenerationType, String)],
     dashboardApiModulePrefix :: String, -- prefix for API.Dashboard module (default: "API.Dashboard")
-    serverNameTypeModulePrefix :: String -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    serverNameTypeModulePrefix :: String, -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    isApiTreeClientGenerated :: Bool,
+    apiImportsMapping :: [(String, Maybe String)]
   }
 
 data ExtraParseInfo = ExtraParseInfo

@@ -87,6 +87,11 @@ data PackageImport = PackageImport
 data ImportType = SIMPLE | QUALIFIED
   deriving (Generic, Show, FromDhall, Eq)
 
+-- _importsMapping allowed values:
+-- "Dashboard.Common": used for reexport, addMultipartBoundary
+-- "SharedLogic.Transaction": buildTransaction, withTransactionStoring
+-- "Domain.Types.Transaction": castEndpoint (empty value means remove this function)
+
 data AppConfigs = AppConfigs
   { _output :: OutputPath,
     _defaultTypeImportMapper :: [(String, String)],
@@ -100,7 +105,8 @@ data AppConfigs = AppConfigs
     _migrationParams :: [ApiMigration],
     _packageMapping :: [(GenerationType, String)],
     _apiDashboardPrefix :: Maybe String, -- prefix for API.Dashboard module (default: "API.Dashboard")
-    _serverNameTypePrefix :: Maybe String -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    _serverNameTypePrefix :: Maybe String, -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    _importsMapping :: [(String, Maybe String)] -- more flexible imports, used only for specific cases
   }
   deriving (Generic, Show, FromDhall)
 

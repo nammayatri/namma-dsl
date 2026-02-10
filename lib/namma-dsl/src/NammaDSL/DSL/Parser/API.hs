@@ -22,7 +22,7 @@ import Data.List (isPrefixOf)
 import Data.List.Extra (dropPrefix)
 import Data.List.Split (splitWhen)
 import qualified Data.Map.Strict as M
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, isJust, mapMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -138,8 +138,25 @@ parseAllApis' = do
               A.String str -> ApiMigration (toText k) (Just str)
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
-
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations
+          (extraQuery, extraMQuery) =
+            if isHelperApi
+              then ([], []) -- shouldn't be helperApiExtra inside of helperApi
+              else case preview (ix acc_helperApiExtra . _Object) obj of -- <&> \helperApiExtraObj -> do
+                Just helperApiExtraObj -> do
+                  let extraQuery' = fromMaybe [] $ preview (ix acc_query . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b False))) helperApiExtraObj
+                  let extraMQuery' = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b True))) helperApiExtraObj
+                  (extraQuery', extraMQuery')
+                Nothing -> ([], [])
+      let urlPartsExtra = extraQuery <> extraMQuery
+      let helperApiExtra = HelperApiTTExtra urlPartsExtra
+      let singleApiRes = ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi helperApiExtra apiKind moduleName requestValidation migrations
+      case (isJust helperApi, not $ null urlPartsExtra) of
+        (True, True) -> error "Only one of helperApi and helperApiExtra is supported"
+        (False, True) -> do
+          -- helper api is the same as dashboard api, only extra params added
+          let updHelperApi = HelperApiTT $ singleApiRes & apiHelperApiExtra .~ HelperApiTTExtra [] & urlParts .~ (endpoint <> query <> (castUrlParts <$> extraQuery) <> mQuery <> (castUrlParts <$> extraMQuery))
+          Just $ singleApiRes & apiHelperApi .~ Just updHelperApi
+        (_, False) -> return singleApiRes
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq
@@ -155,6 +172,9 @@ parseAllApis' = do
           responseTp = fromMaybe (error "Response type is required") $ preview (ix acc_type . _String) responseObj
           responseFmt = fromMaybe "JSON" $ preview (ix acc_format . _String) responseObj
       ApiRes responseTp responseFmt
+
+    castUrlParts :: UrlPartsExtra -> UrlParts
+    castUrlParts (QueryParamExtra a b c) = QueryParam a b c
 
 parseImports' :: ApiParserM ()
 parseImports' = do
