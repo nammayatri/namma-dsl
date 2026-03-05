@@ -97,8 +97,17 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
     storeTransactionImports :: [String]
     storeTransactionImports =
       when_
-        (any (\apiT -> apiT ^. apiType /= GET) $ input ^. apis)
-        [ "Domain.Types.Transaction"
+        ( any
+            ( \apiT ->
+                case (apiT ^. authType, apiT ^. apiType) of
+                  (Just ApiAuthV2 {}, _) -> True
+                  (Just ApiAuthV3 {}, _) -> True
+                  _ -> False
+            )
+            (input ^. apis)
+        )
+        [ "Domain.Types.Transaction",
+          "SharedLogic.Transaction"
         ]
 
     ifValidationRequired :: Bool
@@ -162,10 +171,18 @@ handlerFunctionDef serverName clientFuncName apiT = do
             if useAuth
               then vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
               else letStmt "checkedMerchantId" $ vE "skipMerchantCityAccessCheck" ~* vE "merchantShortId"
-            let transactionWrapper clientCall = case apiT ^. apiType of
-                  GET -> clientCall
-                  _ | not useAuth -> clientCall
-                  _ -> do
+            let transactionWrapper clientCall = case (apiT ^. apiType, useAuth) of
+                  (GET, True) -> do
+                    TH.noBindSW $
+                      vE "SharedLogic.Transaction.withGetTransactionStoring"
+                        ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
+                        ~* (cE "Kernel.Prelude.Just" ~* cE serverName)
+                        ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
+                        ~* cE "Kernel.Prelude.Nothing"
+                        ~* cE "Kernel.Prelude.Nothing"
+                        ~$ TH.doEW clientCall
+                  (_, False) -> clientCall
+                  (_, True) -> do
                     vP "transaction"
                       <-- vE "SharedLogic.Transaction.buildTransaction"
                       ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
