@@ -699,7 +699,7 @@ updateParser sqlTypeWrtType dbName = do
 sqlCleanedLineParser :: String -> SQL_MANIPULATION
 sqlCleanedLineParser line
   | "CREATE TABLE" `L.isPrefixOf` line = SQL_CREATE
-  | "CREATE INDEX" `L.isPrefixOf` line = case PS.parse parseCreateIndex "" line of
+  | "CREATE INDEX CONCURRENTLY" `L.isPrefixOf` line = case PS.parse parseCreateIndex "" line of
     Right sqlManipulation -> sqlManipulation
     Left errk -> error $ "Error Parsing SQL line : " <> line <> " Error : " <> show errk
   | "ALTER TABLE" `L.isPrefixOf` line = case PS.parse parseAlterTable "" line of
@@ -717,7 +717,7 @@ sqlCleanedLineParser line
       return $ SQL_ALTER (DROP_CONSTRAINT indexName)
     parseCreateIndex :: PS.Parser SQL_MANIPULATION
     parseCreateIndex = do
-      PS.string "CREATE INDEX" >> PS.spaces
+      PS.string "CREATE INDEX CONCURRENTLY" >> PS.spaces
       indexName <- PS.manyTill PS.anyChar PS.space
       PS.spaces >> PS.string "ON" >> PS.spaces
       _tableName <- PS.manyTill PS.anyChar PS.space

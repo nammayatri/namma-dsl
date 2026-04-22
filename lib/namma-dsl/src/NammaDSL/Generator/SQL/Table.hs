@@ -52,7 +52,7 @@ upsertIndexesSQL database tableNameSql delIndexes newIndexes =
         ( \indexDef ->
             if indexUnique indexDef
               then "ALTER TABLE " <> tableName <> " ADD CONSTRAINT " <> indexName indexDef <> " UNIQUE (" <> indexColsStr indexDef <> ");"
-              else "CREATE INDEX " <> indexName indexDef <> " ON " <> tableName <> " USING btree (" <> indexColsStr indexDef <> ");"
+              else "CREATE INDEX CONCURRENTLY " <> indexName indexDef <> " ON " <> tableName <> " USING btree (" <> indexColsStr indexDef <> ");"
         )
         newIndexes
     tableName = database <> "." <> tableNameSql

@@ -1012,7 +1012,7 @@ findOnlyQuery id createdAt requestId something = do
   ```
   Output:
   ```sql
-  CREATE INDEX app_dynamic_logic_element_idx_order ON atlas_app.app_dynamic_logic_element USING btree ("order");
+  CREATE INDEX CONCURRENTLY app_dynamic_logic_element_idx_order ON atlas_app.app_dynamic_logic_element USING btree ("order");
   ```
 - If required to toggle off the above default case we can add `NO_DEFAULT_INDEXES` to extraOperations
 - To generate anything extra apart from the above cases we can use `extraIndexes` option:
@@ -1030,7 +1030,7 @@ findOnlyQuery id createdAt requestId something = do
   ```
   Output
   ```sql
-  CREATE INDEX app_dynamic_logic_element_idx_domain_version ON atlas_app.app_dynamic_logic_element USING btree (domain, version);
+  CREATE INDEX CONCURRENTLY app_dynamic_logic_element_idx_domain_version ON atlas_app.app_dynamic_logic_element USING btree (domain, version);
   ```
 
   Example 2:
