@@ -1169,7 +1169,7 @@ makeBeamFields fieldName haskellType = do
             { bFieldName = bEncryptedFieldName,
               hFieldType = qType haskellType,
               bFieldType = qType bEncryptedFieldType,
-              bConstraints = getDefaultFieldConstraints bEncryptedFieldName bEncryptedFieldType ++ fromMaybe [] (constraintsObj >>= preview (ix (fromString bEncryptedFieldName) . _String . to (splitOn "|") . to (map getProperConstraint))),
+              bConstraints = getDefaultFieldConstraints bEncryptedFieldName bEncryptedFieldType ++ parseFieldConstraints constraintsObj (fromString bEncryptedFieldName),
               bFieldUpdates = [], -- not required while creating
               bSqlType = "character varying(255)",
               bDefaultVal = obj ^? (ix acc_default . _Object . ix (fromString bEncryptedFieldName) . _String),
@@ -1181,7 +1181,7 @@ makeBeamFields fieldName haskellType = do
             { bFieldName = bHashFieldName,
               hFieldType = qType haskellType,
               bFieldType = qType bHashFieldType,
-              bConstraints = getDefaultFieldConstraints bHashFieldName bHashFieldType ++ fromMaybe [] (constraintsObj >>= preview (ix (fromString bHashFieldName) . _String . to (splitOn "|") . to (map getProperConstraint))),
+              bConstraints = getDefaultFieldConstraints bHashFieldName bHashFieldType ++ parseFieldConstraints constraintsObj (fromString bHashFieldName),
               bFieldUpdates = [], -- not required while creating
               bSqlType = "bytea",
               bDefaultVal = obj ^? (ix acc_default . _Object . ix (fromString bHashFieldName) . _String),
@@ -1198,7 +1198,7 @@ makeBeamFields fieldName haskellType = do
                 sqlType = fromMaybe (findMatchingSqlType sqlTypeMapper enumList tpp beamType) (sqlTypeObj >>= preview (ix fieldKey . _String))
                 defaultValue = maybe (sqlDefaultsWrtName fName) pure (defaultsObj >>= preview (ix fieldKey . _String))
                 parseToTType = obj ^? (ix acc_toTType . _Object) >>= preview (ix fieldKey . _String . to (makeTF impObj))
-                constraints = L.nub $ getDefaultFieldConstraints fName beamType ++ fromMaybe [] (constraintsObj >>= preview (ix fieldKey . _String . to (splitOn "|") . to (map getProperConstraint)))
+                constraints = L.nub $ getDefaultFieldConstraints fName beamType ++ parseFieldConstraints constraintsObj fieldKey
                 isEncrypted = "EncryptedHashedField" `T.isInfixOf` T.pack tpp
              in BeamField
                   { bFieldName = fName,
@@ -1241,6 +1241,23 @@ getProperConstraint txt = case L.trim txt of
   "NotNull" -> NotNull
   "!SecondaryKey" -> Forced SecondaryKey
   _ -> error "No a proper contraint type"
+
+parseFieldConstraints :: Maybe Object -> Key -> [FieldConstraint]
+parseFieldConstraints Nothing _ = []
+parseFieldConstraints (Just constraintsObj) fieldKey =
+  case KM.lookup fieldKey constraintsObj of
+    Nothing -> []
+    Just (String s) -> map getProperConstraint (splitOn "|" (T.unpack s))
+    Just Null ->
+      error $
+        "Field constraint for '" <> toString fieldKey <> "' is null. "
+          <> "This usually means a YAML tag like `!SecondaryKey` was written without quotes — "
+          <> "the YAML parser strips the tag and leaves the value as null, silently dropping the constraint. "
+          <> "Quote it: \"!SecondaryKey\""
+    Just other ->
+      error $
+        "Field constraint for '" <> toString fieldKey <> "' must be a string of '|'-separated constraints, got: "
+          <> show other
 
 toModelList :: Object -> [(String, Object)]
 toModelList obj =
