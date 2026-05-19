@@ -136,11 +136,31 @@ This tutorial provides a comprehensive guide to understanding and working with t
           {pathParam1}: {pathParam1Type}
           {pathParam2}: {pathParam2Type}
           ```
-        - `headers`: List of headers
+        - `headers`: List of request headers (optional)
           ```
           headers:
            - {header1}: {headerType1}
            - {header2}: {headerType2}
+          ```
+        - `responseHeaders`: List of response headers to include in the Servant type via `Headers '[...]` (optional). When specified, the response type is wrapped as `Headers '[Header "Name" Type, ...] ResponseType` in both the Servant API type and the handler/domain-handler signatures.
+          ```
+          responseHeaders:
+           - {header1}: {headerType1}
+           - {header2}: {headerType2}
+          ```
+          Example — generates `Get '[JSON] (Headers '[Header "ETag" Text] [SpecialLocationFull])`:
+          ```yaml
+          GET:
+            endpoint: /specialLocation/list
+            headers:
+              - If-None-Match: Text
+            query:
+              isOrigin: Bool
+            auth: TokenAuth
+            response:
+              type: "[SpecialLocationFull]"
+            responseHeaders:
+              - ETag: Text
           ```
         - `helperApi`: Recursively contains dashboard helper API in the same format as main API  (optional, specific for dashboard)
         - `validation`: Qualified name for request validation function (optional)
