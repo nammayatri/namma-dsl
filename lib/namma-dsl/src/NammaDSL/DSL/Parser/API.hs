@@ -115,6 +115,8 @@ parseAllApis' = do
 
           headers = fromMaybe [] (preview (ix acc_headers . _Value . to mkListFromSingleton . to (map (\(a, b) -> Header a b))) obj)
 
+          responseHeaders = fromMaybe [] (preview (ix acc_responseHeaders . _Value . to mkListFromSingleton . to (map (\(a, b) -> Header a b))) obj)
+
           requestValidation = preview (ix acc_validation . _String) obj
 
           multipartObj = preview (ix acc_multipart . _Object) obj
@@ -139,7 +141,7 @@ parseAllApis' = do
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
 
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations
+      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations responseHeaders
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq
@@ -173,9 +175,10 @@ extractImports' = do
   apiTTParts <- gets (^. apisRes . apis)
   let importUrlPart = apiTTParts ^.. traverse . urlParts . traverse . to importFromUrlPart . _Just
       importHeader = apiTTParts ^.. traverse . header . traverse . to (\(Header _ t2) -> t2)
+      importResponseHeader = apiTTParts ^.. traverse . responseHeader . traverse . to (\(Header _ t2) -> t2)
       importApiRes = apiTTParts ^.. traverse . apiResType . to (\(ApiRes t1 _) -> t1)
       importApiReq = apiTTParts ^.. traverse . apiReqType . _Just . to (\(ApiReq t1 _) -> t1)
-      imports' = figureOutImports (importUrlPart ++ importHeader ++ importApiRes ++ importApiReq)
+      imports' = figureOutImports (importUrlPart ++ importHeader ++ importResponseHeader ++ importApiRes ++ importApiReq)
   modify $ \s -> s & apisRes . imports .~ imports'
   where
     importFromUrlPart :: UrlParts -> Maybe Text
@@ -241,6 +244,7 @@ makeApiTTPartsQualified' generatorType = do
           & apiResType %~ mkQApiRes
           & urlParts . traverse %~ mkQUrlParts
           & header . traverse %~ mkQHeaders
+          & responseHeader . traverse %~ mkQHeaders
   modify $ \s -> s & apisRes . apis . traverse %~ mkQUrlApiTT
   modify $ \s -> s & apisRes . apis . traverse . apiHelperApi . _Just . getHelperAPI %~ mkQUrlApiTT
 

@@ -84,7 +84,8 @@ data ApiTT = ApiTT
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
-    _apiMigrate :: [ApiMigration]
+    _apiMigrate :: [ApiMigration],
+    _responseHeader :: [HeaderType]
   }
   deriving (Show)
 

@@ -169,7 +169,7 @@ apiTTToText apiRead generationType apiTT = do
       apiTypeText = apiTypeToText (_apiType apiTT)
       apiMultipartText = apiMultipartToText <$> _apiMultipartType apiTT
       apiReqText = apiReqToText <$> apiTT ^. apiReqType
-      apiResText = apiResToText apiTypeText (apiTT ^. apiResType)
+      apiResText = apiResToText apiTypeText (apiTT ^. apiResType) (_responseHeader apiTT)
       headerText = map headerToText (_header apiTT)
 
   TH.appendInfixT ":>" . NE.fromList $
@@ -194,12 +194,24 @@ apiTTToText apiRead generationType apiTT = do
     apiReqToText :: ApiReq -> Q r TH.Type
     apiReqToText (ApiReq ty frmt) = cT "ReqBody" ~~ promotedList1T (T.unpack frmt) ~~ textToType ty
 
-    apiResToText :: Text -> ApiRes -> Q r TH.Type
-    apiResToText apiTypeText apiRes =
+    apiResToText :: Text -> ApiRes -> [HeaderType] -> Q r TH.Type
+    apiResToText apiTypeText apiRes [] =
       cT (T.unpack apiTypeText) ~~ promotedList1T (T.unpack $ _apiResApiType apiRes) ~~ textToType (_apiResTypeName apiRes)
+    apiResToText apiTypeText apiRes responseHeaders =
+      cT (T.unpack apiTypeText)
+        ~~ promotedList1T (T.unpack $ _apiResApiType apiRes)
+        ~~ cT ("(" <> responseHeadersTypeStr responseHeaders (_apiResTypeName apiRes) <> ")")
 
     headerToText :: HeaderType -> Q r TH.Type
     headerToText (Header name ty) = cT "Header" ~~ strT (T.unpack name) ~~ textToType ty
+
+-- | Builds "Headers '[Header \"Name\" Type, ...] ResponseType" (no outer parens).
+-- Callers wrap in parens as appropriate:
+--   Servant type  → TH.parensT (cT (responseHeadersTypeStr ...))
+--   Handler sig   → cT ("(" <> responseHeadersTypeStr ... <> ")")
+responseHeadersTypeStr :: [HeaderType] -> Text -> String
+responseHeadersTypeStr responseHeaders resTypeName =
+  "Headers '[" <> T.unpack (T.intercalate ", " (map (\(Header name ty) -> "Header \"" <> name <> "\" " <> ty) responseHeaders)) <> "] " <> T.unpack resTypeName
 
 generateAPIType :: GenerationType -> ApiRead -> Writer Apis CodeUnit
 generateAPIType = generateAPIType' False
@@ -264,7 +276,7 @@ mkApiSignatureUnits input = do
   let urlTypeText = map urlToText (_urlParts input)
       headerTypeText = map (\(Header name ty) -> ApiSignatureUnit (HeaderUnit name) (headerTypeConversion ty)) (_header input)
       reqTypeText = reqTypeToText <$> input ^. apiReqType
-      resTypeText = respTypeToText $ input ^. apiResType
+      resTypeText = respTypeToText (input ^. apiResType) (_responseHeader input)
       multipartTypeText = multipartTypeToText <$> _apiMultipartType input
 
   let signatureUnits = snoc (catMaybes urlTypeText <> headerTypeText <> maybeToList multipartTypeText <> maybeToList reqTypeText) resTypeText
@@ -287,8 +299,11 @@ mkApiSignatureUnits input = do
     reqTypeToText :: ApiReq -> ApiSignatureUnit
     reqTypeToText (ApiReq ty _) = ApiSignatureUnit RequestUnit ty
 
-    respTypeToText :: ApiRes -> ApiSignatureUnit
-    respTypeToText = ApiSignatureUnit ResponseUnit . _apiResTypeName
+    respTypeToText :: ApiRes -> [HeaderType] -> ApiSignatureUnit
+    respTypeToText apiRes [] = ApiSignatureUnit ResponseUnit $ _apiResTypeName apiRes
+    respTypeToText apiRes responseHeaders =
+      ApiSignatureUnit ResponseUnit $
+        T.pack $ "(" <> responseHeadersTypeStr responseHeaders (_apiResTypeName apiRes) <> ")"
 
     headerTypeConversion :: Text -> Text
     headerTypeConversion tc = "Kernel.Prelude.Maybe (" <> tc <> ")"
