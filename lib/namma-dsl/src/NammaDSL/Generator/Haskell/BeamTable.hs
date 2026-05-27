@@ -132,7 +132,7 @@ tableInstancesToBeam = do
     TH.VarE "enableKVPG"
       `TH.AppE` TH.VarE (TH.mkName thTableName)
       `TH.AppE` TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> primaryKey def)
-      `TH.AppE` TH.ListE (secondaryKey def <&> (\k -> TH.ListE [TH.VarE . TH.mkName . ("'" <>) $ k]))
+      `TH.AppE` TH.ListE (secondaryKey def <&> (\ks -> TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> ks)))
   mapM_
     ( \instanceDef -> do
         let (instanceName, dName, extraInstanceParam, isCustomInstance) = case instanceDef of

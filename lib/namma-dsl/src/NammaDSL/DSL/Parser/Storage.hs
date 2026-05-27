@@ -75,7 +75,7 @@ parseExtraIndexes = do
   tableName <- gets (tableNameSql . tableDef)
   isGenerationAllowed <- gets ((GENERATE_INDEXES `elem`) . extraOperations . tableDef)
   isDefaultIndexingStopped <- gets ((NO_DEFAULT_INDEXES `elem`) . extraOperations . tableDef)
-  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf) . concatMap beamFields . fields . tableDef)
+  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf || any isCompositeSecondaryKey (bConstraints bf)) . concatMap beamFields . fields . tableDef)
   let defaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) defaultColForIndexing
   let rawExtraIndexes = fromMaybe [] $ obj ^? ix acc_extraIndexes . _Array . to V.toList
   parsedExtraIndexes <- mapM parseExtraIndex rawExtraIndexes
@@ -486,26 +486,51 @@ parsePrimaryAndSecondaryKeys = do
   queries <- gets (queries . tableDef)
   allFieldsUsedInQueries <- getAllFieldsUsedInQueries queries
   let (primaryKey, secondaryKey) = extractKeys allFieldsUsedInQueries fields
-  when ((not $ null $ L.intersect secondaryKey notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
+  when ((not $ null $ L.intersect (concat secondaryKey) notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
   modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey}}
   where
-    extractKeys :: [String] -> [FieldDef] -> ([String], [String])
+    extractKeys :: [String] -> [FieldDef] -> ([String], [[String]])
     extractKeys possKeys fieldDefs = extractKeysFromBeamFields possKeys (concatMap beamFields fieldDefs)
 
-    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [String])
-    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, secondaryKeyFields)
+    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [[String]])
+    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, regularGroups <> compositeGroups)
       where
         primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
-        secondaryKeyFields = map bFieldName filterFieldForSecondaryKey
-        filterFieldForSecondaryKey = filter secondaryKeyCondition fieldDefs
-        secondaryKeyCondition bf
+        regularGroups = map (\bf -> [bFieldName bf]) $ filter regularSecondaryKeyCondition fieldDefs
+        compositeGroups = extractCompositeGroups fieldDefs possKeys
+
+        regularSecondaryKeyCondition bf
           | (Forced SecondaryKey) `elem` bConstraints bf = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
-          | (SecondaryKey `elem` bConstraints bf) && (not $ bFieldName bf `elem` possKeys) = error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+          | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `notElem` possKeys) =
+              error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
           | otherwise = False
+
+    extractCompositeGroups :: [BeamField] -> [String] -> [[String]]
+    extractCompositeGroups fieldDefs possKeys =
+      let kvPairs = concatMap (getCompositePairs possKeys) fieldDefs
+          groupOrder = nub (map fst kvPairs)
+          groupMap = foldl' (\m (g, f) -> M.insertWith (flip (++)) g [f] m) M.empty kvPairs
+       in map (groupMap M.!) groupOrder
+
+    getCompositePairs :: [String] -> BeamField -> [(String, String)]
+    getCompositePairs possKeys bf = concatMap (toGroupPair possKeys bf) (bConstraints bf)
+
+    toGroupPair :: [String] -> BeamField -> FieldConstraint -> [(String, String)]
+    toGroupPair possKeys bf (CompositeSecondaryKey g)
+      | bFieldName bf `elem` possKeys = [(g, bFieldName bf)]
+      | otherwise =
+          error ("CompositeSecondaryKey constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !CompositeSecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+    toGroupPair _ bf (Forced (CompositeSecondaryKey g)) = [(g, bFieldName bf)]
+    toGroupPair _ _ _ = []
 
 notAllowedSecondaryKeys :: [String]
 notAllowedSecondaryKeys = ["merchantId", "merchantOperatingCityId", "status"]
+
+isCompositeSecondaryKey :: FieldConstraint -> Bool
+isCompositeSecondaryKey (CompositeSecondaryKey _) = True
+isCompositeSecondaryKey (Forced (CompositeSecondaryKey _)) = True
+isCompositeSecondaryKey _ = False
 
 parseRelationalTableNamesHaskell :: StorageParserM ()
 parseRelationalTableNamesHaskell = do
@@ -1240,7 +1265,18 @@ getProperConstraint txt = case L.trim txt of
   "SecondaryKey" -> SecondaryKey
   "NotNull" -> NotNull
   "!SecondaryKey" -> Forced SecondaryKey
-  _ -> error "No a proper contraint type"
+  s
+    | Just rest <- L.stripPrefix "CompositeSecondaryKey " s ->
+        let grp = L.trim rest
+         in if null grp
+              then error "CompositeSecondaryKey requires a group name (e.g., \"CompositeSecondaryKey myGroup\")"
+              else CompositeSecondaryKey grp
+    | Just rest <- L.stripPrefix "!CompositeSecondaryKey " s ->
+        let grp = L.trim rest
+         in if null grp
+              then error "!CompositeSecondaryKey requires a group name (e.g., \"!CompositeSecondaryKey myGroup\")"
+              else Forced (CompositeSecondaryKey grp)
+    | otherwise -> error $ "Not a proper constraint type: " <> s
 
 parseFieldConstraints :: Maybe Object -> Key -> [FieldConstraint]
 parseFieldConstraints Nothing _ = []
@@ -1251,9 +1287,9 @@ parseFieldConstraints (Just constraintsObj) fieldKey =
     Just Null ->
       error $
         "Field constraint for '" <> toString fieldKey <> "' is null. "
-          <> "This usually means a YAML tag like `!SecondaryKey` was written without quotes — "
+          <> "This usually means a YAML tag like `!SecondaryKey` or `!CompositeSecondaryKey` was written without quotes — "
           <> "the YAML parser strips the tag and leaves the value as null, silently dropping the constraint. "
-          <> "Quote it: \"!SecondaryKey\""
+          <> "Quote it: \"!SecondaryKey\" or \"!CompositeSecondaryKey <groupName>\""
     Just other ->
       error $
         "Field constraint for '" <> toString fieldKey <> "' must be a string of '|'-separated constraints, got: "
