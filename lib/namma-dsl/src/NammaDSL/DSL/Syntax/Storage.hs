@@ -54,7 +54,7 @@ data TableDef = TableDef
     cachedQueries :: [CachedQueryDef],
     excludedDefaultQueries :: [String],
     primaryKey :: [String],
-    secondaryKey :: [String],
+    secondaryKey :: [[String]],
     types :: Maybe [TypeObject],
     containsEncryptedField :: Bool,
     relationalTableNamesHaskell :: [String],
@@ -168,7 +168,7 @@ type Create = Bool
 
 type FromCached = Bool
 
-data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | Forced FieldConstraint deriving (Show, Eq, Ord)
+data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | Forced FieldConstraint | CompositeSecondaryKey String deriving (Show, Eq, Ord)
 
 data SqlFieldUpdates = DropNotNull | DropDefault | AddNotNull | AddDefault String | DropColumn | TypeChange deriving (Show)
 
