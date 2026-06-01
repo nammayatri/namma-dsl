@@ -75,8 +75,12 @@ parseExtraIndexes = do
   tableName <- gets (tableNameSql . tableDef)
   isGenerationAllowed <- gets ((GENERATE_INDEXES `elem`) . extraOperations . tableDef)
   isDefaultIndexingStopped <- gets ((NO_DEFAULT_INDEXES `elem`) . extraOperations . tableDef)
-  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf || any isCompositeSecondaryKey (bConstraints bf)) . concatMap beamFields . fields . tableDef)
-  let defaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) defaultColForIndexing
+  allBeamFields <- gets (concatMap beamFields . fields . tableDef)
+  let regularDefaultCols = map bFieldName $ filter (\bf -> SecondaryKey `elem` bConstraints bf) allBeamFields
+      regularDefaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) regularDefaultCols
+      compositeGroupCols = buildCompositeIndexGroups allBeamFields
+      compositeDefaultIndexes = map (\cols -> mkIndexDef tableName cols False Nothing) compositeGroupCols
+      defaultIndexes = regularDefaultIndexes <> compositeDefaultIndexes
   let rawExtraIndexes = fromMaybe [] $ obj ^? ix acc_extraIndexes . _Array . to V.toList
   parsedExtraIndexes <- mapM parseExtraIndex rawExtraIndexes
   let finalIndex =
@@ -503,7 +507,7 @@ parsePrimaryAndSecondaryKeys = do
           | (Forced SecondaryKey) `elem` bConstraints bf = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `notElem` possKeys) =
-              error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+            error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
           | otherwise = False
 
     extractCompositeGroups :: [BeamField] -> [String] -> [[String]]
@@ -520,7 +524,7 @@ parsePrimaryAndSecondaryKeys = do
     toGroupPair possKeys bf (CompositeSecondaryKey g)
       | bFieldName bf `elem` possKeys = [(g, bFieldName bf)]
       | otherwise =
-          error ("CompositeSecondaryKey constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !CompositeSecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+        error ("CompositeSecondaryKey constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !CompositeSecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
     toGroupPair _ bf (Forced (CompositeSecondaryKey g)) = [(g, bFieldName bf)]
     toGroupPair _ _ _ = []
 
@@ -531,6 +535,18 @@ isCompositeSecondaryKey :: FieldConstraint -> Bool
 isCompositeSecondaryKey (CompositeSecondaryKey _) = True
 isCompositeSecondaryKey (Forced (CompositeSecondaryKey _)) = True
 isCompositeSecondaryKey _ = False
+
+buildCompositeIndexGroups :: [BeamField] -> [[String]]
+buildCompositeIndexGroups fieldDefs =
+  let kvPairs = concatMap getGroupPairs fieldDefs
+      groupOrder = nub (map fst kvPairs)
+      groupMap = foldl' (\m (g, f) -> M.insertWith (flip (++)) g [f] m) M.empty kvPairs
+   in map (groupMap M.!) groupOrder
+  where
+    getGroupPairs bf = concatMap (constraintToGroupPair (bFieldName bf)) (bConstraints bf)
+    constraintToGroupPair fieldName (CompositeSecondaryKey g) = [(g, fieldName)]
+    constraintToGroupPair fieldName (Forced (CompositeSecondaryKey g)) = [(g, fieldName)]
+    constraintToGroupPair _ _ = []
 
 parseRelationalTableNamesHaskell :: StorageParserM ()
 parseRelationalTableNamesHaskell = do
@@ -1267,15 +1283,15 @@ getProperConstraint txt = case L.trim txt of
   "!SecondaryKey" -> Forced SecondaryKey
   s
     | Just rest <- L.stripPrefix "CompositeSecondaryKey " s ->
-        let grp = L.trim rest
-         in if null grp
-              then error "CompositeSecondaryKey requires a group name (e.g., \"CompositeSecondaryKey myGroup\")"
-              else CompositeSecondaryKey grp
+      let grp = L.trim rest
+       in if null grp
+            then error "CompositeSecondaryKey requires a group name (e.g., \"CompositeSecondaryKey myGroup\")"
+            else CompositeSecondaryKey grp
     | Just rest <- L.stripPrefix "!CompositeSecondaryKey " s ->
-        let grp = L.trim rest
-         in if null grp
-              then error "!CompositeSecondaryKey requires a group name (e.g., \"!CompositeSecondaryKey myGroup\")"
-              else Forced (CompositeSecondaryKey grp)
+      let grp = L.trim rest
+       in if null grp
+            then error "!CompositeSecondaryKey requires a group name (e.g., \"!CompositeSecondaryKey myGroup\")"
+            else Forced (CompositeSecondaryKey grp)
     | otherwise -> error $ "Not a proper constraint type: " <> s
 
 parseFieldConstraints :: Maybe Object -> Key -> [FieldConstraint]
