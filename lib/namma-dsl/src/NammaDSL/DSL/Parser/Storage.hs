@@ -68,6 +68,7 @@ parseTableDef = do
   parseRelationalTableNamesHaskell
   parseExtraOperations
   parseExtraIndexes
+  parseConfigPilot
 
 parseExtraIndexes :: StorageParserM ()
 parseExtraIndexes = do
@@ -466,6 +467,30 @@ parseExtraOperations = do
   let parsedExtraOperations = fromMaybe [] $ obj ^? ix acc_extraOperations . _Array . to V.toList . to (map (extraOperation . valueToString))
   modify $ \s -> s {tableDef = (tableDef s) {extraOperations = parsedExtraOperations}}
 
+parseConfigPilot :: StorageParserM ()
+parseConfigPilot = do
+  obj <- gets (dataObject . extraParseInfo)
+  case obj ^? ix acc_configPilot . _Value of
+    Nothing -> pure ()
+    Just (Object cpObj) -> do
+      let cpConfigType =
+            fromMaybe (error "configPilot.configType is required") $
+              cpObj ^? ix acc_configType . to valueToString
+          cpFetchQuery =
+            fromMaybe (error "configPilot.fetchQuery is required") $
+              cpObj ^? ix acc_fetchQuery . to valueToString
+          cpReturnType = case cpObj ^? ix acc_returnType . to valueToString of
+            Just "Maybe" -> CPMaybe
+            _ -> CPList
+          cpFilterDimensions =
+            fromMaybe [] $
+              cpObj ^? ix acc_filterDimensions . _Array . to V.toList . to (map valueToString)
+          cpConfigDomain = cpObj ^? ix acc_configDomain . to valueToString
+          cpQueryModule = cpObj ^? ix acc_queryModule . to valueToString
+          cpFetchQueryArgs = cpObj ^? ix acc_fetchQueryArgs . to valueToString
+      modify $ \s -> s {tableDef = (tableDef s) {configPilot = Just ConfigPilotDef {..}}}
+    Just _ -> error "configPilot must be an object"
+
 parseDerives :: StorageParserM ()
 parseDerives = do
   obj <- gets (dataObject . extraParseInfo)
@@ -503,7 +528,7 @@ parsePrimaryAndSecondaryKeys = do
           | (Forced SecondaryKey) `elem` bConstraints bf = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `notElem` possKeys) =
-              error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+            error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
           | otherwise = False
 
     extractCompositeGroups :: [BeamField] -> [String] -> [[String]]
@@ -520,7 +545,7 @@ parsePrimaryAndSecondaryKeys = do
     toGroupPair possKeys bf (CompositeSecondaryKey g)
       | bFieldName bf `elem` possKeys = [(g, bFieldName bf)]
       | otherwise =
-          error ("CompositeSecondaryKey constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !CompositeSecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+        error ("CompositeSecondaryKey constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !CompositeSecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
     toGroupPair _ bf (Forced (CompositeSecondaryKey g)) = [(g, bFieldName bf)]
     toGroupPair _ _ _ = []
 
@@ -1267,15 +1292,15 @@ getProperConstraint txt = case L.trim txt of
   "!SecondaryKey" -> Forced SecondaryKey
   s
     | Just rest <- L.stripPrefix "CompositeSecondaryKey " s ->
-        let grp = L.trim rest
-         in if null grp
-              then error "CompositeSecondaryKey requires a group name (e.g., \"CompositeSecondaryKey myGroup\")"
-              else CompositeSecondaryKey grp
+      let grp = L.trim rest
+       in if null grp
+            then error "CompositeSecondaryKey requires a group name (e.g., \"CompositeSecondaryKey myGroup\")"
+            else CompositeSecondaryKey grp
     | Just rest <- L.stripPrefix "!CompositeSecondaryKey " s ->
-        let grp = L.trim rest
-         in if null grp
-              then error "!CompositeSecondaryKey requires a group name (e.g., \"!CompositeSecondaryKey myGroup\")"
-              else Forced (CompositeSecondaryKey grp)
+      let grp = L.trim rest
+       in if null grp
+            then error "!CompositeSecondaryKey requires a group name (e.g., \"!CompositeSecondaryKey myGroup\")"
+            else Forced (CompositeSecondaryKey grp)
     | otherwise -> error $ "Not a proper constraint type: " <> s
 
 parseFieldConstraints :: Maybe Object -> Key -> [FieldConstraint]

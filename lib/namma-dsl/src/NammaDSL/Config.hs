@@ -27,6 +27,7 @@ data GenerationType
   | DOMAIN_TYPE
   | SQL
   | PURE_SCRIPT_FRONTEND
+  | CONFIG_PILOT
   deriving (Generic, Show, Eq, FromDhall)
 
 data InputPath = InputPath
@@ -53,7 +54,8 @@ data OutputPath = OutputPath
     _servantApiDashboard :: FilePath,
     _servantApiClient :: FilePath,
     _sql :: [(FilePath, String)],
-    _purescriptFrontend :: FilePath
+    _purescriptFrontend :: FilePath,
+    _configPilot :: FilePath
   }
   deriving (Generic, Show, FromDhall)
 

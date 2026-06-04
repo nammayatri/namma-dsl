@@ -5,6 +5,7 @@ module NammaDSL.App (module NammaDSL.App, module ReExport) where
 import Control.Lens ((.~), (^.))
 import Control.Monad (unless, when)
 import Control.Monad.Extra (whenJust)
+import Data.Char (toLower)
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.List (isInfixOf)
@@ -35,6 +36,8 @@ runStorageGenerator configPath yamlPath = do
   config <- fetchDhallConfig configPath
   fileStatus <- getFileState yamlPath
   let modulePrefix tp = haskellModuleNameFromFilePath (config ^. output . tp)
+      cpRawPath = config ^. output . NammaDSL.Config.configPilot
+      cpDomain = if isInfixOf "rider" (map toLower cpRawPath) then "RIDER_CONFIG" else "DRIVER_CONFIG"
       storageRead =
         StorageRead
           { domainTypeModulePrefix = modulePrefix domainType,
@@ -47,7 +50,9 @@ runStorageGenerator configPath yamlPath = do
             defaultCachedQueryKeyPfx = config ^. storageConfig . defaultCachedQueryKeyPrefix,
             srcFileStatus = fileStatus,
             storagePackageMapping = config ^. packageMapping,
-            cacheFlowType = fromMaybe "CacheFlow" (config ^. storageConfig . NammaDSL.Config.cacheFlowType)
+            cacheFlowType = fromMaybe "CacheFlow" (config ^. storageConfig . NammaDSL.Config.cacheFlowType),
+            configPilotModulePrefix = modulePrefix NammaDSL.Config.configPilot,
+            configPilotConfigDomain = cpDomain
           }
   tableDefs <- storageParser storageRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config storageRead tableDefs
@@ -57,7 +62,8 @@ runStorageGenerator configPath yamlPath = do
       (DOMAIN_TYPE, mkDomainType),
       (BEAM_TABLE, mkBeamTable),
       (BEAM_QUERIES, mkBeamQueries),
-      (CACHED_QUERIES, mkCachedQueries)
+      (CACHED_QUERIES, mkCachedQueries),
+      (CONFIG_PILOT, mkConfigPilot)
     ]
 
 runApiGenerator :: FilePath -> FilePath -> IO ()
@@ -202,6 +208,18 @@ mkCachedQueries appConfigs storageRead tableDefs = do
             WithExtraCachedQueryFile (ExtraCachedQueryCode {..}) -> do
               writeToFile defaultFilePath (tableNameHaskell t ++ ".hs") (show (creadOnlyCode cdefaultCode))
               writeToFileIfNotExists extraFilePath (tableNameHaskell t ++ "Extra.hs") (show cextraQueryFile)
+    )
+    tableDefs
+
+mkConfigPilot :: AppConfigs -> StorageRead -> [TableDef] -> IO ()
+mkConfigPilot appConfigs storageRead tableDefs = do
+  let filePath = appConfigs ^. output . NammaDSL.Config.configPilot
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs CONFIG_PILOT
+  mapM_
+    ( \t -> do
+        let mbCode = generateConfigPilot defaultImportsFromConfig storageRead t
+        whenJust mbCode $ \code ->
+          writeToFile filePath (tableNameHaskell t ++ ".hs") (show code)
     )
     tableDefs
 
