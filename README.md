@@ -1080,3 +1080,105 @@ findOnlyQuery id createdAt requestId something = do
   - `NO_DEFAULT_INDEXES`: Toggle for stopping default index generations wrt secondary keys
   - `EXTRA_API_TYPES_FILE`: Creates extra API Types File which can be edited by user. This can be used if user need to define a complex type or custom instance, which is not able to generate using dsl
   - `EXTRA_API_COMMON_TYPES_FILE`: Creates extra API Common Types File which can be edited by user. Difference between this operation and previous one is that `EXTRA_API_COMMON_TYPES_FILE` does not import generated api types, but vise versa it can be imported by generated api types module
+
+---
+
+#### ConfigPilot
+
+ConfigPilot enables automatic code generation for config resolution logic powered by the ConfigPilot framework. It generates dimension types, `ConfigTypeInfo` and `ConfigDimensions` instances, and config resolution functions directly from your Storage YAML definitions.
+
+##### Setup
+
+1. Add `CONFIG_PILOT` to the `generate` list in your Dhall config.
+2. Add `_configPilot` output path in the `OutputPath` section of the Dhall config.
+
+##### Syntax
+
+Add a `configPilot` block inside your Storage YAML table definition:
+
+```yaml
+MyConfig:
+  fields:
+    id: Id MyConfig
+    merchantOperatingCityId: Id MerchantOperatingCity
+    someFilter: Text
+    anotherFilter: Maybe Int
+    # ... other fields
+
+  configPilot:
+    configType: MyConfigType          # Required — the ConfigType enum constructor
+    fetchQuery: findAllByMerchantOpCityId  # Required — the query function to fetch configs from DB
+    returnType: List                   # Optional — List (default) or Maybe
+    filterDimensions:                  # Optional — fields used as dimension matchers
+      - someFilter
+      - anotherFilter
+    configDomain: DRIVER_CONFIG        # Optional — overrides auto-detected domain (RIDER_CONFIG or DRIVER_CONFIG)
+    queryModule: Storage.CachedQueries.MyConfig  # Optional — explicit query module path (auto-detected by default)
+    fetchQueryArgs: someExtraArg       # Optional — additional arguments to pass to the fetch query
+```
+
+##### Field Reference
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `configType` | Yes | — | The `ConfigType` enum constructor name (e.g., `MyConfigType`) |
+| `fetchQuery` | Yes | — | The query function name used to fetch configs from DB |
+| `returnType` | No | `List` | Return type of the config lookup — `List` yields `[DomainType]`, `Maybe` yields `Maybe DomainType` |
+| `filterDimensions` | No | `[]` | List of field names from `fields` to use as dimension matchers for config resolution |
+| `configDomain` | No | Auto-detected | Config domain — auto-detected as `RIDER_CONFIG` or `DRIVER_CONFIG` based on the output path |
+| `queryModule` | No | Auto-detected | Fully qualified query module path. By default uses `CachedQueries` if `fetchQuery` matches a cached query, otherwise uses `Queries` |
+| `fetchQueryArgs` | No | — | Extra arguments appended to the fetch query call |
+
+##### Generated Code
+
+For each table with a `configPilot` block, the generator produces:
+
+1. **Dimensions data type** — a record with `merchantOperatingCityId :: Text` plus each filter dimension field (wrapped in `Maybe` if not already).
+2. **`ConfigTypeInfo` instance** — maps the config type to its dimensions type.
+3. **`ConfigDimensions` instance** — provides the config value type and the `getConfigList` implementation that calls `resolveConfigList` with the fetch query and dimension matchers.
+
+##### Example
+
+Given this YAML:
+```yaml
+RentalFareConfig:
+  fields:
+    id: Id RentalFareConfig
+    merchantOperatingCityId: Id MerchantOperatingCity
+    vehicleServiceTier: ServiceTierType
+    baseFare: HighPrecMoney
+
+  configPilot:
+    configType: RentalFareConfig
+    fetchQuery: findAllByMerchantOpCityId
+    filterDimensions:
+      - vehicleServiceTier
+```
+
+The generator produces a module with:
+```haskell
+data RentalFareConfigDimensions = RentalFareConfigDimensions
+  { merchantOperatingCityId :: Text,
+    vehicleServiceTier :: Maybe ServiceTierType
+  }
+  deriving (Eq, Show, Generic, ToJSON, FromJSON, ToSchema)
+
+instance ConfigTypeInfo 'RentalFareConfig where
+  type DimensionsFor 'RentalFareConfig = RentalFareConfigDimensions
+  configTypeValue = RentalFareConfig
+  sConfigType = SRentalFareConfig
+
+instance ConfigDimensions RentalFareConfigDimensions where
+  type ConfigTypeOf RentalFareConfigDimensions = 'RentalFareConfig
+  type ConfigValueTypeOf RentalFareConfigDimensions = [DT.RentalFareConfig]
+  getConfigType _ = RentalFareConfig
+  getConfigList a =
+    LCP.resolveConfigList
+      a
+      (LYT.DRIVER_CONFIG RentalFareConfig)
+      (Id a.merchantOperatingCityId)
+      (SQ.findAllByMerchantOpCityId (Id a.merchantOperatingCityId))
+      [ LCP.DimMatcher (.vehicleServiceTier) (Just . (.vehicleServiceTier)) (==)
+      ]
+      Nothing
+```
