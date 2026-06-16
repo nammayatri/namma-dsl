@@ -28,6 +28,19 @@ data MigrationFile = MigrationFile
 
 data ExtraOperations = EXTRA_QUERY_FILE | EXTRA_DOMAIN_TYPE_FILE | EXTRA_CACHED_QUERY_FILE | GENERATE_INDEXES | NO_DEFAULT_INDEXES deriving (Show, Eq)
 
+data CPReturnType = CPMaybe | CPList deriving (Show, Eq)
+
+data ConfigPilotDef = ConfigPilotDef
+  { cpConfigType :: String,
+    cpFetchQuery :: String,
+    cpReturnType :: CPReturnType,
+    cpFilterDimensions :: [String],
+    cpConfigDomain :: Maybe String,
+    cpQueryModule :: Maybe String,
+    cpFetchQueryArgs :: Maybe String
+  }
+  deriving (Show)
+
 data ITransformer = ITransformer
   { outputVariableName :: String,
     transformer :: TransformerFunction
@@ -63,12 +76,13 @@ data TableDef = TableDef
     domainTableInstance :: [Instance],
     extraOperations :: [ExtraOperations],
     intermediateTransformers :: IntermediateTransformers,
-    indexes :: [IndexDef]
+    indexes :: [IndexDef],
+    configPilot :: Maybe ConfigPilotDef
   }
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def []
+  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def [] Nothing
 
 data CachedQueryDef = CachedQueryDef
   { cQueryName :: String,
@@ -237,12 +251,14 @@ data StorageRead = StorageRead
     defaultCachedQueryKeyPfx :: String,
     srcFileStatus :: FileState,
     storagePackageMapping :: [(GenerationType, String)],
-    cacheFlowType :: String
+    cacheFlowType :: String,
+    configPilotModulePrefix :: String,
+    configPilotConfigDomain :: String
   }
   deriving (Show)
 
 instance Default StorageRead where
-  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW [] "CacheFlow"
+  def = StorageRead mempty mempty mempty mempty [] [] [] mempty NEW [] "CacheFlow" mempty mempty
 
 type StorageParserM = ParserM StorageRead StorageState
 

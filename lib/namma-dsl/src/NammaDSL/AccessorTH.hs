@@ -69,5 +69,12 @@ $( makeAccKeysTH
     unique
     columns
     responseHeaders
+    configPilot
+    configType
+    fetchQuery
+    filterDimensions
+    configDomain
+    queryModule
+    fetchQueryArgs
     |]
  )
