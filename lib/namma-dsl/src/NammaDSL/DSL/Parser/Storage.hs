@@ -76,8 +76,12 @@ parseExtraIndexes = do
   tableName <- gets (tableNameSql . tableDef)
   isGenerationAllowed <- gets ((GENERATE_INDEXES `elem`) . extraOperations . tableDef)
   isDefaultIndexingStopped <- gets ((NO_DEFAULT_INDEXES `elem`) . extraOperations . tableDef)
-  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf || any isCompositeSecondaryKey (bConstraints bf)) . concatMap beamFields . fields . tableDef)
-  let defaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) defaultColForIndexing
+  allBeamFields <- gets (concatMap beamFields . fields . tableDef)
+  let regularDefaultCols = map bFieldName $ filter (\bf -> SecondaryKey `elem` bConstraints bf) allBeamFields
+      regularDefaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) regularDefaultCols
+      compositeGroupCols = buildCompositeIndexGroups allBeamFields
+      compositeDefaultIndexes = map (\cols -> mkIndexDef tableName cols False Nothing) compositeGroupCols
+      defaultIndexes = regularDefaultIndexes <> compositeDefaultIndexes
   let rawExtraIndexes = fromMaybe [] $ obj ^? ix acc_extraIndexes . _Array . to V.toList
   parsedExtraIndexes <- mapM parseExtraIndex rawExtraIndexes
   let finalIndex =
@@ -556,6 +560,18 @@ isCompositeSecondaryKey :: FieldConstraint -> Bool
 isCompositeSecondaryKey (CompositeSecondaryKey _) = True
 isCompositeSecondaryKey (Forced (CompositeSecondaryKey _)) = True
 isCompositeSecondaryKey _ = False
+
+buildCompositeIndexGroups :: [BeamField] -> [[String]]
+buildCompositeIndexGroups fieldDefs =
+  let kvPairs = concatMap getGroupPairs fieldDefs
+      groupOrder = nub (map fst kvPairs)
+      groupMap = foldl' (\m (g, f) -> M.insertWith (flip (++)) g [f] m) M.empty kvPairs
+   in map (groupMap M.!) groupOrder
+  where
+    getGroupPairs bf = concatMap (constraintToGroupPair (bFieldName bf)) (bConstraints bf)
+    constraintToGroupPair fieldName (CompositeSecondaryKey g) = [(g, fieldName)]
+    constraintToGroupPair fieldName (Forced (CompositeSecondaryKey g)) = [(g, fieldName)]
+    constraintToGroupPair _ _ = []
 
 parseRelationalTableNamesHaskell :: StorageParserM ()
 parseRelationalTableNamesHaskell = do
