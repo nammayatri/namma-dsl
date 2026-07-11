@@ -510,26 +510,54 @@ parsePrimaryAndSecondaryKeys = do
   fields <- gets (fields . tableDef)
   queries <- gets (queries . tableDef)
   allFieldsUsedInQueries <- getAllFieldsUsedInQueries queries
-  let (primaryKey, secondaryKey) = extractKeys allFieldsUsedInQueries fields
-  when ((not $ null $ L.intersect (concat secondaryKey) notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
-  modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey}}
+  let (primaryKey, secondaryKey, secondaryKeyPartial, partialOnlyColumns) = extractKeys allFieldsUsedInQueries fields
+  let uncappedSecondaryKeyColumns = concat secondaryKey L.\\ partialOnlyColumns
+  when ((not $ null $ L.intersect uncappedSecondaryKeyColumns notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
+  modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey, secondaryKeyPartial = secondaryKeyPartial}}
   where
-    extractKeys :: [String] -> [FieldDef] -> ([String], [[String]])
+    extractKeys :: [String] -> [FieldDef] -> ([String], [[String]], [[(String, String)]], [String])
     extractKeys possKeys fieldDefs = extractKeysFromBeamFields possKeys (concatMap beamFields fieldDefs)
 
-    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [[String]])
-    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, regularGroups <> compositeGroups)
+    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [[String]], [[(String, String)]], [String])
+    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, regularGroups <> compositeGroups, secondaryKeyPartials, partialOnlyColumns)
       where
         primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
         regularGroups = map (\bf -> [bFieldName bf]) $ filter regularSecondaryKeyCondition fieldDefs
         compositeGroups = extractCompositeGroups fieldDefs possKeys
+        secondaryKeyPartials = extractSecondaryKeyPartials fieldDefs
+        partialOnlyColumns =
+          [ bFieldName bf
+            | bf <- fieldDefs,
+              any (\c -> isForcedSecondaryKeyPartial c || isPlainSecondaryKeyPartial c) (bConstraints bf),
+              (Forced SecondaryKey) `notElem` bConstraints bf,
+              SecondaryKey `notElem` bConstraints bf,
+              not (any isCompositeSecondaryKey (bConstraints bf))
+          ]
 
         regularSecondaryKeyCondition bf
           | (Forced SecondaryKey) `elem` bConstraints bf = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `notElem` possKeys) =
             error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+          | any isForcedSecondaryKeyPartial (bConstraints bf) = True
+          | any isPlainSecondaryKeyPartial (bConstraints bf) && (bFieldName bf `elem` possKeys) = True
+          | any isPlainSecondaryKeyPartial (bConstraints bf) && (bFieldName bf `notElem` possKeys) =
+            error ("SecondaryKeyPartial constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKeyPartial.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
           | otherwise = False
+
+        isForcedSecondaryKeyPartial (Forced (SecondaryKeyPartial _)) = True
+        isForcedSecondaryKeyPartial _ = False
+
+        isPlainSecondaryKeyPartial (SecondaryKeyPartial _) = True
+        isPlainSecondaryKeyPartial _ = False
+
+    extractSecondaryKeyPartials :: [BeamField] -> [[(String, String)]]
+    extractSecondaryKeyPartials fieldDefs =
+      [conds | bf <- fieldDefs, Just conds <- map partialConds (bConstraints bf)]
+      where
+        partialConds (Forced (SecondaryKeyPartial conds)) = Just conds
+        partialConds (SecondaryKeyPartial conds) = Just conds
+        partialConds _ = Nothing
 
     extractCompositeGroups :: [BeamField] -> [String] -> [[String]]
     extractCompositeGroups fieldDefs possKeys =
@@ -556,6 +584,11 @@ isCompositeSecondaryKey :: FieldConstraint -> Bool
 isCompositeSecondaryKey (CompositeSecondaryKey _) = True
 isCompositeSecondaryKey (Forced (CompositeSecondaryKey _)) = True
 isCompositeSecondaryKey _ = False
+
+isSecondaryKeyPartial :: FieldConstraint -> Bool
+isSecondaryKeyPartial (SecondaryKeyPartial _) = True
+isSecondaryKeyPartial (Forced (SecondaryKeyPartial _)) = True
+isSecondaryKeyPartial _ = False
 
 parseRelationalTableNamesHaskell :: StorageParserM ()
 parseRelationalTableNamesHaskell = do
@@ -1301,7 +1334,22 @@ getProperConstraint txt = case L.trim txt of
        in if null grp
             then error "!CompositeSecondaryKey requires a group name (e.g., \"!CompositeSecondaryKey myGroup\")"
             else Forced (CompositeSecondaryKey grp)
+    | Just rest <- L.stripPrefix "!SecondaryKeyPartial " s ->
+      Forced (SecondaryKeyPartial (parseSecondaryKeyPartialConditions rest))
+    | Just rest <- L.stripPrefix "SecondaryKeyPartial " s ->
+      SecondaryKeyPartial (parseSecondaryKeyPartialConditions rest)
     | otherwise -> error $ "Not a proper constraint type: " <> s
+
+parseSecondaryKeyPartialConditions :: String -> [(String, String)]
+parseSecondaryKeyPartialConditions rest =
+  let conds = L.trim rest
+   in if null conds
+        then error "SecondaryKeyPartial requires at least one condition (e.g., \"SecondaryKeyPartial fieldName:value\")"
+        else map parseCondPair (splitOn "," conds)
+  where
+    parseCondPair pair = case splitOn ":" (L.trim pair) of
+      [f, v] | not (null (L.trim f)) && not (null (L.trim v)) -> (L.trim f, L.trim v)
+      _ -> error ("SecondaryKeyPartial condition must be of the form \"fieldName:value\", got: " <> pair)
 
 parseFieldConstraints :: Maybe Object -> Key -> [FieldConstraint]
 parseFieldConstraints Nothing _ = []

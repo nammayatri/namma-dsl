@@ -128,11 +128,25 @@ tableInstancesToBeam = do
   tySynDW (TH.mkName tableName) [] (cT (tableName <> "T") ~~ cT "Identity")
 
   let thTableName = "''" <> tableName <> "T"
+  let partialSecondaryKeys = secondaryKeyPartial def
   spliceW . pure $ do
-    TH.VarE "enableKVPG"
-      `TH.AppE` TH.VarE (TH.mkName thTableName)
-      `TH.AppE` TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> primaryKey def)
-      `TH.AppE` TH.ListE (secondaryKey def <&> (\ks -> TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> ks)))
+    let enableKVPGFnName = if null partialSecondaryKeys then "enableKVPG" else "enableKVPGWithPartialIndex"
+    let baseSplice =
+          TH.VarE enableKVPGFnName
+            `TH.AppE` TH.VarE (TH.mkName thTableName)
+            `TH.AppE` TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> primaryKey def)
+            `TH.AppE` TH.ListE (secondaryKey def <&> (\ks -> TH.ListE (TH.VarE . TH.mkName . ("'" <>) <$> ks)))
+    if null partialSecondaryKeys
+      then baseSplice
+      else
+        baseSplice
+          `TH.AppE` TH.ListE
+            ( partialSecondaryKeys
+                <&> ( \conds ->
+                        TH.ConE (TH.mkName "SKeyPartial")
+                          `TH.AppE` TH.ListE (conds <&> (\(f, v) -> TH.TupE [Just (TH.VarE (TH.mkName ("'" <> f))), Just (TH.LitE (TH.StringL v))]))
+                    )
+            )
   mapM_
     ( \instanceDef -> do
         let (instanceName, dName, extraInstanceParam, isCustomInstance) = case instanceDef of
