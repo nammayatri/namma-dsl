@@ -68,6 +68,7 @@ data TableDef = TableDef
     excludedDefaultQueries :: [String],
     primaryKey :: [String],
     secondaryKey :: [[String]],
+    secondaryKeyPartial :: [[(String, String)]],
     types :: Maybe [TypeObject],
     containsEncryptedField :: Bool,
     relationalTableNamesHaskell :: [String],
@@ -82,7 +83,7 @@ data TableDef = TableDef
   deriving (Show, Generic)
 
 instance Default TableDef where
-  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def [] Nothing
+  def = TableDef mempty mempty [] [] mempty [] Nothing [] [] [] [] [] Nothing False [] Nothing [MakeTableInstances] [] [] def [] Nothing
 
 data CachedQueryDef = CachedQueryDef
   { cQueryName :: String,
@@ -182,7 +183,7 @@ type Create = Bool
 
 type FromCached = Bool
 
-data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | Forced FieldConstraint | CompositeSecondaryKey String deriving (Show, Eq, Ord)
+data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | Forced FieldConstraint | CompositeSecondaryKey String | SecondaryKeyPartial [(String, String)] deriving (Show, Eq, Ord)
 
 data SqlFieldUpdates = DropNotNull | DropDefault | AddNotNull | AddDefault String | DropColumn | TypeChange deriving (Show)
 

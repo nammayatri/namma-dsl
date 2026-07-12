@@ -240,7 +240,7 @@ This tutorial provides a comprehensive guide to understanding and working with t
 - `{dataTypeName}`: Specifies the name of the module.
   - `tableName`: Optional name of the table, It takes the snake_case of the `dataTypeName` if not defined.
   - `fields`: Lists all fields of the table with Haskell type. [See More](#fields)
-  - `constraints`: PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT
+  - `constraints`: PrimaryKey | SecondaryKey | NotNull | AUTOINCREMENT | CompositeSecondaryKey \<group\> | SecondaryKeyPartial \<field:value[,field:value...]\> [See More](#generating-sql-indexes-or-unique-constraints)
   - `importPackageOverrides`: Used to override import packages [See More](#import-package-override)
   - `types`: User-defined types, similar to API types. [See More](#complex-types)
   - `derives`: Override derives of the main Data type.
@@ -1052,6 +1052,20 @@ findOnlyQuery id createdAt requestId something = do
   ```sql
   CREATE INDEX CONCURRENTLY app_dynamic_logic_element_idx_domain_version ON atlas_app.app_dynamic_logic_element USING btree (domain, version);
   ```
+
+#### Secondary Partial Index (`SecondaryKeyPartial`)
+- Use `SecondaryKeyPartial <field>:<value>` (or `!SecondaryKeyPartial <field>:<value>` to force it, same rules as `!SecondaryKey`) on a field to mark its KV secondary key as a partial index — only relevant when another field equals a fixed value. Multiple conditions can be comma-separated: `SecondaryKeyPartial field1:value1,field2:value2`.
+  ```yaml
+    constraints:
+      id: PrimaryKey
+      driverId: "!SecondaryKeyPartial feeType:CANCELLATION_PENALTY"
+  ```
+  Output:
+  ```haskell
+  $(enableKVPGWithPartialIndex ''DriverFeeT ['id] [['driverId]] [SKeyPartial [('feeType, "CANCELLATION_PENALTY")]])
+  ```
+- Tables without this constraint keep generating the plain `enableKVPG` splice as before.
+- This only affects the KV/Beam secondary key macro; it does not generate a partial (`WHERE ...`) SQL index — `extraIndexes`/`GENERATE_INDEXES` are unaffected by this constraint.
 
   Example 2:
   ```yaml
