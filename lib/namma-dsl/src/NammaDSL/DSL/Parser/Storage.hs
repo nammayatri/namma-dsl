@@ -510,54 +510,44 @@ parsePrimaryAndSecondaryKeys = do
   fields <- gets (fields . tableDef)
   queries <- gets (queries . tableDef)
   allFieldsUsedInQueries <- getAllFieldsUsedInQueries queries
-  let (primaryKey, secondaryKey, secondaryKeyPartial, partialOnlyColumns) = extractKeys allFieldsUsedInQueries fields
-  let uncappedSecondaryKeyColumns = concat secondaryKey L.\\ partialOnlyColumns
-  when ((not $ null $ L.intersect uncappedSecondaryKeyColumns notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
+  let (primaryKey, secondaryKey, secondaryKeyPartial) = extractKeys allFieldsUsedInQueries fields
+  when ((not $ null $ L.intersect (concat secondaryKey) notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
   modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey, secondaryKeyPartial = secondaryKeyPartial}}
   where
-    extractKeys :: [String] -> [FieldDef] -> ([String], [[String]], [[(String, String)]], [String])
+    extractKeys :: [String] -> [FieldDef] -> ([String], [[String]], [[(String, String)]])
     extractKeys possKeys fieldDefs = extractKeysFromBeamFields possKeys (concatMap beamFields fieldDefs)
 
-    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [[String]], [[(String, String)]], [String])
-    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, regularGroups <> compositeGroups, secondaryKeyPartials, partialOnlyColumns)
+    extractKeysFromBeamFields :: [String] -> [BeamField] -> ([String], [[String]], [[(String, String)]])
+    extractKeysFromBeamFields possKeys fieldDefs = (primaryKeyFields, regularGroups <> compositeGroups, secondaryKeyPartials)
       where
         primaryKeyFields = [bFieldName fd | fd <- fieldDefs, PrimaryKey `elem` bConstraints fd]
         regularGroups = map (\bf -> [bFieldName bf]) $ filter regularSecondaryKeyCondition fieldDefs
         compositeGroups = extractCompositeGroups fieldDefs possKeys
-        secondaryKeyPartials = extractSecondaryKeyPartials fieldDefs
-        partialOnlyColumns =
-          [ bFieldName bf
-            | bf <- fieldDefs,
-              any (\c -> isForcedSecondaryKeyPartial c || isPlainSecondaryKeyPartial c) (bConstraints bf),
-              (Forced SecondaryKey) `notElem` bConstraints bf,
-              SecondaryKey `notElem` bConstraints bf,
-              not (any isCompositeSecondaryKey (bConstraints bf))
-          ]
+        secondaryKeyPartials = extractSecondaryKeyPartials possKeys fieldDefs
 
         regularSecondaryKeyCondition bf
           | (Forced SecondaryKey) `elem` bConstraints bf = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `elem` possKeys) = True
           | (SecondaryKey `elem` bConstraints bf) && (bFieldName bf `notElem` possKeys) =
             error ("SecondaryKey constaint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKey.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
-          | any isForcedSecondaryKeyPartial (bConstraints bf) = True
-          | any isPlainSecondaryKeyPartial (bConstraints bf) && (bFieldName bf `elem` possKeys) = True
-          | any isPlainSecondaryKeyPartial (bConstraints bf) && (bFieldName bf `notElem` possKeys) =
-            error ("SecondaryKeyPartial constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKeyPartial.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
           | otherwise = False
 
-        isForcedSecondaryKeyPartial (Forced (SecondaryKeyPartial _)) = True
-        isForcedSecondaryKeyPartial _ = False
-
-        isPlainSecondaryKeyPartial (SecondaryKeyPartial _) = True
-        isPlainSecondaryKeyPartial _ = False
-
-    extractSecondaryKeyPartials :: [BeamField] -> [[(String, String)]]
-    extractSecondaryKeyPartials fieldDefs =
-      [conds | bf <- fieldDefs, Just conds <- map partialConds (bConstraints bf)]
+    extractSecondaryKeyPartials :: [String] -> [BeamField] -> [[(String, String)]]
+    extractSecondaryKeyPartials possKeys fieldDefs =
+      [validateUsage bf conds | bf <- fieldDefs, Just conds <- map partialConds (bConstraints bf)]
       where
         partialConds (Forced (SecondaryKeyPartial conds)) = Just conds
         partialConds (SecondaryKeyPartial conds) = Just conds
         partialConds _ = Nothing
+
+        validateUsage bf conds
+          | any isForcedSecondaryKeyPartial (bConstraints bf) = conds
+          | bFieldName bf `elem` possKeys = conds
+          | otherwise =
+            error ("SecondaryKeyPartial constraint for beam field " ++ bFieldName bf ++ " cannot be applied as it's not used in src-read-only query section.\nIf you want to use this field or are using it in a query file outside of the src-read-only folder, you can force it with !SecondaryKeyPartial.\nAlert: If you are adding this constraint, please ensure you are aware of its cardinality and use cases.")
+
+        isForcedSecondaryKeyPartial (Forced (SecondaryKeyPartial _)) = True
+        isForcedSecondaryKeyPartial _ = False
 
     extractCompositeGroups :: [BeamField] -> [String] -> [[String]]
     extractCompositeGroups fieldDefs possKeys =
