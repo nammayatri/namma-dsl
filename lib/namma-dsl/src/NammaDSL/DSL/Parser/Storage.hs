@@ -507,11 +507,14 @@ parseInstances = do
 parsePrimaryAndSecondaryKeys :: StorageParserM ()
 parsePrimaryAndSecondaryKeys = do
   srcStatus <- asks srcFileStatus
+  tableName <- gets (tableNameSql . tableDef)
   fields <- gets (fields . tableDef)
   queries <- gets (queries . tableDef)
   allFieldsUsedInQueries <- getAllFieldsUsedInQueries queries
   let (primaryKey, secondaryKey, secondaryKeyPartial) = extractKeys allFieldsUsedInQueries fields
-  when ((not $ null $ L.intersect (concat secondaryKey) notAllowedSecondaryKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
+      allowedForTable = fromMaybe [] $ M.lookup tableName tablesAllowedBlacklistSecondaryKeys
+      violatingKeys = (L.intersect (concat secondaryKey) notAllowedSecondaryKeys) L.\\ allowedForTable
+  when (not (null violatingKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
   modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey, secondaryKeyPartial = secondaryKeyPartial}}
   where
     extractKeys :: [String] -> [FieldDef] -> ([String], [[String]], [[(String, String)]])
@@ -569,6 +572,13 @@ parsePrimaryAndSecondaryKeys = do
 
 notAllowedSecondaryKeys :: [String]
 notAllowedSecondaryKeys = ["merchantId", "merchantOperatingCityId", "status"]
+
+tablesAllowedBlacklistSecondaryKeys :: M.Map String [String]
+tablesAllowedBlacklistSecondaryKeys =
+  M.fromList
+    [ ("app_dynamic_logic_element", ["merchantOperatingCityId"]),
+      ("app_dynamic_logic_rollout", ["merchantOperatingCityId"])
+    ]
 
 isCompositeSecondaryKey :: FieldConstraint -> Bool
 isCompositeSecondaryKey (CompositeSecondaryKey _) = True
