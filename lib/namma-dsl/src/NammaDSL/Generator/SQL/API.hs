@@ -8,7 +8,7 @@ import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy.UTF8 as LBS
 import Data.Functor ((<&>))
 import Data.List (find, intercalate)
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified NammaDSL.DSL.Parser.API as Parser
