@@ -8,7 +8,7 @@ import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy.UTF8 as LBS
 import Data.Functor ((<&>))
 import Data.List (find, intercalate)
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified NammaDSL.DSL.Parser.API as Parser
@@ -123,9 +123,30 @@ generateMigration isLocal' apiRead apiTT migrationKey = do
   case find (\m -> m.name == migration migrationKey) allSupportedMigrations of
     Just SupportedMigration {generate, isLocal, deprecate, errorMessage, name} -> do
       if isLocal == isLocal'
-        then if deprecate then Left $ errorMessage name else Just <$> generate apiRead apiTT migrationKey
+        then
+          if deprecate
+            then do
+              -- Tolerated for endpoints that predate the capability framework.
+              -- Their deprecated migrations already ran against the old schema;
+              -- refusing them here would fail the build for every spec nobody
+              -- is changing, the moment a second _sql output is added (a new
+              -- output has no key history, so all of them look unemitted).
+              -- A NEW endpoint reaching for a deprecated migration is still an
+              -- error, which is what the deprecation is actually guarding.
+              baselined <- isBaselinedEndpoint apiRead apiTT
+              if baselined then pure Nothing else Left $ errorMessage name
+            else Just <$> generate apiRead apiTT migrationKey
         else pure Nothing
     Nothing -> Left $ "Only " <> show (name <$> allSupportedMigrations) <> " migrations supported"
+
+-- | Does this endpoint predate the capability framework? False when no baseline
+-- is configured, which keeps every non-dashboard spec on the strict behaviour.
+isBaselinedEndpoint :: ApiRead -> ApiTT -> Either SQL_ERROR Bool
+isBaselinedEndpoint apiRead apiTT = case apiCapabilityBaseline apiRead of
+  Nothing -> pure False
+  Just baseline -> do
+    endpointId <- generateEndpointV3 apiRead apiTT
+    pure $ T.pack endpointId `Set.member` baseline
 
 -- supported migrations implementation
 
@@ -251,20 +272,24 @@ generateCapabilityMigration apiRead apiTT migrationKey = do
 generatelocalAccessForRoleIdMigration :: ApiRead -> ApiTT -> ApiMigrationKey -> Either SQL_ERROR String
 generatelocalAccessForRoleIdMigration _apiRead apiTT migrationKey = do
   roleId <- maybe (Left "Migration param required for 'localAccessForRoleId' migration") pure $ param migrationKey
-  capabilityId <-
-    maybe
-      (Left "'localAccessForRoleId' needs a 'capability' migration on the same api to know what to grant")
-      pure
-      $ find (\m -> m ^. migrationName == capabilityMigrationName) (apiTT ^. apiMigrate) >>= (^. migrationParam)
-  if capabilityId == publicCapability
-    then pure "-- capability: PUBLIC - nothing to grant locally."
-    else
-      pure $
-        "INSERT INTO "
-          <> T.unpack (schema migrationKey)
-          <> ".role_capability (role_id, capability_id) VALUES "
-          <> "( '"
-          <> T.unpack roleId
-          <> "', '"
-          <> T.unpack capabilityId
-          <> "' ) ON CONFLICT DO NOTHING;"
+  -- localAccessForRoleId is a config-level default applied to EVERY api, so it
+  -- also fires for endpoints that predate the capability framework. Those have
+  -- nothing to grant (their access came from the seed) and erroring on them
+  -- would break every old spec the moment a second _sql output is added.
+  let mbCapabilityId =
+        find (\m -> m ^. migrationName == capabilityMigrationName) (apiTT ^. apiMigrate) >>= (^. migrationParam)
+  case mbCapabilityId of
+    Nothing -> pure "-- no capability declared (endpoint predates the capability framework); nothing to grant locally."
+    Just capabilityId ->
+      if capabilityId == publicCapability
+        then pure "-- capability: PUBLIC - nothing to grant locally."
+        else
+          pure $
+            "INSERT INTO "
+              <> T.unpack (schema migrationKey)
+              <> ".role_capability (role_id, capability_id) VALUES "
+              <> "( '"
+              <> T.unpack roleId
+              <> "', '"
+              <> T.unpack capabilityId
+              <> "' ) ON CONFLICT DO NOTHING;"
