@@ -11,7 +11,9 @@ import Data.Functor ((<&>))
 import Data.List (isInfixOf)
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import qualified Data.Set as Set
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import NammaDSL.Config
 import NammaDSL.DSL.Parser.API
 import NammaDSL.DSL.Parser.Storage
@@ -69,6 +71,7 @@ runStorageGenerator configPath yamlPath = do
 runApiGenerator :: FilePath -> FilePath -> IO ()
 runApiGenerator configPath yamlPath = do
   config <- fetchDhallConfig configPath
+  mbCapabilityBaseline <- loadCapabilityBaseline (config ^. capabilityBaseline)
   let modulePrefix tp = haskellModuleNameFromFilePath (config ^. output . tp)
   let apiRead =
         ApiRead
@@ -88,7 +91,8 @@ runApiGenerator configPath yamlPath = do
             apiMigrationParams = config ^. migrationParams,
             apiPackageMapping = config ^. packageMapping,
             dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
-            serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix)
+            serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix),
+            apiCapabilityBaseline = mbCapabilityBaseline
           }
   (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
@@ -125,7 +129,9 @@ runApiTreeGenerator configPath specModules = do
             apiMigrationParams = config ^. migrationParams,
             apiPackageMapping = config ^. packageMapping,
             dashboardApiModulePrefix = fromMaybe "API.Dashboard" (config ^. apiDashboardPrefix),
-            serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix)
+            serverNameTypeModulePrefix = fromMaybe "Domain.Types.ServerName" (config ^. serverNameTypePrefix),
+            -- The tree generator emits no API SQL, so the baseline is irrelevant here.
+            apiCapabilityBaseline = Nothing
           }
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (ApiTree {specModules})
   mapM_
@@ -267,6 +273,20 @@ data FilePathAndDatabase = FilePathAndDatabase
     fileName :: FilePath,
     isLocal :: Bool
   }
+
+-- | Read the capability baseline: one endpoint id per line, `#` comments and
+-- blanks ignored. A configured-but-missing file is a hard error rather than a
+-- silent skip — silently skipping would disable the capability requirement for
+-- a whole spec folder and nobody would notice until a 403 in production.
+loadCapabilityBaseline :: Maybe FilePath -> IO (Maybe (Set.Set T.Text))
+loadCapabilityBaseline Nothing = pure Nothing
+loadCapabilityBaseline (Just path) = do
+  exists <- doesFileExist path
+  unless exists $ error ("Capability baseline not found: " <> path)
+  contents <- TIO.readFile path
+  let ids = filter (not . isIgnored) . map T.strip $ T.lines contents
+      isIgnored l = T.null l || "#" `T.isPrefixOf` l
+  pure . Just $ Set.fromList ids
 
 mkApiSQLFile :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkApiSQLFile appConfigs apiRead apiDef = do

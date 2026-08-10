@@ -102,7 +102,13 @@ data AppConfigs = AppConfigs
     _migrationParams :: [ApiMigration],
     _packageMapping :: [(GenerationType, String)],
     _apiDashboardPrefix :: Maybe String, -- prefix for API.Dashboard module (default: "API.Dashboard")
-    _serverNameTypePrefix :: Maybe String -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    _serverNameTypePrefix :: Maybe String, -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    -- Path to the capability baseline: the endpoint ids that already have a
+    -- capability_endpoint row and so predate the `capability` migration. When
+    -- set, every dashboard endpoint NOT listed there must declare
+    -- `migrate: capability:` or codegen fails. None = no enforcement, which is
+    -- what every non-dashboard spec wants.
+    _capabilityBaseline :: Maybe String
   }
   deriving (Generic, Show, FromDhall)
 

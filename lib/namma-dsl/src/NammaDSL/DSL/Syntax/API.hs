@@ -9,6 +9,7 @@ import Control.Lens hiding (noneOf)
 import Data.Aeson (FromJSON, Object, ToJSON)
 import Data.Default
 import Data.Map (Map)
+import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import NammaDSL.Config (ApiKind (..), ApiMigration, GenerationType)
@@ -169,7 +170,11 @@ data ApiRead = ApiRead
     apiMigrationParams :: [ApiMigration],
     apiPackageMapping :: [(GenerationType, String)],
     dashboardApiModulePrefix :: String, -- prefix for API.Dashboard module (default: "API.Dashboard")
-    serverNameTypeModulePrefix :: String -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    serverNameTypeModulePrefix :: String, -- prefix for ServerName type (default: "Domain.Types.ServerName")
+    -- Endpoint ids exempt from the `capability` requirement because they were
+    -- mapped in bulk when the capability framework landed. Nothing = the spec
+    -- has no baseline configured, so the requirement is not enforced at all.
+    apiCapabilityBaseline :: Maybe (Set Text)
   }
 
 data ExtraParseInfo = ExtraParseInfo
