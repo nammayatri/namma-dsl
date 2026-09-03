@@ -3,7 +3,7 @@
 module NammaDSL.Generator.SQL.Table (generateSQL) where
 
 import Control.Monad (foldM)
-import Data.List (intercalate)
+import Data.List (intercalate, isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import qualified Data.Set as DS
@@ -184,15 +184,24 @@ addColumnSQL hasOldMigration database tableName beamFields = do
   return (intercalate "\n" mappedAddColStmts)
   where
     generateAlterColumnSQL :: Database -> String -> String -> BeamField -> Either SQL_ERROR String
-    generateAlterColumnSQL database' fieldName_ sqlType_ beamField =
-      if hasOldMigration && NotNull `elem` bConstraints beamField
-        then Left ("Error: Not allowed to add new columns with Not Null constraint. Please make the column " <> bFieldName beamField <> " nullable for backwards compatibility")
-        else
-          Right $
-            ("ALTER TABLE " <> database' <> ".") ++ tableName ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [wrapWithQuotes fieldName_, sqlType_]) ++ " "
-              ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
-              ++ maybe "" (" default " ++) (bDefaultVal beamField)
-              ++ ";"
+    generateAlterColumnSQL database' fieldName_ sqlType_ beamField
+      | hasOldMigration && NotNull `elem` bConstraints beamField =
+        Left ("Error: Not allowed to add new columns with Not Null constraint. Please make the column " <> bFieldName beamField <> " nullable for backwards compatibility")
+      | otherwise = Right (addColumnStmt ++ setDefaultStmt)
+      where
+        alterTable = ("ALTER TABLE " <> database' <> ".") ++ tableName
+        splitDefault =
+          if hasOldMigration && NotNull `notElem` bConstraints beamField && "timestamp" `isPrefixOf` sqlType_
+            then bDefaultVal beamField
+            else Nothing
+        inlineDefault = if isJust splitDefault then Nothing else bDefaultVal beamField
+        addColumnStmt =
+          alterTable ++ " ADD COLUMN " ++ intercalate " " (filter (not . null) [wrapWithQuotes fieldName_, sqlType_]) ++ " "
+            ++ unwords (mapMaybe constraintToSQL (bConstraints beamField))
+            ++ maybe "" (" default " ++) inlineDefault
+            ++ ";"
+        setDefaultStmt =
+          maybe "" (\dv -> "\n" ++ alterTable ++ " ALTER COLUMN " ++ wrapWithQuotes fieldName_ ++ " SET DEFAULT " ++ dv ++ ";") splitDefault
 
 addKeySQL :: Database -> TableDef -> String
 addKeySQL database tableDef =
