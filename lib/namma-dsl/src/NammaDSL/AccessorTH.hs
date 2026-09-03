@@ -77,5 +77,6 @@ $( makeAccKeysTH
     configDomain
     queryModule
     fetchQueryArgs
+    actorInfo
     |]
  )

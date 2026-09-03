@@ -140,23 +140,30 @@ parseAllApis' = do
               A.String str -> ApiMigration (toText k) (Just str)
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
-          (extraQuery, extraMQuery) =
+          (extraQuery, extraMQuery, actorInfoFromExtra) =
             if isHelperApi
-              then ([], []) -- shouldn't be helperApiExtra inside of helperApi
-              else case preview (ix acc_helperApiExtra . _Object) obj of -- <&> \helperApiExtraObj -> do
+              then ([], [], Nothing) -- shouldn't be helperApiExtra inside of helperApi
+              else case preview (ix acc_helperApiExtra . _Object) obj of
                 Just helperApiExtraObj -> do
                   let extraQuery' = fromMaybe [] $ preview (ix acc_query . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b False))) helperApiExtraObj
-                  let extraMQuery' = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b True))) helperApiExtraObj
-                  (extraQuery', extraMQuery')
-                Nothing -> ([], [])
+                      extraMQuery' = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b True))) helperApiExtraObj
+                      actorInfoExtra = preview (ix acc_actorInfo . _String) helperApiExtraObj
+                  (extraQuery', extraMQuery', actorInfoExtra)
+                Nothing -> ([], [], Nothing)
+          mbActorInfo = preview (ix acc_actorInfo . _String) obj
       let urlPartsExtra = extraQuery <> extraMQuery
-      let helperApiExtra = HelperApiTTExtra urlPartsExtra
-      let singleApiRes = ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi helperApiExtra apiKind moduleName requestValidation migrations responseHeaders
+          helperApiExtra = HelperApiTTExtra urlPartsExtra
+          singleApiRes = ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi helperApiExtra apiKind moduleName requestValidation migrations responseHeaders mbActorInfo
       case (isJust helperApi, not $ null urlPartsExtra) of
         (True, True) -> error "Only one of helperApi and helperApiExtra is supported"
         (False, True) -> do
           -- helper api is the same as dashboard api, only extra params added
-          let updHelperApi = HelperApiTT $ singleApiRes & apiHelperApiExtra .~ HelperApiTTExtra [] & urlParts .~ (endpoint <> query <> (castUrlParts <$> extraQuery) <> mQuery <> (castUrlParts <$> extraMQuery))
+          let updHelperApi =
+                HelperApiTT $
+                  singleApiRes
+                    & apiHelperApiExtra .~ HelperApiTTExtra []
+                    & urlParts .~ (endpoint <> query <> (castUrlParts <$> extraQuery) <> mQuery <> (castUrlParts <$> extraMQuery))
+                    & actorInfo .~ actorInfoFromExtra
           Just $ singleApiRes & apiHelperApi .~ Just updHelperApi
         (_, False) -> return singleApiRes
     parseSingleApi _ _ _ _ = error "Api specs missing"

@@ -87,7 +87,8 @@ data ApiTT = ApiTT
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
     _apiMigrate :: [ApiMigration],
-    _responseHeader :: [HeaderType]
+    _responseHeader :: [HeaderType],
+    _actorInfo :: Maybe Text
   }
   deriving (Show)
 
