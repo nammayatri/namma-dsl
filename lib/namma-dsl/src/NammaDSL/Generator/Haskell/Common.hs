@@ -7,7 +7,7 @@ import qualified Data.Char as Char
 import Data.List.Extra (find, nub, snoc)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, fromMaybe, maybeToList)
+import Data.Maybe (catMaybes, fromMaybe, isJust, listToMaybe, mapMaybe, maybeToList)
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -382,3 +382,79 @@ mkFullUserActionTypeEnum apiRead apiTT = do
   case endpointParts of
     (httpMethod : rest) -> T.unpack $ T.intercalate "_" (httpMethod : T.pack folderPart : rest)
     _ -> endpointUserActionType -- Fallback if structure is unexpected
+
+---------- ActorInfo ----------
+
+-- | ApiTT that actually carries actorInfo / helper signature for Servant codegen.
+effectiveActorInfoApi :: ApiKind -> ApiTT -> ApiTT
+effectiveActorInfoApi DASHBOARD = withHelperApi id
+effectiveActorInfoApi UI = id
+
+hasActorInfo :: ApiKind -> ApiTT -> Bool
+hasActorInfo apiKind apiT = isJust $ effectiveActorInfoApi apiKind apiT ^. actorInfo
+
+-- | Resolve actorInfo YAML field into a Servant wrapper: wrap $ action.
+-- Int is paramsNumber used for numbered aN bindings in Servant.hs.
+resolveActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Maybe (Q r TH.Exp -> Q r TH.Exp)
+resolveActorInfoWrapper apiKind apiT paramsNumber =
+  case effectiveApi ^. actorInfo of
+    Nothing -> Nothing
+    Just "auth" -> Just $ mkAuthActorInfoWrapper apiKind apiT paramsNumber
+    Just paramName -> Just $ mkParamActorInfoWrapper apiKind effectiveApi paramName
+  where
+    effectiveApi = effectiveActorInfoApi apiKind apiT
+
+applyActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Q r TH.Exp -> Q r TH.Exp
+applyActorInfoWrapper apiKind apiT paramsNumber action =
+  case resolveActorInfoWrapper apiKind apiT paramsNumber of
+    Nothing -> action
+    Just wrap -> wrap action
+
+mkAuthActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Q r TH.Exp -> Q r TH.Exp
+mkAuthActorInfoWrapper UI apiT paramsNumber action =
+  case apiT ^. authType of
+    Just (TokenAuth _) ->
+      let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show paramsNumber)
+       in vE "Tools.ActorInfo.withPersonIdActorInfo" ~* personExp ~$ action
+    _ -> error $ "actorInfo: auth requires TokenAuth for API " <> T.unpack (handlerFunctionText apiT)
+mkAuthActorInfoWrapper DASHBOARD apiT _ _ =
+  error $ "actorInfo: auth is only supported for UI APIs, got dashboard API " <> T.unpack (handlerFunctionText apiT)
+
+mkParamActorInfoWrapper :: ApiKind -> ApiTT -> Text -> Q r TH.Exp -> Q r TH.Exp
+mkParamActorInfoWrapper apiKind effectiveApi paramName action =
+  case findActorInfoParamUnit inputUnits paramName of
+    Nothing ->
+      error $
+        "actorInfo param '"
+          <> T.unpack paramName
+          <> "' not found in API "
+          <> T.unpack (handlerFunctionText effectiveApi)
+          <> " signature units: "
+          <> show (apiUnitToText . apiSignatureUnit <$> inputUnits)
+    Just (idx, isOptional) ->
+      let varName = "a" <> show (length inputUnits - idx)
+          personExp = mkPersonIdExp isOptional varName
+          wrapperFun = actorInfoWrapperFun apiKind isOptional
+       in vE wrapperFun ~* personExp ~$ action
+  where
+    inputUnits = init $ mkApiSignatureUnits effectiveApi
+
+findActorInfoParamUnit :: [ApiSignatureUnit] -> Text -> Maybe (Int, Bool)
+findActorInfoParamUnit units paramName =
+  listToMaybe $
+    flip mapMaybe (zip [0 ..] units) $ \(idx, unit) ->
+      case apiSignatureUnit unit of
+        CaptureUnit name | name == paramName -> Just (idx, False)
+        MandatoryQueryParamUnit name | name == paramName -> Just (idx, False)
+        QueryParamUnit name | name == paramName -> Just (idx, True)
+        _ -> Nothing
+
+mkPersonIdExp :: Bool -> String -> Q r TH.Exp
+mkPersonIdExp True varName = cE "Kernel.Types.Id.Id" ~<$> vE varName
+mkPersonIdExp False varName = cE "Kernel.Types.Id.Id" ~* vE varName
+
+actorInfoWrapperFun :: ApiKind -> Bool -> String
+actorInfoWrapperFun UI False = "Tools.ActorInfo.withPersonIdActorInfo"
+actorInfoWrapperFun UI True = "Tools.ActorInfo.withMbPersonIdActorInfo"
+actorInfoWrapperFun DASHBOARD False = "Tools.ActorInfo.withDashboardPersonIdActorInfo"
+actorInfoWrapperFun DASHBOARD True = "Tools.ActorInfo.withDashboardMbPersonIdActorInfo"

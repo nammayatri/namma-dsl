@@ -54,6 +54,13 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         <> nub (qualifiedImp <> figureOutImports allHandlersSignatures <> apiTypesImport)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> multipartImports
+        <> actorInfoImports
+
+    actorInfoImports :: [String]
+    actorInfoImports =
+      if any (hasActorInfo (apiReadKind apiRead)) (_apis input)
+        then ["Tools.ActorInfo", "Kernel.Types.Id", "Control.Lens"]
+        else []
 
     allHandlersSignatures :: [String]
     allHandlersSignatures = case apiReadKind apiRead of
@@ -208,9 +215,10 @@ generateAPIHandler apiRead = do
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (apiReadKind apiRead) (isDashboardAuth apiT) $
-                TH.appendE $
-                  vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+                applyActorInfoWrapper (apiReadKind apiRead) apiT paramsNumber $
+                  TH.appendE $
+                    vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                      NE.:| generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
 
 generateWithFlowHandlerAPI :: ApiKind -> Bool -> (Q TH.Exp -> Q TH.Exp)
 generateWithFlowHandlerAPI UI True = (vE "withFlowHandlerAPI'" ~$)
