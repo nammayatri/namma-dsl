@@ -385,24 +385,47 @@ mkFullUserActionTypeEnum apiRead apiTT = do
 
 ---------- ActorInfo ----------
 
--- | ApiTT that actually carries actorInfo / helper signature for Servant codegen.
-effectiveActorInfoApi :: ApiKind -> ApiTT -> ApiTT
-effectiveActorInfoApi DASHBOARD = withHelperApi id
-effectiveActorInfoApi UI = id
-
 hasActorInfo :: ApiKind -> ApiTT -> Bool
-hasActorInfo apiKind apiT = isJust $ effectiveActorInfoApi apiKind apiT ^. actorInfo
+hasActorInfo UI apiT = isJust (apiT ^. actorInfo)
+hasActorInfo DASHBOARD apiT = case apiT ^. apiHelperApi of
+  Just helperTT -> isJust (helperTT ^. getHelperAPI . actorInfo)
+  Nothing -> False
 
 -- | Resolve actorInfo YAML field into a Servant wrapper: wrap $ action.
+-- Guards:
+--   * UI — only @actorInfo: auth@ (TokenAuth)
+--   * Dashboard — only a param on helperApi / helperApiExtra (name may vary)
 -- Int is paramsNumber used for numbered aN bindings in Servant.hs.
 resolveActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Maybe (Q r TH.Exp -> Q r TH.Exp)
-resolveActorInfoWrapper apiKind apiT paramsNumber =
-  case effectiveApi ^. actorInfo of
+resolveActorInfoWrapper UI apiT paramsNumber =
+  case apiT ^. actorInfo of
     Nothing -> Nothing
-    Just "auth" -> Just $ mkAuthActorInfoWrapper apiKind apiT paramsNumber
-    Just paramName -> Just $ mkParamActorInfoWrapper apiKind effectiveApi paramName
-  where
-    effectiveApi = effectiveActorInfoApi apiKind apiT
+    Just "auth" -> Just $ mkAuthActorInfoWrapper apiT paramsNumber
+    Just other ->
+      error $
+        "actorInfo for UI API "
+          <> T.unpack (handlerFunctionText apiT)
+          <> " must be 'auth', got '"
+          <> T.unpack other
+          <> "'"
+resolveActorInfoWrapper DASHBOARD apiT _paramsNumber =
+  case apiT ^. actorInfo of
+    Just _ ->
+      error $
+        "actorInfo for dashboard API "
+          <> T.unpack (handlerFunctionText apiT)
+          <> " must be set inside helperApi or helperApiExtra, not on the outer API"
+    Nothing -> case apiT ^. apiHelperApi of
+      Nothing -> Nothing
+      Just helperTT ->
+        let helperApi' = helperTT ^. getHelperAPI
+         in case helperApi' ^. actorInfo of
+              Nothing -> Nothing
+              Just "auth" ->
+                error $
+                  "actorInfo: auth is only supported for UI APIs, got dashboard API "
+                    <> T.unpack (handlerFunctionText apiT)
+              Just paramName -> Just $ mkParamActorInfoWrapper helperApi' paramName
 
 applyActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Q r TH.Exp -> Q r TH.Exp
 applyActorInfoWrapper apiKind apiT paramsNumber action =
@@ -410,34 +433,33 @@ applyActorInfoWrapper apiKind apiT paramsNumber action =
     Nothing -> action
     Just wrap -> wrap action
 
-mkAuthActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Q r TH.Exp -> Q r TH.Exp
-mkAuthActorInfoWrapper UI apiT paramsNumber action =
+mkAuthActorInfoWrapper :: ApiTT -> Int -> Q r TH.Exp -> Q r TH.Exp
+mkAuthActorInfoWrapper apiT paramsNumber action =
   case apiT ^. authType of
     Just (TokenAuth _) ->
       let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show paramsNumber)
        in vE "Tools.ActorInfo.withPersonIdActorInfo" ~* personExp ~$ action
     _ -> error $ "actorInfo: auth requires TokenAuth for API " <> T.unpack (handlerFunctionText apiT)
-mkAuthActorInfoWrapper DASHBOARD apiT _ _ =
-  error $ "actorInfo: auth is only supported for UI APIs, got dashboard API " <> T.unpack (handlerFunctionText apiT)
 
-mkParamActorInfoWrapper :: ApiKind -> ApiTT -> Text -> Q r TH.Exp -> Q r TH.Exp
-mkParamActorInfoWrapper apiKind effectiveApi paramName action =
+-- | Dashboard helper only: wrap using a capture / query / mandatoryQuery param (any name).
+mkParamActorInfoWrapper :: ApiTT -> Text -> Q r TH.Exp -> Q r TH.Exp
+mkParamActorInfoWrapper helperApi' paramName action =
   case findActorInfoParamUnit inputUnits paramName of
     Nothing ->
       error $
         "actorInfo param '"
           <> T.unpack paramName
-          <> "' not found in API "
-          <> T.unpack (handlerFunctionText effectiveApi)
+          <> "' not found in helper API "
+          <> T.unpack (handlerFunctionText helperApi')
           <> " signature units: "
           <> show (apiUnitToText . apiSignatureUnit <$> inputUnits)
     Just (idx, isOptional) ->
       let varName = "a" <> show (length inputUnits - idx)
           personExp = mkPersonIdExp isOptional varName
-          wrapperFun = actorInfoWrapperFun apiKind isOptional
+          wrapperFun = dashboardActorInfoWrapperFun isOptional
        in vE wrapperFun ~* personExp ~$ action
   where
-    inputUnits = init $ mkApiSignatureUnits effectiveApi
+    inputUnits = init $ mkApiSignatureUnits helperApi'
 
 findActorInfoParamUnit :: [ApiSignatureUnit] -> Text -> Maybe (Int, Bool)
 findActorInfoParamUnit units paramName =
@@ -453,8 +475,6 @@ mkPersonIdExp :: Bool -> String -> Q r TH.Exp
 mkPersonIdExp True varName = cE "Kernel.Types.Id.Id" ~<$> vE varName
 mkPersonIdExp False varName = cE "Kernel.Types.Id.Id" ~* vE varName
 
-actorInfoWrapperFun :: ApiKind -> Bool -> String
-actorInfoWrapperFun UI False = "Tools.ActorInfo.withPersonIdActorInfo"
-actorInfoWrapperFun UI True = "Tools.ActorInfo.withMbPersonIdActorInfo"
-actorInfoWrapperFun DASHBOARD False = "Tools.ActorInfo.withDashboardPersonIdActorInfo"
-actorInfoWrapperFun DASHBOARD True = "Tools.ActorInfo.withDashboardMbPersonIdActorInfo"
+dashboardActorInfoWrapperFun :: Bool -> String
+dashboardActorInfoWrapperFun False = "Tools.ActorInfo.withDashboardPersonIdActorInfo"
+dashboardActorInfoWrapperFun True = "Tools.ActorInfo.withDashboardMbPersonIdActorInfo"
