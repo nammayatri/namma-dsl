@@ -361,3 +361,11 @@ parseModeConfig =
           )
           LHE.knownExtensions
     }
+
+-- use default only if mapping not found
+findModuleName :: String -> [(String, Maybe String)] -> Maybe String
+findModuleName moduleName apiImportsMapping = fromMaybe (Just moduleName) $ L.lookup moduleName apiImportsMapping
+
+-- use default if mapping not found, or if mapping is empty
+findModuleNameWithDefault :: String -> [(String, Maybe String)] -> String
+findModuleNameWithDefault moduleName apiImportsMapping = fromMaybe moduleName $ findModuleName moduleName apiImportsMapping

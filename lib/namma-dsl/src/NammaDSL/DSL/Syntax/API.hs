@@ -82,11 +82,13 @@ data ApiTT = ApiTT
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
     _apiHelperApi :: Maybe HelperApiTT,
+    _apiHelperApiExtra :: HelperApiTTExtra,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
     _apiMigrate :: [ApiMigration],
-    _responseHeader :: [HeaderType]
+    _responseHeader :: [HeaderType],
+    _actorInfo :: Maybe Text
   }
   deriving (Show)
 
@@ -108,12 +110,22 @@ data ApiMigrationKey = ApiMigrationKey
 newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
   deriving (Show)
 
+newtype HelperApiTTExtra = HelperApiTTExtra
+  { _urlPartsExtra :: [UrlPartsExtra]
+  }
+  deriving (Show)
+
+data UrlPartsExtra = QueryParamExtra Text Text Bool
+  deriving (Show)
+
 newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
 $(makeLenses ''ApiTT)
 
 $(makeLenses ''HelperApiTT)
+
+$(makeLenses ''HelperApiTTExtra)
 
 $(makeLenses ''ApiMigration)
 
@@ -174,7 +186,9 @@ data ApiRead = ApiRead
     -- Endpoint ids exempt from the `capability` requirement because they were
     -- mapped in bulk when the capability framework landed. Nothing = the spec
     -- has no baseline configured, so the requirement is not enforced at all.
-    apiCapabilityBaseline :: Maybe (Set Text)
+    apiCapabilityBaseline :: Maybe (Set Text),
+    isApiTreeClientGenerated :: Bool,
+    apiImportsMapping :: [(String, Maybe String)]
   }
 
 data ExtraParseInfo = ExtraParseInfo

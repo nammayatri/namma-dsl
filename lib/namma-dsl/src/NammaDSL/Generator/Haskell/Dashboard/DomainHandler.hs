@@ -6,7 +6,7 @@ import Control.Monad.Extra (whenJust)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing, maybeToList)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (DOMAIN_HANDLER_DASHBOARD))
 import NammaDSL.DSL.Syntax.API
@@ -51,7 +51,7 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> storeTransactionImports
         <> ["Kernel.Utils.Validation" | ifValidationRequired]
-        <> [apiClientImportPrefix apiRead]
+        <> [apiClientImportPrefix apiRead | isApiTreeClientGenerated apiRead]
         <> multipartImports
     allSimpleImports :: [String]
     allSimpleImports =
@@ -98,14 +98,13 @@ generateDomainHandlerDashboard (DefaultImports qualifiedImp simpleImp _packageIm
     storeTransactionImports =
       when_
         (any (\apiT -> apiT ^. apiType /= GET) $ input ^. apis)
-        [ "Domain.Types.Transaction"
-        ]
+        (maybeToList $ findModuleName "Domain.Types.Transaction" (apiImportsMapping apiRead))
 
     ifValidationRequired :: Bool
     ifValidationRequired = any (\apiT -> isJust $ apiT ^. requestValidation) $ input ^. apis
 
     multipartImports :: [String]
-    multipartImports = ["Dashboard.Common" | apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)]
+    multipartImports = [findModuleNameWithDefault "Dashboard.Common" (apiImportsMapping apiRead) | apiReadKind apiRead == DASHBOARD && any (isJust . (^. apiMultipartType)) (input ^. apis)]
 
 when_ :: Bool -> [a] -> [a]
 when_ False _ = []
@@ -128,10 +127,10 @@ mkCodeBodyDomainHandlerDashboard apiRead input = do
   let serverName = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead
   let allApis = input ^. apis
   interpreter input $ do
-    forM_ allApis $ handlerFunctionDef serverName clientFuncName
+    forM_ allApis $ handlerFunctionDef apiRead serverName clientFuncName
 
-handlerFunctionDef :: String -> String -> ApiTT -> Writer CodeUnit
-handlerFunctionDef serverName clientFuncName apiT = do
+handlerFunctionDef :: ApiRead -> String -> String -> ApiTT -> Writer CodeUnit
+handlerFunctionDef apiRead serverName clientFuncName apiT = do
   input <- ask
   useAuth <- case (apiT ^. authType) of
     Just ApiAuthV2 {} -> pure True
@@ -160,41 +159,64 @@ handlerFunctionDef serverName clientFuncName apiT = do
                     Nothing -> error "Did not found request for validation"
               TH.noBindSW $ vE "Kernel.Utils.Validation.runRequestValidation" ~* vE (T.unpack validationFunc) ~* reqParam
             if useAuth
-              then vP "checkedMerchantId" <-- vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
+              then do
+                let checkMerchantExp = vE "merchantCityAccessCheck" ~* vE "merchantShortId" ~* vE "apiTokenInfo.merchant.shortId" ~* vE "opCity" ~* vE "apiTokenInfo.city"
+                if isApiTreeClientGenerated apiRead
+                  then vP "checkedMerchantId" <-- checkMerchantExp
+                  else TH.noBindSW $ vE "Kernel.Prelude.void" ~$ checkMerchantExp
               else letStmt "checkedMerchantId" $ vE "skipMerchantCityAccessCheck" ~* vE "merchantShortId"
             let transactionWrapper clientCall = case apiT ^. apiType of
                   GET -> clientCall
                   _ | not useAuth -> clientCall
                   _ -> do
+                    let sharedLogicTransaction = findModuleNameWithDefault "SharedLogic.Transaction" (apiImportsMapping apiRead)
+                    let mbDomainTypesTransaction = findModuleName "Domain.Types.Transaction" (apiImportsMapping apiRead)
                     vP "transaction"
-                      <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
+                      <-- vE (sharedLogicTransaction <> ".buildTransaction")
+                      ~* maybe (vE "apiTokenInfo.userActionType") (\domainTypesTransaction -> vE (domainTypesTransaction <> ".castEndpoint") ~* vE "apiTokenInfo.userActionType") mbDomainTypesTransaction
                       ~* (cE "Kernel.Prelude.Just" ~* cE serverName)
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits "driverId"
                       ~* generateHandlerParam apiUnits "rideId"
                       ~* generateReqParam apiUnits
-                    -- TODO implement response trnsaction storing
-                    TH.noBindSW $ vE "SharedLogic.Transaction.withTransactionStoring" ~* vE "transaction" ~$ TH.doEW clientCall
-
-            transactionWrapper $
-              TH.noBindSW $ do
-                let clientCall = "." <> T.unpack (headToLower moduleName') <> "DSL" #. T.unpack functionName
-                if isNothing (apiT ^. apiHelperApi)
-                  then do
+                    -- TODO implement response transaction storing
+                    TH.noBindSW $ vE (sharedLogicTransaction <> ".withTransactionStoring") ~* vE "transaction" ~$ TH.doEW clientCall
+            if isApiTreeClientGenerated apiRead
+              then do
+                case apiT ^. apiHelperApiExtra ^. urlPartsExtra of
+                  [] -> pure ()
+                  extraParams -> forM_ extraParams $ \case
+                    QueryParamExtra "requestorId" "Text" True -> letStmt "requestorId" (vE "apiTokenInfo.personId.getId")
+                    QueryParamExtra "requestorId" "Text" False -> letStmt "requestorId" (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo.personId.getId")
+                    QueryParamExtra queryParamName _queryParamType _isMandatory -> letStmt (TH.mkName $ T.unpack queryParamName) (vE "error" ~* strE "Logic yet to be decided")
+                transactionWrapper $
+                  TH.noBindSW $ do
+                    let clientCall = "." <> T.unpack (headToLower moduleName') <> "DSL" #. T.unpack functionName
                     let clientCallWithBoundary =
                           if isJust (apiT ^. apiMultipartType)
-                            then (vE "Dashboard.Common.addMultipartBoundary" ~* strE "XXX00XXX") ~. vE clientCall
+                            then (vE (findModuleNameWithDefault "Dashboard.Common" (apiImportsMapping apiRead) <> ".addMultipartBoundary") ~* strE "XXX00XXX") ~. vE clientCall
                             else vE clientCall
-                    TH.appendE $
-                      vE clientFuncName
-                        NE.:| vE "checkedMerchantId" :
-                      vE "opCity" :
-                      clientCallWithBoundary :
-                      generateParamsExp apiUnits
-                  else appendE $ do
-                    let errStr = strE $ "Client call " <> clientCall <> " for separate helperApi couldn't be autogenerated. Logic yet to be decided"
-                    vE "error" NE.:| errStr : vE "checkedMerchantId" : generateParamsExp apiUnits -- just for avoid unused vars error
+                    let clientCallExp units =
+                          TH.appendE $
+                            vE clientFuncName
+                              NE.:| vE "checkedMerchantId" :
+                            vE "opCity" :
+                            clientCallWithBoundary :
+                            generateParamsExp units
+                    if isNothing (apiT ^. apiHelperApi)
+                      then clientCallExp apiUnits
+                      else case (not . null $ apiT ^. apiHelperApiExtra ^. urlPartsExtra, apiT ^. apiHelperApi) of
+                        (True, Just helperApiT) -> do
+                          let signatureUnitsHelper = mkApiSignatureUnits (helperApiT ^. getHelperAPI)
+                              apiUnitsHelper = map apiSignatureUnit signatureUnitsHelper
+                          clientCallExp apiUnitsHelper
+                        _ -> appendE $ do
+                          let errStr = strE $ "Client call " <> clientCall <> " for separate helperApi couldn't be autogenerated. Logic yet to be decided"
+                          vE "error" NE.:| errStr : vE "checkedMerchantId" : generateParamsExp apiUnits -- just for avoid unused vars error
+              else do
+                -- currently transaction store is not used for admin apis without client call
+                let errStr = strE "Logic yet to be decided"
+                TH.noBindSW $ appendE $ vE "error" NE.:| errStr : generateParamsExp apiUnits -- just for avoid unused vars error
   where
     generateHandlerParam :: [ApiUnit] -> String -> Q TH.Exp
     generateHandlerParam apiUnits param = case findParamText apiUnits param of
@@ -204,4 +226,4 @@ handlerFunctionDef serverName clientFuncName apiT = do
     generateReqParam :: [ApiUnit] -> Q TH.Exp
     generateReqParam apiUnits = case findRequest apiUnits of
       Just paramText -> cE "Kernel.Prelude.Just" ~* vE paramText
-      Nothing -> cE "SharedLogic.Transaction.emptyRequest"
+      Nothing -> cE (findModuleNameWithDefault "SharedLogic.Transaction" (apiImportsMapping apiRead) <> ".emptyRequest")
