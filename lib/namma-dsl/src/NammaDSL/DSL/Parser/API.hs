@@ -94,11 +94,22 @@ parseAllApis' = do
   obj <- gets (^. extraParseInfo . yamlObj)
   moduleName <- gets (^. apisRes . moduleName)
   apiKind <- asks apiReadKind
-  let allApis = fromMaybe (error "Failed to parse apis or no apis defined") $ obj ^? ix acc_apis . _Array . to V.toList >>= mapM (parseSingleApi False moduleName apiKind)
+  let mbDefaultHelperApiExtra = obj ^? ix acc_default . _Object . ix acc_helperApiExtra . _Object
+      allApis =
+        fromMaybe (error "Failed to parse apis or no apis defined") $
+          obj ^? ix acc_apis . _Array . to V.toList
+            >>= mapM (parseSingleApi False moduleName apiKind mbDefaultHelperApiExtra)
   modify $ \s -> s & apisRes . apis .~ allApis
   where
-    parseSingleApi :: Bool -> Text -> ApiKind -> Value -> Maybe ApiTT
-    parseSingleApi isHelperApi moduleName apiKind (Object ob) = do
+    parseHelperApiExtraObj :: A.Object -> ([UrlPartsExtra], [UrlPartsExtra], Maybe Text)
+    parseHelperApiExtraObj helperApiExtraObj =
+      let extraQuery' = fromMaybe [] $ preview (ix acc_query . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b False))) helperApiExtraObj
+          extraMQuery' = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b True))) helperApiExtraObj
+          actorInfoExtra = preview (ix acc_actorInfo . _String) helperApiExtraObj
+       in (extraQuery', extraMQuery', actorInfoExtra)
+
+    parseSingleApi :: Bool -> Text -> ApiKind -> Maybe A.Object -> Value -> Maybe ApiTT
+    parseSingleApi isHelperApi moduleName apiKind mbDefaultHelperApiExtra (Object ob) = do
       let (key, val) = head $ KM.toList ob
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
@@ -132,7 +143,7 @@ parseAllApis' = do
                 else
                   preview (ix acc_helperApi . _Array . to V.toList) obj >>= \case
                     [] -> Nothing
-                    [helperApiVal] -> parseSingleApi True moduleName apiKind helperApiVal
+                    [helperApiVal] -> parseSingleApi True moduleName apiKind Nothing helperApiVal
                     _vs -> error "More than one helper api not supported"
           migrationsObj = fromMaybe KM.empty $ preview (ix acc_migrate . _Object) obj
           migrations = flip map (KM.toList migrationsObj) $ \(k, v) -> do
@@ -140,16 +151,15 @@ parseAllApis' = do
               A.String str -> ApiMigration (toText k) (Just str)
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
+          -- Full override: own helperApi / helperApiExtra wins; module default only if neither is set.
           (extraQuery, extraMQuery, actorInfoFromExtra) =
             if isHelperApi
               then ([], [], Nothing) -- shouldn't be helperApiExtra inside of helperApi
               else case preview (ix acc_helperApiExtra . _Object) obj of
-                Just helperApiExtraObj -> do
-                  let extraQuery' = fromMaybe [] $ preview (ix acc_query . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b False))) helperApiExtraObj
-                      extraMQuery' = fromMaybe [] $ preview (ix acc_mandatoryQuery . _Value . to mkListFromSingleton . to (map (\(a, b) -> QueryParamExtra a b True))) helperApiExtraObj
-                      actorInfoExtra = preview (ix acc_actorInfo . _String) helperApiExtraObj
-                  (extraQuery', extraMQuery', actorInfoExtra)
-                Nothing -> ([], [], Nothing)
+                Just ownExtra -> parseHelperApiExtraObj ownExtra
+                Nothing
+                  | isJust helperApi -> ([], [], Nothing)
+                  | otherwise -> maybe ([], [], Nothing) parseHelperApiExtraObj mbDefaultHelperApiExtra
           mbActorInfo = preview (ix acc_actorInfo . _String) obj
       let urlPartsExtra = extraQuery <> extraMQuery
           helperApiExtra = HelperApiTTExtra urlPartsExtra
@@ -166,7 +176,7 @@ parseAllApis' = do
                     & actorInfo .~ actorInfoFromExtra
           Just $ singleApiRes & apiHelperApi .~ Just updHelperApi
         (_, False) -> return singleApiRes
-    parseSingleApi _ _ _ _ = error "Api specs missing"
+    parseSingleApi _ _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq
     parseRequest obj = do
