@@ -12,7 +12,7 @@ import Data.Aeson
 import qualified Data.Aeson as A
 import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
-import Data.Aeson.Lens (_Array, _Object, _String, _Value)
+import Data.Aeson.Lens (_Array, _Bool, _Object, _String, _Value)
 import Data.Bifunctor
 import Data.Bool
 import qualified Data.ByteString as BS
@@ -125,6 +125,10 @@ parseAllApis' = do
 
           apiName = preview (ix acc_name . _String) obj
 
+          appServerCustomHandler = preview (ix acc_appServerHandler . _String) obj == Just "custom"
+
+          auditRequestBody = preview (ix acc_auditRequestBody . _Bool) obj /= Just False
+
           helperApi =
             HelperApiTT
               <$> if isHelperApi
@@ -141,7 +145,7 @@ parseAllApis' = do
               A.Null -> ApiMigration (toText k) Nothing
               _ -> error "String or Null migration params only supported for now"
 
-      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations responseHeaders
+      return $ ApiTT allApiParts apiTp apiName auth headers multipart req res helperApi apiKind moduleName requestValidation migrations responseHeaders appServerCustomHandler auditRequestBody
     parseSingleApi _ _ _ _ = error "Api specs missing"
 
     parseRequest :: A.Object -> Maybe ApiReq

@@ -174,7 +174,7 @@ handlerFunctionDef generationType apiRead apiT = do
       allTypes = map apiSignatureType signatureUnits
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
-      handlerTypes = apiAuthTypeMapperServant generationType apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
+      handlerTypes = apiAuthTypeMapperServant False generationType apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
   TH.decsW $ do
     TH.sigDW (TH.mkNameT functionName) $ do
       TH.forallT [] [] $
