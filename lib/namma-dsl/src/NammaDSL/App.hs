@@ -5,10 +5,10 @@ module NammaDSL.App (module NammaDSL.App, module ReExport) where
 import Control.Lens ((.~), (^.))
 import Control.Monad (unless, when)
 import Control.Monad.Extra (whenJust)
-import Data.Char (toLower)
+import Data.Char (isSpace, toLower)
 import Data.Function ((&))
 import Data.Functor ((<&>))
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isPrefixOf)
 import Data.List.Extra (replace)
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Set as Set
@@ -31,7 +31,7 @@ import System.Process (readProcess)
 import Prelude
 
 version :: String
-version = "1.0.85"
+version = "1.0.86"
 
 runStorageGenerator :: FilePath -> FilePath -> IO ()
 runStorageGenerator configPath yamlPath = do
@@ -80,12 +80,14 @@ runApiGenerator configPath yamlPath = do
             extraApiCommonTypesImportPrefix = modulePrefix extraApiRelatedCommonTypes,
             apiServantImportPrefix = modulePrefix servantApi,
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
+            apiServantDashboardAuthImportPrefix = modulePrefix servantApiDashboardAuth,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
             apiDomainHandlerDashboardImportPrefix = modulePrefix domainHandlerDashboard,
             apiClientImportPrefix = modulePrefix servantApiClient,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
             apiServerName = config ^. serverName,
             apiReadKind = config ^. apiKind,
+            apiAppServerDashboardAuth = fromMaybe False (config ^. appServerDashboardAuth),
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName,
             apiMigrationParams = config ^. migrationParams,
@@ -101,6 +103,7 @@ runApiGenerator configPath yamlPath = do
     [ (SQL, mkApiSQLFile),
       (SERVANT_API, mkServantAPI),
       (SERVANT_API_DASHBOARD, mkServantAPIDashboard),
+      (SERVANT_API_DASHBOARD_AUTH, mkServantAPIDashboardAuth),
       (API_TYPES, mkApiTypes),
       (DOMAIN_HANDLER, mkDomainHandler),
       (DOMAIN_HANDLER_DASHBOARD, mkDomainHandlerDashboard),
@@ -118,12 +121,14 @@ runApiTreeGenerator configPath specModules = do
             extraApiCommonTypesImportPrefix = modulePrefix extraApiRelatedCommonTypes,
             apiServantImportPrefix = modulePrefix servantApi,
             apiServantDashboardImportPrefix = modulePrefix servantApiDashboard,
+            apiServantDashboardAuthImportPrefix = modulePrefix servantApiDashboardAuth,
             apiDomainHandlerImportPrefix = modulePrefix domainHandler,
             apiDomainHandlerDashboardImportPrefix = modulePrefix domainHandlerDashboard,
             apiClientImportPrefix = modulePrefix servantApiClient,
             apiDefaultTypeImportMapper = config ^. defaultTypeImportMapper,
             apiServerName = config ^. serverName,
             apiReadKind = config ^. apiKind,
+            apiAppServerDashboardAuth = fromMaybe False (config ^. appServerDashboardAuth),
             apiEndpointPrefix = config ^. endpointPrefix,
             apiFolderName = config ^. folderName,
             apiMigrationParams = config ^. migrationParams,
@@ -138,6 +143,7 @@ runApiTreeGenerator configPath specModules = do
     when'
     [ (API_TREE, mkAPITree),
       (API_TREE_DASHBOARD, mkAPITreeDashboard),
+      (API_TREE_DASHBOARD_AUTH, mkAPITreeDashboardAuth),
       (API_TREE_COMMON, mkAPITreeCommon),
       (API_TREE_CLIENT, mkAPITreeClient)
     ]
@@ -260,7 +266,7 @@ mkSQLFile appConfigs _storageRead tableDefs = do
               --print mbOldMigrationFile
               let contents = generateSQL database' mbOldMigrationFile t
               case contents of
-                Right content -> unless (null content) $ writeToFile filePath' filename content
+                Right content -> when (hasExecutableSql content) $ writeToFile filePath' filename content
                 Left err -> error err
           )
           filePathAndDatabase
@@ -306,16 +312,45 @@ mkApiSQLFile appConfigs apiRead apiDef = do
           mbOldMigrationFile <- getOldApiSqlFile $ filePath </> fileName
           let contents = generateApiSQL database mbOldMigrationFile isLocal apiRead apiDef
           case contents of
-            Right content -> unless (null content) $ writeToFile filePath fileName content
+            Right content -> when (hasExecutableSql content) $ writeToFile filePath fileName content
             Left err -> error err
       )
       filePathsAndDatabase
+
+-- | Does this generated SQL contain anything the migration runner can execute?
+--
+-- A module whose endpoints all declare no capability produces a file of nothing
+-- but comments. Postgres rejects that with "execute: Empty query", which takes
+-- the service down on boot, so such a file must not be written at all.
+hasExecutableSql :: String -> Bool
+hasExecutableSql = any (not . isCommentOrBlank) . lines
+  where
+    isCommentOrBlank l = let t = dropWhile isSpace l in null t || "--" `isPrefixOf` t
 
 mkServantAPI :: AppConfigs -> ApiRead -> Apis -> IO ()
 mkServantAPI appConfigs apiRead apiDef = do
   let filePath = appConfigs ^. output . servantApi
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API
-      generateServantAPI' = generateServantAPI defaultImportsFromConfig apiRead
+      -- Never here: the auth variant is a separate module, see mkServantAPIDashboardAuth.
+      generateServantAPI' = generateServantAPI defaultImportsFromConfig apiRead {apiAppServerDashboardAuth = False}
+  writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPI' apiDef)
+
+-- | The application server's own authorizing tree.
+--
+-- Emitted as a separate module from 'mkServantAPI' on purpose: the plain tree is
+-- also the type provider-dashboard derives its proxy client from, so wrapping its
+-- endpoints in an auth combinator would silently change that client's contract.
+-- Both trees are served at once, which is what lets routes cut over one at a time.
+mkServantAPIDashboardAuth :: AppConfigs -> ApiRead -> Apis -> IO ()
+mkServantAPIDashboardAuth appConfigs apiRead apiDef = do
+  let filePath = appConfigs ^. output . servantApiDashboardAuth
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs SERVANT_API
+      apiRead' =
+        apiRead
+          { apiAppServerDashboardAuth = True,
+            apiServantImportPrefix = apiServantDashboardAuthImportPrefix apiRead
+          }
+      generateServantAPI' = generateServantAPI defaultImportsFromConfig apiRead'
   writeToFile filePath (T.unpack (_moduleName apiDef) ++ ".hs") (show $ generateServantAPI' apiDef)
 
 mkServantAPIDashboard :: AppConfigs -> ApiRead -> Apis -> IO ()
@@ -330,6 +365,15 @@ mkAPITree appConfigs apiRead apiTree = do
   let filePath = appConfigs ^. output . servantApi ++ ".hs"
       defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TREE
       generateAPITree' = generateAPITree defaultImportsFromConfig apiRead
+  writeToFile' filePath (show $ generateAPITree' apiTree)
+
+-- | Folder aggregate for the application server's authorizing tree.
+mkAPITreeDashboardAuth :: AppConfigs -> ApiRead -> ApiTree -> IO ()
+mkAPITreeDashboardAuth appConfigs apiRead apiTree = do
+  let filePath = appConfigs ^. output . servantApiDashboardAuth ++ ".hs"
+      defaultImportsFromConfig = getGeneratorDefaultImports appConfigs API_TREE
+      apiRead' = apiRead {apiServantImportPrefix = apiServantDashboardAuthImportPrefix apiRead}
+      generateAPITree' = generateAPITree defaultImportsFromConfig apiRead'
   writeToFile' filePath (show $ generateAPITree' apiTree)
 
 mkAPITreeDashboard :: AppConfigs -> ApiRead -> ApiTree -> IO ()
