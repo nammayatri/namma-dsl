@@ -4,7 +4,7 @@ import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Monad.Reader (ask)
 import qualified Data.Char as Char
-import Data.List.Extra (find, nub, snoc)
+import Data.List.Extra (find, intercalate, nub, snoc)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, maybeToList)
@@ -56,19 +56,13 @@ apiAuthTypeMapperDomainHandler apiT = case _authType apiT of
     PROVIDER_TYPE -> pure $ tupleT 3 ~~ (_Maybe ~~ (_Id ~~ _Person)) ~~ (_Id ~~ _Merchant) ~~ (_Id ~~ _MerchantOperatingCity)
   _ -> pure $ tupleT 2 ~~ (_Maybe ~~ (_Id ~~ _Person)) ~~ (_Id ~~ _Merchant)
 
-apiAuthTypeMapperServant :: GenerationType -> ApiTT -> [TH.Q r TH.Type]
-apiAuthTypeMapperServant generationType apiT = case _authType apiT of
+apiAuthTypeMapperServant :: Bool -> GenerationType -> ApiTT -> [TH.Q r TH.Type]
+apiAuthTypeMapperServant appServerAuth generationType apiT = case _authType apiT of
   Just (DashboardAuth _) -> pure $ cT "TokenInfo"
   Just ApiTokenAuth -> pure $ cT "Verified"
   Just ApiAuth {} -> error "ApiAuth is deprecated, use ApiAuthV2"
-  Just ApiAuthV2 {} -> case generationType of
-    SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
-    DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
-    _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
-  Just ApiAuthV3 {} -> case generationType of
-    SERVANT_API_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
-    DOMAIN_HANDLER_DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City", cT "ApiTokenInfo"]
-    _ -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
+  Just ApiAuthV2 {} -> dashboardAuthServantArgs appServerAuth generationType apiT
+  Just ApiAuthV3 {} -> dashboardAuthServantArgs appServerAuth generationType apiT
   Just (SafetyWebhookAuth _) -> pure $ cT "AuthToken"
   Just NoAuth -> case apiT ^. apiTypeKind of
     DASHBOARD -> [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"]
@@ -119,6 +113,24 @@ handlerFunctionText apiTT = flip fromMaybe (headToLower <$> apiTT ^. apiName) $ 
     urlPartToName (UnitPath name) = (T.toUpper . T.singleton . T.head) name <> T.tail name
     urlPartToName _ = ""
 
+-- | Handler arguments contributed by dashboard auth.
+--
+-- The dashboard's own servant layer receives an ApiTokenInfo parameterised by
+-- the action union of the package that owns the endpoint. An application
+-- server serving the same route receives a DashboardUser -- the operator
+-- resolved by its own combinator -- so its handlers can name the caller for
+-- authorization-sensitive logic and for the audit trail.
+dashboardAuthServantArgs :: Bool -> GenerationType -> ApiTT -> [TH.Q r TH.Type]
+dashboardAuthServantArgs appServerAuth generationType apiT = case generationType of
+  SERVANT_API_DASHBOARD -> withMerchantCity [cT "ApiTokenInfo" ~~ cT "Domain.Types.AccessMatrix.UserActionType"]
+  DOMAIN_HANDLER_DASHBOARD -> withMerchantCity [cT "ApiTokenInfo" ~~ cT "Domain.Types.AccessMatrix.UserActionType"]
+  SERVANT_API | appServerAuth -> case apiT ^. apiTypeKind of
+    DASHBOARD -> withMerchantCity [cT "DashboardUser"]
+    UI -> withMerchantCity []
+  _ -> withMerchantCity []
+  where
+    withMerchantCity extra = [_ShortId ~~ _Merchant, cT "Kernel.Types.Beckn.Context.City"] <> extra
+
 addAuthToApi :: ApiRead -> GenerationType -> ApiTT -> Maybe (Q r TH.Type)
 addAuthToApi apiRead generationType apiTT = case _authType apiTT of
   Just AdminTokenAuth -> Just $ cT "AdminTokenAuth"
@@ -153,6 +165,18 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
             -- ApiAuthV3: Use simple enum value
             let fullEnumName = mkFullUserActionTypeEnum apiRead' apiTT'
             Just $ baseAuth ~~ cT' fullEnumName
+      SERVANT_API | apiAppServerDashboardAuth apiRead' -> case apiTT' ^. apiTypeKind of
+        -- Dashboard routes served by the application server itself. Same
+        -- endpoint identity as the dashboard emission above, but carried as a
+        -- type-level string: the promoted UserActionType constructors live in
+        -- packages an application server cannot depend on, whereas the string
+        -- is exactly the value stored in capability_endpoint.endpoint_id.
+        DASHBOARD -> do
+          let sn = fromMaybe (error "serverName should be provided for dashboard api") $ apiServerName apiRead'
+          let (folderUserActionType, moduleUserActionType, endpointUserActionType) = either error id $ mkFullUserActionType apiRead' apiTT'
+          let endpointId = intercalate "/" [folderUserActionType, moduleUserActionType, endpointUserActionType]
+          Just $ cT "DashboardUserAuth" ~~ cT' sn ~~ strT endpointId
+        UI -> Nothing
       _ -> Nothing -- auth already added in common folder
 
 type IsHelperApi = Bool
@@ -218,6 +242,34 @@ generateAPIType = generateAPIType' False
 
 generateAPITypeHelper :: GenerationType -> ApiRead -> Writer Apis CodeUnit
 generateAPITypeHelper = generateAPIType' True
+
+-- | The DashboardAuth tree, where the choice of variant is per endpoint.
+generateAPITypeAppServer :: (ApiTT -> Bool) -> GenerationType -> ApiRead -> Writer Apis CodeUnit
+generateAPITypeAppServer usePublicApi _generationType apiRead = do
+  input <- ask
+  let allApis = input ^. apis
+  tySynDW "API" [] $ do
+    case apiReadKind apiRead of
+      UI -> error "generateAPITypeAppServer is only for DASHBOARD-kind APIs"
+      DASHBOARD -> do
+        let apiTTToText_ apiT = cT . T.unpack $ (if usePublicApi apiT then mkApiName else mkApiNameHelper) apiT
+        let apiPrefix' = T.unpack $ fromMaybe (headToLower $ input ^. moduleName) (input ^. apiPrefix)
+        let apiTree = TH.parensT . appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
+        if null apiPrefix' then apiTree else uInfixT (strT apiPrefix') ":>" apiTree
+
+-- | Capture names on a Helper variant that identify the CALLER, and can
+-- therefore be taken from the verified session instead of the URL.
+sessionDerivedCaptures :: [String]
+sessionDerivedCaptures = apiUnitToText . CaptureUnit <$> ["fleetOwnerId", "requestorId", "volunteerId", "dashboardUserName"]
+
+-- | Signature units the Helper has that the public shape does not.
+helperExtraUnits :: ApiTT -> [ApiSignatureUnit]
+helperExtraUnits apiT =
+  let publicNames = unitName <$> mkApiSignatureUnits apiT
+   in filter ((`notElem` publicNames) . unitName) (mkApiSignatureUnitsHelper apiT)
+
+unitName :: ApiSignatureUnit -> String
+unitName = apiUnitToText . apiSignatureUnit
 
 generateAPIType' :: IsHelperApi -> GenerationType -> ApiRead -> Writer Apis CodeUnit
 generateAPIType' isHelperApi generationType apiRead = do

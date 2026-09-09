@@ -14,8 +14,10 @@ import Prelude
 data GenerationType
   = SERVANT_API
   | SERVANT_API_DASHBOARD
+  | SERVANT_API_DASHBOARD_AUTH
   | API_TREE
   | API_TREE_DASHBOARD
+  | API_TREE_DASHBOARD_AUTH
   | API_TREE_COMMON
   | API_TREE_CLIENT
   | API_TYPES
@@ -52,6 +54,7 @@ data OutputPath = OutputPath
     _domainType :: FilePath,
     _servantApi :: FilePath,
     _servantApiDashboard :: FilePath,
+    _servantApiDashboardAuth :: FilePath,
     _servantApiClient :: FilePath,
     _sql :: [(FilePath, String)],
     _purescriptFrontend :: FilePath,
@@ -108,7 +111,16 @@ data AppConfigs = AppConfigs
     -- set, every dashboard endpoint NOT listed there must declare
     -- `migrate: capability:` or codegen fails. None = no enforcement, which is
     -- what every non-dashboard spec wants.
-    _capabilityBaseline :: Maybe String
+    _capabilityBaseline :: Maybe String,
+    -- Emit per-endpoint dashboard auth on the APPLICATION SERVER side, so the
+    -- app server authorizes the request itself instead of trusting the
+    -- dashboard to have done it.
+    --
+    -- Opt-in per spec folder, and not free: the app server's API type is also
+    -- what the dashboard derives its client from, so turning this on for a
+    -- folder changes that contract and the folder must be cut over to direct
+    -- traffic at the same time. Nothing/False = today's behaviour.
+    _appServerDashboardAuth :: Maybe Bool
   }
   deriving (Generic, Show, FromDhall)
 

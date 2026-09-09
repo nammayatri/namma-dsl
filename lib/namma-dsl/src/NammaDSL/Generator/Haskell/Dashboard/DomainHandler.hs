@@ -144,7 +144,7 @@ handlerFunctionDef serverName clientFuncName apiT = do
       allTypes = map apiSignatureType signatureUnits
       apiUnits = map apiSignatureUnit signatureUnits
       showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
-      handlerTypes = apiAuthTypeMapperServant DOMAIN_HANDLER_DASHBOARD apiT <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
+      handlerTypes = apiAuthTypeMapperServant False DOMAIN_HANDLER_DASHBOARD apiT <> showType <> [cT "Environment.Flow" ~~ cT (T.unpack $ last allTypes)]
   TH.decsW $ do
     TH.sigDW (TH.mkNameT functionName) $ do
       TH.forallT [] [] $
@@ -168,7 +168,7 @@ handlerFunctionDef serverName clientFuncName apiT = do
                   _ -> do
                     vP "transaction"
                       <-- vE "SharedLogic.Transaction.buildTransaction"
-                      ~* (vE "Domain.Types.Transaction.castEndpoint" ~* vE "apiTokenInfo.userActionType")
+                      ~* (vE "Domain.Types.Transaction.ActionAPI" ~* vE "apiTokenInfo.userActionType")
                       ~* (cE "Kernel.Prelude.Just" ~* cE serverName)
                       ~* (cE "Kernel.Prelude.Just" ~* vE "apiTokenInfo")
                       ~* generateHandlerParam apiUnits "driverId"

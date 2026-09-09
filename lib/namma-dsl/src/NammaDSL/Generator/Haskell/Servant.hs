@@ -5,12 +5,12 @@ import Control.Monad (forM_, when)
 import Control.Monad.Reader (ask)
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, maybeToList)
 import Data.Text (Text)
 import qualified Data.Text as T
 import NammaDSL.Config (ApiKind (..), DefaultImports (..), GenerationType (SERVANT_API))
 import NammaDSL.DSL.Syntax.API
-import NammaDSL.Generator.Haskell.Common hiding (generateParamsExp, generateParamsPat)
+import NammaDSL.Generator.Haskell.Common hiding (generateParamsExp)
 import NammaDSL.GeneratorCore
 import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
@@ -64,6 +64,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
     allSimpleImports =
       ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
+        <> ["Tools.Auth.DashboardUserAuth" | appServerDashboardAuth apiRead]
         <> simpleImp
 
     apiTypesImport :: [String]
@@ -105,9 +106,9 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
 
     allModuleExports = do
       let moduleName' = _moduleName input
-      let apiTypeName = case apiReadKind apiRead of
-            UI -> "API"
-            DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
+      let apiTypeName
+            | apiReadKind apiRead == UI || appServerDashboardAuth apiRead = "API"
+            | otherwise = apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
       Just [apiTypeName, "handler"]
 
     multipartImports :: [String]
@@ -121,9 +122,48 @@ mkCodeBody apiRead = do
   input <- ask
   tellM . fromMaybe mempty $
     interpreter input $ do
+  
       when (apiReadKind apiRead == UI) $
         generateAPIType SERVANT_API apiRead
+      when (appServerDashboardAuth apiRead) $
+        generateAPITypeAppServer (appServerUsesPublicApi apiRead) SERVANT_API apiRead
+      when (appServerDashboardAuth apiRead) $
+        forM_ (_apis input) $ generateAppServerApiType apiRead
       generateAPIHandler apiRead
+
+-- | Does this spec folder have the application server authorize its dashboard
+-- routes? Only meaningful for DASHBOARD-kind APIs.
+appServerDashboardAuth :: ApiRead -> Bool
+appServerDashboardAuth = apiAppServerDashboardAuth
+
+
+appServerUsesPublicApi :: ApiRead -> ApiTT -> Bool
+appServerUsesPublicApi apiRead apiT =
+  appServerDashboardAuth apiRead
+    && isJust (apiT ^. apiHelperApi)
+    && apiHasOperatorArg apiT
+    && not (null extras)
+    && all ((`elem` sessionDerivedCaptures) . unitName) extras
+  where
+    extras = helperExtraUnits apiT
+
+-- | Endpoints authorized per-operator get the verified operator as an extra
+-- servant argument; without one there is no session to derive captures from.
+apiHasOperatorArg :: ApiTT -> Bool
+apiHasOperatorArg apiT = case _authType apiT of
+  Just ApiAuthV2 {} -> True
+  Just ApiAuthV3 {} -> True
+  _ -> False
+
+
+generateAppServerApiType :: ApiRead -> ApiTT -> Writer CodeUnit
+generateAppServerApiType apiRead apiTT = do
+  input <- ask
+  let moduleName' = input ^. moduleName
+  tySynDW (TH.mkNameT $ mkApiNameHelper apiTT) [] $ do
+    TH.appendInfixT ":>" . NE.fromList $
+      maybeToList (addAuthToApi apiRead SERVANT_API apiTT)
+        <> [cT (((apiTypesImportPrefix apiRead <> "." <> T.unpack moduleName' <> ".") <>) . T.unpack . mkApiNameHelper $ apiTT)]
 
 generateAPIHandler :: ApiRead -> Writer CodeUnit
 generateAPIHandler apiRead = do
@@ -142,9 +182,9 @@ generateAPIHandler apiRead = do
     domainHandlerModulePrefix = apiDomainHandlerImportPrefix apiRead ++ "."
 
     mkSign moduleName' = do
-      let apiTypeName = case apiReadKind apiRead of
-            UI -> "API"
-            DASHBOARD -> apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
+      let apiTypeName
+            | apiReadKind apiRead == UI || appServerDashboardAuth apiRead = "API"
+            | otherwise = apiTypesImportPrefix apiRead #. T.unpack moduleName' #. "API"
       let defSignature = cT "Environment.FlowServer" ~~ cT apiTypeName
       case apiReadKind apiRead of
         UI -> defSignature
@@ -174,9 +214,6 @@ generateAPIHandler apiRead = do
       Just ApiTokenAuth -> True
       _ -> False
 
-    generateParamsPat :: Int -> [Q TH.Pat]
-    generateParamsPat 0 = []
-    generateParamsPat n = vP ("a" <> show n) : generateParamsPat (n - 1)
 
     generateParamsExp :: Bool -> Int -> [Q TH.Exp]
     generateParamsExp _ 0 = []
@@ -190,27 +227,64 @@ generateAPIHandler apiRead = do
     handlerFunctionDef :: Text -> ApiTT -> Writer CodeUnit
     handlerFunctionDef moduleName' apiT = do
       let functionName = handlerFunctionText apiT
+          usePublic = appServerUsesPublicApi apiRead apiT
           allTypes = case apiReadKind apiRead of
             UI -> handlerSignature apiT
-            DASHBOARD -> handlerSignatureHelper apiT
+            -- Public shape when the Helper's extra captures come from the session.
+            DASHBOARD -> if usePublic then handlerSignature apiT else handlerSignatureHelper apiT
           showType = cT . T.unpack <$> filter (/= T.empty) (init allTypes)
-          handlerTypes = apiAuthTypeMapperServant SERVANT_API apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
+          handlerTypes = apiAuthTypeMapperServant (apiAppServerDashboardAuth apiRead) SERVANT_API apiT <> showType <> [cT "Environment.FlowHandler" ~~ cT (T.unpack $ last allTypes)]
       TH.decsW $ do
         TH.sigDW (TH.mkNameT functionName) $ do
           TH.forallT [] [] $
             TH.appendArrow $ NE.fromList handlerTypes
         TH.funDW (TH.mkNameT functionName) $ do
+          -- The verified operator is an extra servant argument but is NOT passed
+          -- on: the domain handlers are shared with the proxied tree and take
+          -- merchant and city only. So the pattern binds it and the call skips it.
+          let hasOperatorArg = appServerDashboardAuth apiRead && apiHasOperatorArg apiT
           let paramsNumber = case apiReadKind apiRead of
-                DASHBOARD -> length allTypes + 1
+                DASHBOARD -> length allTypes + (if hasOperatorArg then 2 else 1)
                 UI | isAuthPresent apiT -> length allTypes
                 UI -> length allTypes - 1
-          let pats = generateParamsPat paramsNumber
+          -- Arguments are named aN..a1 left to right, so the operator -- third
+          -- after merchant and city -- is a(paramsNumber - 2).
+          let operatorArgIndex = paramsNumber - 2
+          let pats =
+                [ if hasOperatorArg && n == operatorArgIndex
+                    then vP ("_a" <> show n)
+                    else vP ("a" <> show n)
+                  | n <- reverse [1 .. paramsNumber]
+                ]
+        
+          let publicUnits = init (mkApiSignatureUnits apiT)
+              publicArgFor u =
+                case lookup (unitName u) (zip (unitName <$> publicUnits) [0 ..]) of
+                  Just i -> vE ("a" <> show (paramsNumber - 3 - i))
+                  Nothing -> vE ("a" <> show operatorArgIndex)
+              helperArgsExp =
+                [ if unitName u `elem` (unitName <$> publicUnits)
+                    then publicArgFor u
+                    else vE "Tools.Auth.DashboardUserAuth.dashboardRequestorId" ~* vE ("a" <> show operatorArgIndex)
+                  | u <- init (mkApiSignatureUnitsHelper apiT)
+                ]
+          let dashboardParamsExp
+                | usePublic =
+                  [vE ("a" <> show paramsNumber), vE ("a" <> show (paramsNumber - 1))] <> helperArgsExp
+                | otherwise =
+                  [ vE ("a" <> show n)
+                    | n <- reverse [1 .. paramsNumber],
+                      not (hasOperatorArg && n == operatorArgIndex)
+                  ]
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (apiReadKind apiRead) (isDashboardAuth apiT) $
                 TH.appendE $
                   vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+                    NE.:| ( if apiReadKind apiRead == DASHBOARD
+                              then dashboardParamsExp
+                              else generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+                          )
 
 generateWithFlowHandlerAPI :: ApiKind -> Bool -> (Q TH.Exp -> Q TH.Exp)
 generateWithFlowHandlerAPI UI True = (vE "withFlowHandlerAPI'" ~$)
