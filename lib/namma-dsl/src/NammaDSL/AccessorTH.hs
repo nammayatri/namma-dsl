@@ -64,6 +64,8 @@ $( makeAccKeysTH
     helperApi
     apiPrefix
     helperApiPrefix
+    appServerHandler
+    auditRequestBody
     migrate
     extraIndexes
     unique
