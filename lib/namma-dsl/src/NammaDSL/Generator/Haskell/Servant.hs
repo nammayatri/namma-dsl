@@ -16,6 +16,7 @@ import NammaDSL.Lib hiding (Q, Writer)
 import qualified NammaDSL.Lib.TH as TH
 import qualified NammaDSL.Lib.Types as TH
 import NammaDSL.Utils
+import System.IO.Unsafe (unsafePerformIO)
 import Prelude
 
 type Writer w = TH.Writer Apis w
@@ -285,7 +286,7 @@ generateAPIHandler apiRead = do
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (apiReadKind apiRead) (isDashboardAuth apiT) $
-                mkActorInfoWrapper apiT paramsNumber $
+                mkActorInfoWrapper apiT paramsNumber $ -- operatorArgIndex ?
                   TH.appendE $
                     vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
                       NE.:| ( if apiReadKind apiRead == DASHBOARD
@@ -311,7 +312,10 @@ mkActorInfoWrapper apiT paramsNumber action =
        in vE "Tools.ActorInfo.withDashboardPersonIdActorInfo" ~* personExp ~$ action
     Just NoAuth -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
     Nothing -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
-    _ -> action -- other cases keep unchanged for now
+    _ -> do
+      unsafePerformIO $ do
+        putStrLn $ "Skip actor info wrapper: " <> show (mkApiName apiT) <> ": " <> show (apiT ^. authType) -- debug
+        pure action -- other cases keep unchanged for now
 
 anyActorInfo :: [ApiTT] -> Bool
 anyActorInfo = any (isActorInfo . (^. authType))
