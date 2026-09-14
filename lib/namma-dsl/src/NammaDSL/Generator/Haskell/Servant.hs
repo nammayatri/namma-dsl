@@ -54,6 +54,16 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         <> nub (qualifiedImp <> figureOutImports allHandlersSignatures <> apiTypesImport)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> multipartImports
+        <> actorInfoImports
+
+    actorInfoImports :: [String]
+    actorInfoImports =
+      if anyActorInfo (_apis input)
+        then
+          ["Tools.ActorInfo"]
+            <> ["Control.Lens" | anyTokenAuth (_apis input)]
+            <> ["Tools.Auth.DashboardUserAuth" | anyDashboardAuth (_apis input)]
+        else []
 
     allHandlersSignatures :: [String]
     allHandlersSignatures = case apiReadKind apiRead of
@@ -122,7 +132,6 @@ mkCodeBody apiRead = do
   input <- ask
   tellM . fromMaybe mempty $
     interpreter input $ do
-  
       when (apiReadKind apiRead == UI) $
         generateAPIType SERVANT_API apiRead
       when (appServerDashboardAuth apiRead) $
@@ -135,7 +144,6 @@ mkCodeBody apiRead = do
 -- routes? Only meaningful for DASHBOARD-kind APIs.
 appServerDashboardAuth :: ApiRead -> Bool
 appServerDashboardAuth = apiAppServerDashboardAuth
-
 
 appServerUsesPublicApi :: ApiRead -> ApiTT -> Bool
 appServerUsesPublicApi apiRead apiT =
@@ -154,7 +162,6 @@ apiHasOperatorArg apiT = case _authType apiT of
   Just ApiAuthV2 {} -> True
   Just ApiAuthV3 {} -> True
   _ -> False
-
 
 generateAppServerApiType :: ApiRead -> ApiTT -> Writer CodeUnit
 generateAppServerApiType apiRead apiTT = do
@@ -214,7 +221,6 @@ generateAPIHandler apiRead = do
       Just ApiTokenAuth -> True
       _ -> False
 
-
     generateParamsExp :: Bool -> Int -> [Q TH.Exp]
     generateParamsExp _ 0 = []
     generateParamsExp useAuthWithTuple n =
@@ -256,7 +262,7 @@ generateAPIHandler apiRead = do
                     else vP ("a" <> show n)
                   | n <- reverse [1 .. paramsNumber]
                 ]
-        
+
           let publicUnits = init (mkApiSignatureUnits apiT)
               publicArgFor u =
                 case lookup (unitName u) (zip (unitName <$> publicUnits) [0 ..]) of
@@ -279,14 +285,57 @@ generateAPIHandler apiRead = do
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (apiReadKind apiRead) (isDashboardAuth apiT) $
-                TH.appendE $
-                  vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| ( if apiReadKind apiRead == DASHBOARD
-                              then dashboardParamsExp
-                              else generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
-                          )
+                mkActorInfoWrapper apiT paramsNumber $
+                  TH.appendE $
+                    vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                      NE.:| ( if apiReadKind apiRead == DASHBOARD
+                                then dashboardParamsExp
+                                else generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+                            )
 
 generateWithFlowHandlerAPI :: ApiKind -> Bool -> (Q TH.Exp -> Q TH.Exp)
 generateWithFlowHandlerAPI UI True = (vE "withFlowHandlerAPI'" ~$)
 generateWithFlowHandlerAPI UI False = (vE "withFlowHandlerAPI" ~$)
 generateWithFlowHandlerAPI DASHBOARD _ = (vE "withDashboardFlowHandlerAPI" ~$)
+
+---------- ActorInfo ----------
+
+mkActorInfoWrapper :: ApiTT -> Int -> Q TH.Exp -> Q TH.Exp
+mkActorInfoWrapper apiT paramsNumber action =
+  case apiT ^. authType of
+    Just (TokenAuth _) ->
+      let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show paramsNumber)
+       in vE "Tools.ActorInfo.withPersonIdActorInfo" ~* personExp ~$ action
+    Just (DashboardAuth _) ->
+      let personExp = vE "Tools.Auth.DashboardUserAuth.dashboardPersonId" ~* vE ("a" <> show paramsNumber)
+       in vE "Tools.ActorInfo.withDashboardPersonIdActorInfo" ~* personExp ~$ action
+    Just NoAuth -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
+    Nothing -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
+    _ -> action -- other cases keep unchanged for now
+
+anyActorInfo :: [ApiTT] -> Bool
+anyActorInfo = any (isActorInfo . (^. authType))
+  where
+    isActorInfo :: Maybe AuthType -> Bool
+    isActorInfo = \case
+      Just (TokenAuth _) -> True
+      Just (DashboardAuth _) -> True
+      Just NoAuth -> True
+      Nothing -> True
+      _ -> False -- other cases keep unchanged for now
+
+anyDashboardAuth :: [ApiTT] -> Bool
+anyDashboardAuth = any (isDashboardAuth . (^. authType))
+  where
+    isDashboardAuth :: Maybe AuthType -> Bool
+    isDashboardAuth = \case
+      Just (DashboardAuth _) -> True
+      _ -> False -- other cases keep unchanged for now
+
+anyTokenAuth :: [ApiTT] -> Bool
+anyTokenAuth = any (isTokenAuth . (^. authType))
+  where
+    isTokenAuth :: Maybe AuthType -> Bool
+    isTokenAuth = \case
+      Just (TokenAuth _) -> True
+      _ -> False -- other cases keep unchanged for now
