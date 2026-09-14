@@ -148,11 +148,24 @@ appServerDashboardAuth = apiAppServerDashboardAuth
 
 appServerUsesPublicApi :: ApiRead -> ApiTT -> Bool
 appServerUsesPublicApi apiRead apiT =
-  appServerDashboardAuth apiRead
-    && isJust (apiT ^. apiHelperApi)
-    && apiHasOperatorArg apiT
-    && not (null extras)
-    && all ((`elem` sessionDerivedCaptures) . unitName) extras
+  unsafePerformIO $ do
+    putStrLn $
+      "appServerUsesPublicApi: "
+        <> show (mkApiName apiT)
+        <> ", isJust (apiT ^. apiHelperApi): "
+        <> show (isJust (apiT ^. apiHelperApi))
+        <> ", apiHasOperatorArg apiT: "
+        <> show (apiHasOperatorArg apiT)
+        <> ", not (null extras): "
+        <> show (not (null extras))
+        <> ", all ((`elem` sessionDerivedCaptures) . unitName) extras: "
+        <> show (all ((`elem` sessionDerivedCaptures) . unitName) extras)
+    pure $
+      appServerDashboardAuth apiRead
+        && isJust (apiT ^. apiHelperApi)
+        && apiHasOperatorArg apiT
+        && not (null extras)
+        && all ((`elem` sessionDerivedCaptures) . unitName) extras
   where
     extras = helperExtraUnits apiT
 
