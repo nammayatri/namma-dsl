@@ -63,7 +63,7 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         then
           ["Tools.ActorInfo"]
             <> ["Control.Lens" | anyTokenAuth (_apis input)]
-            <> ["Tools.Auth.DashboardUserAuth" | anyDashboardAuth (_apis input)]
+            <> ["Tools.Auth.DashboardUserAuth" | anyApiAuthV2 (_apis input)]
         else []
 
     allHandlersSignatures :: [String]
@@ -286,7 +286,7 @@ generateAPIHandler apiRead = do
           TH.clauseW pats $
             TH.normalB $
               generateWithFlowHandlerAPI (apiReadKind apiRead) (isDashboardAuth apiT) $
-                mkActorInfoWrapper apiT paramsNumber $ -- operatorArgIndex ?
+                mkActorInfoWrapper apiT apiRead paramsNumber operatorArgIndex $
                   TH.appendE $
                     vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
                       NE.:| ( if apiReadKind apiRead == DASHBOARD
@@ -301,17 +301,22 @@ generateWithFlowHandlerAPI DASHBOARD _ = (vE "withDashboardFlowHandlerAPI" ~$)
 
 ---------- ActorInfo ----------
 
-mkActorInfoWrapper :: ApiTT -> Int -> Q TH.Exp -> Q TH.Exp
-mkActorInfoWrapper apiT paramsNumber action =
-  case apiT ^. authType of
-    Just (TokenAuth _) ->
-      let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show paramsNumber)
+mkActorInfoWrapper :: ApiTT -> ApiRead -> Int -> Int -> Q TH.Exp -> Q TH.Exp
+mkActorInfoWrapper apiT apiRead paramsNumber operatorArgIndex action = do
+  let authParamIndex = case apiReadKind apiRead of
+        DASHBOARD -> paramsNumber
+        UI -> operatorArgIndex
+  -- use only for UI and DashboardAuth api handlers
+  let useUnifiedActorInfo = (apiReadKind apiRead == UI) || (apiReadKind apiRead == DASHBOARD && appServerDashboardAuth apiRead)
+  case (apiT ^. authType, useUnifiedActorInfo) of
+    (Just (TokenAuth _), True) ->
+      let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show authParamIndex)
        in vE "Tools.ActorInfo.withPersonIdActorInfo" ~* personExp ~$ action
-    Just (DashboardAuth _) ->
-      let personExp = vE "Tools.Auth.DashboardUserAuth.dashboardPersonId" ~* vE ("a" <> show paramsNumber)
+    (Just ApiAuthV2, True) ->
+      let personExp = vE "Tools.Auth.DashboardUserAuth.dashboardPersonId" ~* vE ("a" <> show authParamIndex)
        in vE "Tools.ActorInfo.withDashboardPersonIdActorInfo" ~* personExp ~$ action
-    Just NoAuth -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
-    Nothing -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
+    (Just NoAuth, True) -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
+    (Nothing, True) -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
     _ -> do
       unsafePerformIO $ do
         putStrLn $ "Skip actor info wrapper: " <> show (mkApiName apiT) <> ": " <> show (apiT ^. authType) -- debug
@@ -323,17 +328,17 @@ anyActorInfo = any (isActorInfo . (^. authType))
     isActorInfo :: Maybe AuthType -> Bool
     isActorInfo = \case
       Just (TokenAuth _) -> True
-      Just (DashboardAuth _) -> True
+      Just ApiAuthV2 -> True
       Just NoAuth -> True
       Nothing -> True
       _ -> False -- other cases keep unchanged for now
 
-anyDashboardAuth :: [ApiTT] -> Bool
-anyDashboardAuth = any (isDashboardAuth . (^. authType))
+anyApiAuthV2 :: [ApiTT] -> Bool
+anyApiAuthV2 = any (isApiAuthV2 . (^. authType))
   where
-    isDashboardAuth :: Maybe AuthType -> Bool
-    isDashboardAuth = \case
-      Just (DashboardAuth _) -> True
+    isApiAuthV2 :: Maybe AuthType -> Bool
+    isApiAuthV2 = \case
+      Just ApiAuthV2 -> True
       _ -> False -- other cases keep unchanged for now
 
 anyTokenAuth :: [ApiTT] -> Bool
