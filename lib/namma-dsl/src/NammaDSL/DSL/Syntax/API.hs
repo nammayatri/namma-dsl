@@ -86,7 +86,15 @@ data ApiTT = ApiTT
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
     _apiMigrate :: [ApiMigration],
-    _responseHeader :: [HeaderType]
+    _responseHeader :: [HeaderType],
+    -- | @appServerHandler: custom@: the application server's DashboardAuth handler
+    -- calls a hand-written function instead of the domain handler, for endpoints
+    -- whose request needs more than the operator's identity.
+    _apiAppServerCustomHandler :: Bool,
+    -- | @auditRequestBody: false@: the application server's audit row for this
+    -- endpoint carries no request body -- for request types with no HideSecrets
+    -- instance, which the dashboards also logged without a body.
+    _apiAuditRequestBody :: Bool
   }
   deriving (Show)
 
@@ -159,6 +167,9 @@ data ApiRead = ApiRead
     extraApiCommonTypesImportPrefix :: String,
     apiServantImportPrefix :: String,
     apiServantDashboardImportPrefix :: String,
+    -- Module prefix for the application-server auth tree, emitted alongside the
+    -- proxied tree rather than replacing it. See SERVANT_API_DASHBOARD_AUTH.
+    apiServantDashboardAuthImportPrefix :: String,
     apiDomainHandlerImportPrefix :: String,
     apiDomainHandlerDashboardImportPrefix :: String,
     apiClientImportPrefix :: String,
@@ -174,7 +185,8 @@ data ApiRead = ApiRead
     -- Endpoint ids exempt from the `capability` requirement because they were
     -- mapped in bulk when the capability framework landed. Nothing = the spec
     -- has no baseline configured, so the requirement is not enforced at all.
-    apiCapabilityBaseline :: Maybe (Set Text)
+    apiCapabilityBaseline :: Maybe (Set Text),
+    apiAppServerDashboardAuth :: Bool
   }
 
 data ExtraParseInfo = ExtraParseInfo
