@@ -89,6 +89,11 @@ data PackageImport = PackageImport
 data ImportType = SIMPLE | QUALIFIED
   deriving (Generic, Show, FromDhall, Eq)
 
+-- _importsMapping allowed values:
+-- "Dashboard.Common": used for reexport, addMultipartBoundary
+-- "SharedLogic.Transaction": buildTransaction, withTransactionStoring
+-- "Domain.Types.Transaction": castEndpoint (empty value means remove this function)
+
 data AppConfigs = AppConfigs
   { _output :: OutputPath,
     _defaultTypeImportMapper :: [(String, String)],
@@ -108,7 +113,8 @@ data AppConfigs = AppConfigs
     -- set, every dashboard endpoint NOT listed there must declare
     -- `migrate: capability:` or codegen fails. None = no enforcement, which is
     -- what every non-dashboard spec wants.
-    _capabilityBaseline :: Maybe String
+    _capabilityBaseline :: Maybe String,
+    _importsMapping :: [(String, Maybe String)] -- more flexible imports, used only for specific cases
   }
   deriving (Generic, Show, FromDhall)
 

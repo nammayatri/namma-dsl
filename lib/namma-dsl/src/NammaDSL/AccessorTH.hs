@@ -62,6 +62,7 @@ $( makeAccKeysTH
     validation
     multipart
     helperApi
+    helperApiExtra
     apiPrefix
     helperApiPrefix
     migrate
@@ -76,5 +77,6 @@ $( makeAccKeysTH
     configDomain
     queryModule
     fetchQueryArgs
+    actorInfo
     |]
  )
