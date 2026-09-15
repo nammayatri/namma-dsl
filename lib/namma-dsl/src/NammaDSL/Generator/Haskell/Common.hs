@@ -386,7 +386,7 @@ mkFullUserActionTypeEnum apiRead apiTT = do
 ---------- ActorInfo ----------
 
 hasActorInfo :: ApiKind -> ApiTT -> Bool
-hasActorInfo UI apiT = isJust (apiT ^. actorInfo)
+hasActorInfo UI _apiT = True
 hasActorInfo DASHBOARD apiT = case apiT ^. apiHelperApi of
   Just helperTT -> isJust (helperTT ^. getHelperAPI . actorInfo)
   Nothing -> False
@@ -399,8 +399,8 @@ hasActorInfo DASHBOARD apiT = case apiT ^. apiHelperApi of
 resolveActorInfoWrapper :: ApiKind -> ApiTT -> Int -> Maybe (Q r TH.Exp -> Q r TH.Exp)
 resolveActorInfoWrapper UI apiT paramsNumber =
   case apiT ^. actorInfo of
-    Nothing -> Nothing
-    Just "auth" -> Just $ mkAuthActorInfoWrapper apiT paramsNumber
+    Nothing -> Just $ mkAuthActorInfoWrapper apiT paramsNumber -- unification: use actorInfo in each UI api
+    Just "auth" -> Just $ mkAuthActorInfoWrapper apiT paramsNumber -- TODO remove spec, as we use actorInfo everywhere
     Just other ->
       error $
         "actorInfo for UI API "
@@ -439,7 +439,11 @@ mkAuthActorInfoWrapper apiT paramsNumber action =
     Just (TokenAuth _) ->
       let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show paramsNumber)
        in vE "Tools.ActorInfo.withPersonIdActorInfo" ~* personExp ~$ action
-    _ -> error $ "actorInfo: auth requires TokenAuth for API " <> T.unpack (handlerFunctionText apiT)
+    Just NoAuth -> vE "Tools.ActorInfo.withRequestIdActorInfo" ~$ action
+    Nothing ->
+      let personExp = vE "Control.Lens.view" ~* vE "Control.Lens._1" ~* vE ("a" <> show paramsNumber)
+       in vE "Tools.ActorInfo.withPersonIdActorInfo" ~* personExp ~$ action
+    _ -> error $ "Only TokenAuth or NoAuth supported for UI API: " <> T.unpack (handlerFunctionText apiT)
 
 -- | Dashboard helper only: wrap using a capture / query / mandatoryQuery param (any name).
 mkParamActorInfoWrapper :: ApiTT -> Text -> Q r TH.Exp -> Q r TH.Exp
