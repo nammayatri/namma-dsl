@@ -1,4 +1,4 @@
-module NammaDSL.Generator.Haskell.DomainHandler (generateDomainHandler) where
+module NammaDSL.Generator.Haskell.DomainHandler (mkCodeBodyDomainHandler, generateDomainHandler) where
 
 import Control.Lens ((^.))
 import Control.Monad (forM_)
@@ -75,8 +75,12 @@ mkCodeBody :: ApiKind -> ApisM ()
 mkCodeBody apiKind = do
   input <- ask
   tellM . fromMaybe mempty $
-    interpreter input $ do
-      forM_ (_apis input) $ generateHandlerFunction apiKind
+    mkCodeBodyDomainHandler apiKind input
+
+mkCodeBodyDomainHandler :: ApiKind -> Apis -> Maybe String
+mkCodeBodyDomainHandler apiKind input = do
+  interpreter input $ do
+    forM_ (_apis input) $ generateHandlerFunction apiKind
 
 generateHandlerFunction :: ApiKind -> ApiTT -> Writer CodeUnit
 generateHandlerFunction apiKind apiT = decsW $ do

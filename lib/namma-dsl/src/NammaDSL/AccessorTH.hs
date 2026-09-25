@@ -62,6 +62,7 @@ $( makeAccKeysTH
     validation
     multipart
     helperApi
+    helperApiExtra
     apiPrefix
     helperApiPrefix
     appServerHandler
@@ -78,5 +79,6 @@ $( makeAccKeysTH
     configDomain
     queryModule
     fetchQueryArgs
+    actorInfo
     |]
  )

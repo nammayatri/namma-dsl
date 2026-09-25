@@ -82,6 +82,7 @@ data ApiTT = ApiTT
     _apiReqType :: Maybe ApiReq,
     _apiResType :: ApiRes,
     _apiHelperApi :: Maybe HelperApiTT,
+    _apiHelperApiExtra :: HelperApiTTExtra,
     _apiTypeKind :: ApiKind,
     _apiModuleName :: Text,
     _requestValidation :: Maybe Text,
@@ -94,7 +95,8 @@ data ApiTT = ApiTT
     -- | @auditRequestBody: false@: the application server's audit row for this
     -- endpoint carries no request body -- for request types with no HideSecrets
     -- instance, which the dashboards also logged without a body.
-    _apiAuditRequestBody :: Bool
+    _apiAuditRequestBody :: Bool,
+    _actorInfo :: Maybe Text
   }
   deriving (Show)
 
@@ -116,12 +118,22 @@ data ApiMigrationKey = ApiMigrationKey
 newtype HelperApiTT = HelperApiTT {_getHelperAPI :: ApiTT}
   deriving (Show)
 
+newtype HelperApiTTExtra = HelperApiTTExtra
+  { _urlPartsExtra :: [UrlPartsExtra]
+  }
+  deriving (Show)
+
+data UrlPartsExtra = QueryParamExtra Text Text Bool
+  deriving (Show)
+
 newtype ApiMultipart = ApiMultipart Text
   deriving (Show)
 
 $(makeLenses ''ApiTT)
 
 $(makeLenses ''HelperApiTT)
+
+$(makeLenses ''HelperApiTTExtra)
 
 $(makeLenses ''ApiMigration)
 
@@ -186,7 +198,8 @@ data ApiRead = ApiRead
     -- mapped in bulk when the capability framework landed. Nothing = the spec
     -- has no baseline configured, so the requirement is not enforced at all.
     apiCapabilityBaseline :: Maybe (Set Text),
-    apiAppServerDashboardAuth :: Bool
+    apiAppServerDashboardAuth :: Bool,
+    isApiTreeClientGenerated :: Bool
   }
 
 data ExtraParseInfo = ExtraParseInfo
