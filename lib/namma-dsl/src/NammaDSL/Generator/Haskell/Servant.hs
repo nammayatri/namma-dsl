@@ -55,6 +55,13 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         <> nub (qualifiedImp <> figureOutImports allHandlersSignatures <> apiTypesImport)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
         <> multipartImports
+        <> actorInfoImports
+
+    actorInfoImports :: [String]
+    actorInfoImports =
+      if any (hasActorInfo (apiReadKind apiRead) (appServerDashboardAuth apiRead)) (_apis input)
+        then ["Tools.ActorInfo", "Kernel.Types.Id", "Control.Lens"]
+        else []
 
     allHandlersSignatures :: [String]
     allHandlersSignatures = case apiReadKind apiRead of
@@ -191,14 +198,6 @@ appServerCustomHandlerModulePrefix apiRead =
   where
     prefix = apiServantImportPrefix apiRead
 
--- | Endpoints authorized per-operator get the verified operator as an extra
--- servant argument; without one there is no session to derive captures from.
-apiHasOperatorArg :: ApiTT -> Bool
-apiHasOperatorArg apiT = case _authType apiT of
-  Just ApiAuthV2 {} -> True
-  Just ApiAuthV3 {} -> True
-  _ -> False
-
 generateAppServerApiType :: ApiRead -> ApiTT -> Writer CodeUnit
 generateAppServerApiType apiRead apiTT = do
   input <- ask
@@ -292,7 +291,6 @@ generateAPIHandler apiRead = do
               isCustom = appServerDashboardAuth apiRead && apiT ^. apiAppServerCustomHandler
               -- Reads are not audited: provider-dashboard recorded mutations only.
               emitAudit = hasOperatorArg && _apiType apiT /= GET
-              operatorUsed = isCustom || emitAudit || useSessionArgs
           let paramsNumber = case apiReadKind apiRead of
                 DASHBOARD -> length allTypes + (if hasOperatorArg then 2 else 1)
                 UI | isAuthPresent apiT -> length allTypes
@@ -301,13 +299,7 @@ generateAPIHandler apiRead = do
           -- after merchant and city -- is a(paramsNumber - 2).
           let operatorArgIndex = paramsNumber - 2
               operatorArg = vE ("a" <> show operatorArgIndex)
-          let pats =
-                [ if hasOperatorArg && n == operatorArgIndex && not operatorUsed
-                    then vP ("_a" <> show n)
-                    else vP ("a" <> show n)
-                  | n <- reverse [1 .. paramsNumber]
-                ]
-
+          let pats = [vP ("a" <> show n) | n <- reverse [1 .. paramsNumber]]
           let publicUnits = init (mkApiSignatureUnits apiT)
               publicArgFor u =
                 case lookup (unitName u) (zip (unitName <$> publicUnits) [0 ..]) of
@@ -336,18 +328,20 @@ generateAPIHandler apiRead = do
                       not (hasOperatorArg && n == operatorArgIndex)
                   ]
           let domainCallExp =
-                TH.appendE $
-                  vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| ( if apiReadKind apiRead == DASHBOARD
-                              then dashboardParamsExp
-                              else generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
-                          )
+                applyActorInfoWrapper (apiReadKind apiRead) (appServerDashboardAuth apiRead) apiT paramsNumber $
+                  TH.appendE $
+                    vE (domainHandlerModulePrefix <> T.unpack moduleName' #. T.unpack functionName)
+                      NE.:| ( if apiReadKind apiRead == DASHBOARD
+                                then dashboardParamsExp
+                                else generateParamsExp (isAuthPresent apiT && (not $ isApiTokenAuth apiT) && not (isDashboardAuth apiT) && (apiReadKind apiRead /= DASHBOARD)) paramsNumber
+                            )
               -- The hand-written handler takes exactly this handler's arguments,
               -- the verified operator included, and does the rest itself.
               customCallExp =
-                TH.appendE $
-                  vE (appServerCustomHandlerModulePrefix apiRead <> "." <> T.unpack moduleName' #. T.unpack functionName)
-                    NE.:| [vE ("a" <> show n) | n <- reverse [1 .. paramsNumber]]
+                applyActorInfoWrapper (apiReadKind apiRead) (appServerDashboardAuth apiRead) apiT paramsNumber $
+                  TH.appendE $
+                    vE (appServerCustomHandlerModulePrefix apiRead <> "." <> T.unpack moduleName' #. T.unpack functionName)
+                      NE.:| [vE ("a" <> show n) | n <- reverse [1 .. paramsNumber]]
               -- The body is decoded by now, so the audit row can carry it.
               endpointId = either error (\(f, m, e) -> intercalate "/" [f, m, e]) (mkFullUserActionType apiRead apiT)
               serverNameCtor = "Tools.Auth.DashboardUserAuth." <> fromMaybe (error "serverName should be provided for dashboard api") (apiServerName apiRead)
