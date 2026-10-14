@@ -31,7 +31,10 @@ generateAPITreeDashboard (DefaultImports qualifiedImp simpleImp _packageImports 
           _extensions = [],
           _moduleNm = apiServantDashboardImportPrefix apiRead,
           _moduleExports = Nothing,
-          _simpleImports = simpleImp,
+          -- The aggregator's `type API = Sub.API :<|> ...` and
+          -- `handler = Sub.handler :<|> ...` need Servant's :> / :<|>; force it
+          -- (module sets -Wno-unused-imports, so it is harmless when trivial).
+          _simpleImports = "Servant" : simpleImp,
           _qualifiedImports = removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
