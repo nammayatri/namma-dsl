@@ -80,7 +80,12 @@ getRecordType = \case
   Type -> "type"
 
 checkForPackageOverrides :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => GenerationType -> [(GenerationType, a)] -> M.Map a a -> [a] -> [a]
-checkForPackageOverrides generatorType packageMapping packageOverrides = map (\x -> maybe x (\a -> "\"" <> (if lookup generatorType packageMapping == Just a then "this" else a) <> "\" " <> x) (M.lookup (getImportSignature x) packageOverrides))
+-- An overridden import whose target package is one of THIS app's own packages
+-- (i.e. it appears anywhere in packageMapping, not only under the exact
+-- generatorType) is a home-package import and must be qualified "this" -- GHC
+-- cannot load a home module under its real package name while that package is
+-- being compiled. Only genuinely external packages keep their explicit name.
+checkForPackageOverrides generatorType packageMapping packageOverrides = map (\x -> maybe x (\a -> "\"" <> (if lookup generatorType packageMapping == Just a || a `elem` map snd packageMapping then "this" else a) <> "\" " <> x) (M.lookup (getImportSignature x) packageOverrides))
 
 generatePackageImport :: forall a. (Importable a, Eq a, Ord a, Semigroup a, IsString a) => GenerationType -> GenerationType -> [(GenerationType, a)] -> a
 generatePackageImport currentGenerator importGenerator packageMapping = do

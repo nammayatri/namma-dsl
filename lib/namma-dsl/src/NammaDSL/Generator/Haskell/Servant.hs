@@ -41,7 +41,16 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
           _moduleNm = servantApiModulePrefix <> T.unpack (_moduleName input),
           _moduleExports = allModuleExports,
           _simpleImports = packageOverride allSimpleImports,
-          _qualifiedImports = packageOverride $ removeUnusedQualifiedImports codeBody' allQualifiedImports,
+          -- For app-server dashboard modules, keep all qualified imports instead of
+          -- pruning: the usage scan drops imports that are only referenced from the
+          -- handler type signatures (Environment, Domain.Types.Merchant, ...), which
+          -- breaks compilation. These modules set -Wno-unused-imports, so keeping a
+          -- few extra imports is harmless.
+          _qualifiedImports =
+            packageOverride $
+              if appServerDashboardAuth apiRead
+                then allQualifiedImports
+                else removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
         }
@@ -54,6 +63,13 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
         <> customHandlerImport
         <> nub (qualifiedImp <> figureOutImports allHandlersSignatures <> apiTypesImport)
         <> ["Domain.Types.MerchantOperatingCity" | ifProviderPlatform]
+        -- app-server dashboard handler signatures always reference these (the
+        -- merchant/city captures, the FlowHandler env, optional params), but they
+        -- are added at signature-emission time rather than appearing in the raw
+        -- handler signature that figureOutImports scans -- so sparse modules (few
+        -- endpoints) would otherwise miss them. Force them; -Wno-unused-imports
+        -- keeps this harmless for modules that happen not to need one.
+        <> (if appServerDashboardAuth apiRead then ["Environment", "Domain.Types.Merchant", "Kernel.Types.Beckn.Context", "Kernel.Prelude", "Kernel.Types.Id"] else [])
         <> multipartImports
         <> actorInfoImports
 
@@ -83,6 +99,10 @@ generateServantAPI (DefaultImports qualifiedImp simpleImp _packageImports _) api
       ["Storage.Beam.SystemConfigs ()" | ifNotDashboard]
         <> ["Tools.Auth.Webhook" | ifSafetyDashboard]
         <> ["Tools.Auth.DashboardUserAuth" | appServerDashboardAuth apiRead]
+        -- app-server dashboard handler modules always need these (servant
+        -- operators, the Flow handler wrappers, FlowHandler env); force them so a
+        -- stale/older-generated module does not lose them on regeneration.
+        <> (if appServerDashboardAuth apiRead then ["Servant", "EulerHS.Prelude", "Kernel.Utils.Common", "Tools.Auth"] else [])
         <> simpleImp
 
     apiTypesImport :: [String]

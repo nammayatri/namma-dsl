@@ -31,7 +31,10 @@ generateAPITree (DefaultImports qualifiedImp simpleImp _packageImports _) apiRea
           _extensions = [],
           _moduleNm = apiServantImportPrefix apiRead,
           _moduleExports = Just ["API", "handler"],
-          _simpleImports = simpleImp,
+          -- The aggregated `type API = Sub.API :<|> ...` / `handler = Sub.handler
+          -- :<|> ...` need Servant's :> / :<|>; force it (module sets
+          -- -Wno-unused-imports, so it is harmless when a tree has a single child).
+          _simpleImports = "Servant" : simpleImp,
           _qualifiedImports = removeUnusedQualifiedImports codeBody' allQualifiedImports,
           _packageImports,
           _codeBody = codeBody'
@@ -43,6 +46,12 @@ generateAPITree (DefaultImports qualifiedImp simpleImp _packageImports _) apiRea
       nub $
         ((apiServantModulePrefix <>) <$> specModules input)
           <> qualifiedImp
+          -- The dashboard aggregator's handler signature is always
+          -- `ShortId Merchant -> City -> FlowServer API`; these qualified imports
+          -- back it but are never surfaced by the sub-module scan above. Home ones
+          -- resolve to "this" via checkForPackageOverrides; -Wno-unused-imports
+          -- covers trees that happen not to need one.
+          <> (if apiReadKind apiRead == DASHBOARD then ["Kernel.Types.Id", "Domain.Types.Merchant", "Kernel.Types.Beckn.Context", "Environment"] else [])
 
 mkCodeBody :: ApiRead -> ApiTreeM ()
 mkCodeBody apiRead = do
