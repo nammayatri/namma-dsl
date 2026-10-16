@@ -375,10 +375,22 @@ generateAPIHandler apiRead = do
                   ~* operatorArg
                   ~* requestArgExp
               callExp = if isCustom then customCallExp else domainCallExp
+              -- Handler-entry merchant/city authorization (one-token-per-person):
+              -- the token no longer carries merchant/city, so every operator-scoped
+              -- dashboard route asserts the operator's access to the URL's merchant
+              -- and city here. Passes the verified operator (a<paramsNumber-2>) plus
+              -- the merchant (a<paramsNumber>) and city (a<paramsNumber-1>) captures
+              -- this handler already receives -- exactly like auditDashboardAction.
+              -- GET and POST alike (unlike audit, which is POST-only).
+              enforceExp =
+                vE "Tools.Auth.DashboardUserAuth.enforceMerchantCityAccessForUser"
+                  ~* operatorArg
+                  ~* vE ("a" <> show paramsNumber)
+                  ~* vE ("a" <> show (paramsNumber - 1))
+              emitEnforce = hasOperatorArg
+              bodyStmts = [enforceExp | emitEnforce] <> [auditExp | emitAudit] <> [callExp]
               bodyExp
-                | emitAudit = TH.doEW $ do
-                  TH.noBindSW auditExp
-                  TH.noBindSW callExp
+                | emitEnforce || emitAudit = TH.doEW $ mapM_ TH.noBindSW bodyStmts
                 | otherwise = callExp
           TH.clauseW pats $
             TH.normalB $
