@@ -66,6 +66,7 @@ dependencies:
   - text
   - time
   - template-haskell
+  - th-abstraction
   - parsec
   - raw-strings-qq
   - regex-tdfa

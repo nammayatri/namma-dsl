@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.2.
+-- This file has been generated from package.yaml by hpack version 0.38.3.
 --
 -- see: https://github.com/sol/hpack
 
@@ -131,6 +131,7 @@ library
     , stringbuilder
     , template-haskell
     , text
+    , th-abstraction
     , time
     , transformers
     , unordered-containers
@@ -253,6 +254,7 @@ test-suite namma-dsl-tests
     , stringbuilder
     , template-haskell
     , text
+    , th-abstraction
     , time
     , transformers
     , unordered-containers

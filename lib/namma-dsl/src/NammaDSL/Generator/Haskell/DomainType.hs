@@ -2,8 +2,8 @@
 
 module NammaDSL.Generator.Haskell.DomainType where
 
+import Control.Monad (unless, when)
 import Control.Monad.Reader (ask)
-import Control.Monad.Writer hiding (Writer)
 import Data.Bool (bool)
 import Data.Data (Proxy (..))
 import Data.Foldable
@@ -12,6 +12,7 @@ import qualified Data.List as L
 import qualified Data.List.Extra as L
 import Data.List.NonEmpty (fromList)
 import Data.Maybe
+import Language.Haskell.TH.Datatype.TyVarBndr (changeTVFlags)
 import NammaDSL.Config (DefaultImports (..), GenerationType (DOMAIN_TYPE))
 import NammaDSL.DSL.Syntax.Common
 import NammaDSL.DSL.Syntax.Storage
@@ -126,7 +127,7 @@ genTableType = do
               if isUsageSafetyRequired'
                 then (TH.mkName $ tableNameHaskell def <> "D", [TH.KindedTV (TH.mkName "s") () (TH.ConT (TH.mkName "UsageSafety"))])
                 else (TH.mkName $ tableNameHaskell def, [])
-    TH.DataD [] typeName typeVars Nothing [TH.RecC (TH.mkName $ tableNameHaskell def) (fields def <&> \field -> (TH.mkName field.fieldName, defaultBang, TH.ConT $ TH.mkName field.haskellType))] [derives']
+    TH.DataD [] typeName (changeTVFlags bndrReq typeVars) Nothing [TH.RecC (TH.mkName $ tableNameHaskell def) (fields def <&> \field -> (TH.mkName field.fieldName, defaultBang, TH.ConT $ TH.mkName field.haskellType))] [derives']
 
 derivingInstances :: Bool -> TH.DerivClause
 derivingInstances containsEncryptedField =
