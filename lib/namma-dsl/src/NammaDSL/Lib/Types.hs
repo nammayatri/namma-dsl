@@ -5,7 +5,7 @@ import Control.Monad.Writer hiding (Writer)
 import Data.Function (flip)
 import Data.Semigroup
 import qualified Language.Haskell.TH as TH
-import Prelude (Eq)
+import Prelude (Eq, Monoid (mempty))
 
 -- In future this monad can include TH.Q or error handling, now these effects are not used
 type Q r = Reader r
