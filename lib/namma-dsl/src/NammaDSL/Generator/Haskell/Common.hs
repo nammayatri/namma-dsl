@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wwarn=x-partial #-}
+
 module NammaDSL.Generator.Haskell.Common where
 
 import Control.Applicative ((<|>))
