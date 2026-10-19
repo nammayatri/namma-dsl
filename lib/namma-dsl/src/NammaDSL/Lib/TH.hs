@@ -12,6 +12,7 @@ import qualified Data.Text as T
 import Language.Haskell.Meta.Parse (parseExp)
 import Language.Haskell.TH as Reexport hiding (Code, Q, appTypeE, compE, forallT, listE, listT, normalB, parensT, runQ, sigE, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT, wildP)
 import qualified Language.Haskell.TH as TH
+import Language.Haskell.TH.Datatype.TyVarBndr (changeTVFlags)
 import NammaDSL.Lib.Types
 import Text.Read (readEither)
 import Prelude
@@ -164,7 +165,7 @@ infix 1 ~/=<<
 tySynDW :: TH.Name -> [TH.TyVarBndr ()] -> Q r TH.Type -> Writer r CodeUnit
 tySynDW name vars tQ = do
   t <- lift tQ
-  tell [CodeDec [TH.TySynD name vars t]]
+  tell [CodeDec [TH.TySynD name (changeTVFlags bndrReq vars) t]]
 
 instanceDW :: Q r TH.Cxt -> Q r TH.Type -> Writer r TH.Dec -> Writer r CodeUnit
 instanceDW cxtQ tQ dW = do
@@ -280,13 +281,13 @@ dataDW :: TH.Name -> [TH.TyVarBndr ()] -> Writer r TH.Con -> Writer r TH.DerivCl
 dataDW name vars conW deriveW = do
   cons <- lift $ execWriterT conW
   derives <- lift $ execWriterT deriveW
-  tell [CodeDec [TH.DataD [] name vars Nothing cons derives]]
+  tell [CodeDec [TH.DataD [] name (changeTVFlags bndrReq vars) Nothing cons derives]]
 
 newtypeDW :: TH.Name -> [TH.TyVarBndr ()] -> Q r TH.Con -> Writer r TH.DerivClause -> Writer r CodeUnit
 newtypeDW name vars conQ deriveW = do
   con <- lift conQ
   derives <- lift $ execWriterT deriveW
-  tell [CodeDec [TH.NewtypeD [] name vars Nothing con derives]]
+  tell [CodeDec [TH.NewtypeD [] name (changeTVFlags bndrReq vars) Nothing con derives]]
 
 dataOrNewtypeDW :: TH.Name -> [TH.TyVarBndr ()] -> Writer r TH.Con -> Writer r TH.DerivClause -> Writer r CodeUnit
 dataOrNewtypeDW name vars conW deriveW = do
@@ -294,10 +295,10 @@ dataOrNewtypeDW name vars conW deriveW = do
   derives <- lift $ execWriterT deriveW
   case cons of
     [con] -> case con of
-      NormalC _name [_bangType] -> tell [CodeDec [TH.NewtypeD [] name vars Nothing con derives]]
-      RecC _name [_varBangType] -> tell [CodeDec [TH.NewtypeD [] name vars Nothing con derives]]
-      _ -> tell [CodeDec [TH.DataD [] name vars Nothing cons derives]]
-    _ -> tell [CodeDec [TH.DataD [] name vars Nothing cons derives]]
+      NormalC _name [_bangType] -> tell [CodeDec [TH.NewtypeD [] name (changeTVFlags bndrReq vars) Nothing con derives]]
+      RecC _name [_varBangType] -> tell [CodeDec [TH.NewtypeD [] name (changeTVFlags bndrReq vars) Nothing con derives]]
+      _ -> tell [CodeDec [TH.DataD [] name (changeTVFlags bndrReq vars) Nothing cons derives]]
+    _ -> tell [CodeDec [TH.DataD [] name (changeTVFlags bndrReq vars) Nothing cons derives]]
 
 derivClauseW :: Maybe TH.DerivStrategy -> [TH.Pred] -> Writer r TH.DerivClause
 derivClauseW str preds = tell [TH.DerivClause str preds]
