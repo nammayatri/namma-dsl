@@ -114,7 +114,7 @@ parseAllApis' = do
       let (key, val) = head $ KM.toList ob
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
-      let params = fromMaybe KM.empty $ preview (ix acc_params ._Object) obj
+      let params = fromMaybe KM.empty $ preview (ix acc_params . _Object) obj
           endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
           auth = getAuthType <$> preview (ix acc_auth . _String) obj
 
@@ -403,7 +403,7 @@ parseEndpoint obj txt =
         if (isCapture x)
           then
             let capName = extractCapture x
-             in Capture capName (fromMaybe (error "Wrong Capture grp") (obj ^? ix (fromText capName) ._String))
+             in Capture capName (fromMaybe (error "Wrong Capture grp") (obj ^? ix (fromText capName) . _String))
           else UnitPath x
     )
     $ filter (not . T.null) (T.splitOn "/" txt)

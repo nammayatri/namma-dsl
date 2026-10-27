@@ -55,14 +55,13 @@ default-extensions:
   - BlockArguments
   - TypeSynonymInstances
   - UndecidableInstances
+  - OverloadedRecordDot
 
 dependencies:
   - aeson
   - base >= 4.7 && < 5
   - bytestring
   - safe
-  - record-dot-preprocessor
-  - record-hasfield
   - text
   - time
   - template-haskell
@@ -101,7 +100,6 @@ ghc-options:
   - -Werror
   - -Widentities
   - -Wunused-imports
-  - -fplugin=RecordDotPreprocessor
   - -fwrite-ide-info
   - -hiedir=.hie
 
