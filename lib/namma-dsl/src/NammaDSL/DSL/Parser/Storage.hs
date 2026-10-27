@@ -328,7 +328,7 @@ parseCachedQueries = do
       parseCachedQuery cquery =
         let cQueryName = fst cquery
             cqueryObj = snd cquery
-            withCrossAppRedis = fromMaybe False (cqueryObj ^? ix acc_withCrossAppRedis ._Bool)
+            withCrossAppRedis = fromMaybe False (cqueryObj ^? ix acc_withCrossAppRedis . _Bool)
             ctypeConstraint = cqueryObj ^? ix acc_typeConstraint . _String
             cacheDataType = fromMaybe (COne) $ cqueryObj ^? (ix acc_cacheDataType . _String `failing` ix acc_returnType . _String) . to parseReturnType
             keyMaker = cqueryObj ^? ix acc_keyMaker . _String
@@ -1239,7 +1239,7 @@ makeBeamFields fieldName haskellType = do
   let isEncryptedHashedField = "EncryptedHashedField" `T.isInfixOf` (T.pack haskellType)
   let constraintsObj = obj ^? (ix acc_constraints . _Object)
       sqlTypeObj = obj ^? (ix acc_sqlType . _Object)
-      beamTypeObj = obj ^? (ix acc_beamType ._Object)
+      beamTypeObj = obj ^? (ix acc_beamType . _Object)
       defaultsObj = obj ^? (ix acc_default . _Object)
   if isEncryptedHashedField && not (has (ix acc_beamFields . _Object . ix (fromString fieldName) . _Object) obj)
     then do
