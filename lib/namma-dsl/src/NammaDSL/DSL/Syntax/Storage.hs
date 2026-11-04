@@ -2,6 +2,7 @@ module NammaDSL.DSL.Syntax.Storage where
 
 import Data.Aeson (Object)
 import Data.Default
+import qualified Data.List as DL
 import Data.Map (Map)
 import Data.Set (Set)
 import GHC.Generics (Generic)
@@ -184,6 +185,12 @@ type Create = Bool
 type FromCached = Bool
 
 data FieldConstraint = PrimaryKey | SecondaryKey | NotNull | Forced FieldConstraint | CompositeSecondaryKey String | SecondaryKeyPartial [(String, String)] deriving (Show, Eq, Ord)
+
+negatedPartialPrefix :: String
+negatedPartialPrefix = "!="
+
+isNegatedPartialValue :: String -> Bool
+isNegatedPartialValue = DL.isPrefixOf negatedPartialPrefix
 
 data SqlFieldUpdates = DropNotNull | DropDefault | AddNotNull | AddDefault String | DropColumn | TypeChange deriving (Show)
 

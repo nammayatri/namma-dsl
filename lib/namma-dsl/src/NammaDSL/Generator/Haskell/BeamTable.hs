@@ -143,8 +143,11 @@ tableInstancesToBeam = do
           `TH.AppE` TH.ListE
             ( partialSecondaryKeys
                 <&> ( \conds ->
-                        TH.ConE (TH.mkName "SKeyPartial")
-                          `TH.AppE` TH.ListE (conds <&> (\(f, v) -> TH.TupE [Just (TH.VarE (TH.mkName ("'" <> f))), Just (TH.LitE (TH.StringL v))]))
+                        let isNegatedPartial = all (isNegatedPartialValue . snd) conds
+                            partialConstructor = if isNegatedPartial then "SKeyPartialNot" else "SKeyPartial"
+                            partialValue v = if isNegatedPartial then drop (length negatedPartialPrefix) v else v
+                         in TH.ConE (TH.mkName partialConstructor)
+                              `TH.AppE` TH.ListE (conds <&> (\(f, v) -> TH.TupE [Just (TH.VarE (TH.mkName ("'" <> f))), Just (TH.LitE (TH.StringL (partialValue v)))]))
                     )
             )
   mapM_
