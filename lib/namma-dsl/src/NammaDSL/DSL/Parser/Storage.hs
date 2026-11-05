@@ -76,7 +76,7 @@ parseExtraIndexes = do
   tableName <- gets (tableNameSql . tableDef)
   isGenerationAllowed <- gets ((GENERATE_INDEXES `elem`) . extraOperations . tableDef)
   isDefaultIndexingStopped <- gets ((NO_DEFAULT_INDEXES `elem`) . extraOperations . tableDef)
-  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf || any isCompositeSecondaryKey (bConstraints bf)) . concatMap beamFields . fields . tableDef)
+  defaultColForIndexing <- gets (map bFieldName . filter (\bf -> SecondaryKey `elem` bConstraints bf || any isCompositeSecondaryKey (bConstraints bf) || any isUnforcedNegatedSecondaryKeyPartial (bConstraints bf)) . concatMap beamFields . fields . tableDef)
   let defaultIndexes = map (\col -> mkIndexDef tableName [col] False Nothing) defaultColForIndexing
   let rawExtraIndexes = fromMaybe [] $ obj ^? ix acc_extraIndexes . _Array . to V.toList
   parsedExtraIndexes <- mapM parseExtraIndex rawExtraIndexes
@@ -513,7 +513,8 @@ parsePrimaryAndSecondaryKeys = do
   allFieldsUsedInQueries <- getAllFieldsUsedInQueries queries
   let (primaryKey, secondaryKey, secondaryKeyPartial) = extractKeys allFieldsUsedInQueries fields
       allowedForTable = fromMaybe [] $ M.lookup tableName tablesAllowedBlacklistSecondaryKeys
-      violatingKeys = (L.intersect (concat secondaryKey) notAllowedSecondaryKeys) L.\\ allowedForTable
+      negatedPartialFields = [negatedField | negatedConds@((negatedField, _) : _) <- secondaryKeyPartial, all (isNegatedPartialValue . snd) negatedConds]
+      violatingKeys = (L.intersect (concat secondaryKey <> negatedPartialFields) notAllowedSecondaryKeys) L.\\ allowedForTable
   when (not (null violatingKeys) && srcStatus `elem` [NEW, CHANGED]) $ throwError $ InternalError "Secondary Key should not contain merchantId, merchantOperatingCityId, status"
   modify $ \s -> s {tableDef = (tableDef s) {primaryKey = primaryKey, secondaryKey = secondaryKey, secondaryKeyPartial = secondaryKeyPartial}}
   where
@@ -584,6 +585,10 @@ isCompositeSecondaryKey :: FieldConstraint -> Bool
 isCompositeSecondaryKey (CompositeSecondaryKey _) = True
 isCompositeSecondaryKey (Forced (CompositeSecondaryKey _)) = True
 isCompositeSecondaryKey _ = False
+
+isUnforcedNegatedSecondaryKeyPartial :: FieldConstraint -> Bool
+isUnforcedNegatedSecondaryKeyPartial (SecondaryKeyPartial negatedConds) = not (null negatedConds) && all (isNegatedPartialValue . snd) negatedConds
+isUnforcedNegatedSecondaryKeyPartial _ = False
 
 isSecondaryKeyPartial :: FieldConstraint -> Bool
 isSecondaryKeyPartial (SecondaryKeyPartial _) = True
@@ -1345,11 +1350,20 @@ parseSecondaryKeyPartialConditions rest =
   let conds = L.trim rest
    in if null conds
         then error "SecondaryKeyPartial requires at least one condition (e.g., \"SecondaryKeyPartial fieldName:value\")"
-        else map parseCondPair (splitOn "," conds)
+        else validateOperators (map parseCondPair (splitOn "," conds))
   where
     parseCondPair pair = case splitOn ":" (L.trim pair) of
-      [f, v] | not (null (L.trim f)) && not (null (L.trim v)) -> (L.trim f, L.trim v)
-      _ -> error ("SecondaryKeyPartial condition must be of the form \"fieldName:value\", got: " <> pair)
+      [f, v] | not (null (L.trim f)) && not (null (L.trim v)) -> (L.trim f, normalizeCondValue pair (L.trim v))
+      _ -> error ("SecondaryKeyPartial condition must be of the form \"fieldName:value\" or \"fieldName:!=value\", got: " <> pair)
+    normalizeCondValue rawPair condValue = case L.stripPrefix negatedPartialPrefix condValue of
+      Just negatedValue
+        | null (L.trim negatedValue) -> error ("SecondaryKeyPartial condition \"fieldName:!=value\" needs a value after !=, got: " <> rawPair)
+        | otherwise -> negatedPartialPrefix <> L.trim negatedValue
+      Nothing -> condValue
+    validateOperators parsedConds
+      | all (isNegatedPartialValue . snd) parsedConds = parsedConds
+      | any (isNegatedPartialValue . snd) parsedConds = error ("SecondaryKeyPartial cannot mix \"fieldName:value\" and \"fieldName:!=value\" conditions in one constraint, got: " <> rest)
+      | otherwise = parsedConds
 
 parseFieldConstraints :: Maybe Object -> Key -> [FieldConstraint]
 parseFieldConstraints Nothing _ = []
