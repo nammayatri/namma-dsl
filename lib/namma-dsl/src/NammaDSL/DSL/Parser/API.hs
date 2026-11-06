@@ -114,7 +114,13 @@ parseAllApis' = do
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
       let params = fromMaybe KM.empty $ preview (ix acc_params ._Object) obj
-          endpoint = parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
+          isWebhookApi = case preview (ix acc_apiType . _String) obj of
+            Nothing -> False
+            Just "WEBHOOK" -> True
+            Just other -> error $ "Unknown apiType: " <> T.unpack other <> " (supported: WEBHOOK)"
+          endpoint =
+            (if isWebhookApi then (UnitPath "webhook" :) else id) $
+              parseEndpoint params $ fromMaybe (error "Endpoint not found !") $ preview (ix acc_endpoint . _String) obj
           auth = getAuthType <$> preview (ix acc_auth . _String) obj
 
           req = parseRequest obj

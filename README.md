@@ -205,6 +205,21 @@ This tutorial provides a comprehensive guide to understanding and working with t
             type: Kernel.Types.APISuccess.APISuccess
   ```
 
+#### Api Type (webhook)
+Add `apiType: WEBHOOK` to an API block to prefix its endpoint with `/webhook`
+(e.g. `endpoint: /payment/status` becomes `/webhook/payment/status`). Omit it for normal APIs.
+
+```yaml
+      - POST:
+          endpoint: /payment/status
+          apiType: WEBHOOK
+          auth: NoAuth
+          request:
+            type: Foo.Req
+          response:
+            type: Kernel.Types.APISuccess.APISuccess
+```
+
 #### Api Auth
 - AdminTokenAuth
 - ApiTokenAuth
