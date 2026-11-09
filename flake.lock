@@ -19,16 +19,15 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1794583075,
-        "narHash": "sha256-pbko0nTc0eAg//GPlmoazb5rLH8MR2j3VQF/3mHDSNs=",
+        "lastModified": 1794911044,
+        "narHash": "sha256-rfySHCDwoYtE7j7zFcJHzaxPpZV3iCy1V2kta5nNjLA=",
         "owner": "nammayatri",
         "repo": "common",
-        "rev": "f3b017068d09963fbb1fd27109b759d3b1a5f278",
+        "rev": "deccce98dbefdc8e26dc2fb71c35fa1eed604fd9",
         "type": "github"
       },
       "original": {
         "owner": "nammayatri",
-        "ref": "ghc-98-upgrade",
         "repo": "common",
         "type": "github"
       }

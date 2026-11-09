@@ -1,6 +1,6 @@
 {
   inputs = {
-    common.url = "github:nammayatri/common?ref=ghc-98-upgrade";
+    common.url = "github:nammayatri/common";
     # shared-kernel.url = "github:nammayatri/shared-kernel";
   };
   outputs = inputs:
