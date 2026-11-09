@@ -31,7 +31,7 @@ import qualified Data.List.Extra as L
 import Data.List.Split (split, splitOn, splitWhen, whenElt)
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, fromMaybe, maybeToList)
+import Data.Maybe (catMaybes, fromMaybe, isJust, maybeToList)
 import Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -222,45 +222,55 @@ parseFields = do
 
 modifyWithIdRelationalFields :: StorageParserM ()
 modifyWithIdRelationalFields = do
+  obj <- gets (dataObject . extraParseInfo)
+  impObj <- gets (yamlObject . extraParseInfo)
   fields <- gets (fields . tableDef)
-  let modifiedFields =
+  let parseToTTypeFor idBeamFieldName =
+        obj ^? (ix acc_toTType . _Object) >>= preview (ix (fromString idBeamFieldName) . _String . to (makeTF impObj))
+      mkWithIdBeamField fieldDef idBeamFieldName bType constraints defaultExtractor =
+        let maybeToTType = parseToTTypeFor idBeamFieldName
+            -- yaml toTType replaces the default getId/(.id) extractors, not stacks on top
+            extractor = if isJust maybeToTType then [] else defaultExtractor
+         in BeamField
+              { bFieldName = idBeamFieldName,
+                hFieldType = haskellType fieldDef,
+                bFieldType = bType,
+                bConstraints = constraints,
+                bSqlType = "character varying(36)",
+                bDefaultVal = Nothing,
+                bFieldUpdates = [],
+                bfieldExtractor = extractor,
+                bToTType = maybeToTType,
+                bIsEncrypted = False
+              }
+      modifiedFields =
         map
           ( \fieldDef ->
               case relation fieldDef of
                 Just (WithId _ _) ->
-                  fieldDef
-                    { beamFields =
-                        [ BeamField
-                            { bFieldName = (fieldName fieldDef) ++ "Id",
-                              hFieldType = haskellType fieldDef,
-                              bFieldType = "Kernel.Prelude.Maybe Kernel.Prelude.Text",
-                              bConstraints = [],
-                              bSqlType = "character varying(36)",
-                              bDefaultVal = Nothing,
-                              bFieldUpdates = [],
-                              bfieldExtractor = ["Kernel.Types.Id.getId", "(.id) <$>"],
-                              bToTType = Nothing,
-                              bIsEncrypted = False
-                            }
-                        ]
-                    }
+                  let idBeamFieldName = fieldName fieldDef ++ "Id"
+                   in fieldDef
+                        { beamFields =
+                            [ mkWithIdBeamField
+                                fieldDef
+                                idBeamFieldName
+                                "Kernel.Prelude.Maybe Kernel.Prelude.Text"
+                                []
+                                ["Kernel.Types.Id.getId", "(.id) <$>"]
+                            ]
+                        }
                 Just (WithIdStrict _ _) ->
-                  fieldDef
-                    { beamFields =
-                        [ BeamField
-                            { bFieldName = (fieldName fieldDef) ++ "Id",
-                              hFieldType = haskellType fieldDef,
-                              bFieldType = "Kernel.Prelude.Text",
-                              bConstraints = [NotNull],
-                              bSqlType = "character varying(36)",
-                              bDefaultVal = Nothing,
-                              bFieldUpdates = [],
-                              bfieldExtractor = ["Kernel.Types.Id.getId", "(.id)"],
-                              bToTType = Nothing,
-                              bIsEncrypted = False
-                            }
-                        ]
-                    }
+                  let idBeamFieldName = fieldName fieldDef ++ "Id"
+                   in fieldDef
+                        { beamFields =
+                            [ mkWithIdBeamField
+                                fieldDef
+                                idBeamFieldName
+                                "Kernel.Prelude.Text"
+                                [NotNull]
+                                ["Kernel.Types.Id.getId", "(.id)"]
+                            ]
+                        }
                 _ -> fieldDef
           )
           fields
