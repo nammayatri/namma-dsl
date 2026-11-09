@@ -3,6 +3,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# OPTIONS_GHC -Wwarn=x-partial #-}
 
 module NammaDSL.DSL.Parser.API where
 
@@ -113,7 +114,7 @@ parseAllApis' = do
       let (key, val) = head $ KM.toList ob
           apiTp = getApiType $ toText key
       obj <- preview (_Object) val
-      let params = fromMaybe KM.empty $ preview (ix acc_params ._Object) obj
+      let params = fromMaybe KM.empty $ preview (ix acc_params . _Object) obj
           isWebhookApi = case preview (ix acc_apiType . _String) obj of
             Nothing -> False
             Just "WEBHOOK" -> True
@@ -408,7 +409,7 @@ parseEndpoint obj txt =
         if (isCapture x)
           then
             let capName = extractCapture x
-             in Capture capName (fromMaybe (error "Wrong Capture grp") (obj ^? ix (fromText capName) ._String))
+             in Capture capName (fromMaybe (error "Wrong Capture grp") (obj ^? ix (fromText capName) . _String))
           else UnitPath x
     )
     $ filter (not . T.null) (T.splitOn "/" txt)

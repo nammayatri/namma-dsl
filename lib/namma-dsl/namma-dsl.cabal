@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.2.
+-- This file has been generated from package.yaml by hpack version 0.38.3.
 --
 -- see: https://github.com/sol/hpack
 
@@ -99,7 +99,8 @@ library
       BlockArguments
       TypeSynonymInstances
       UndecidableInstances
-  ghc-options: -Wall -Wcompat -Werror -Widentities -Wunused-imports -fplugin=RecordDotPreprocessor -fwrite-ide-info -hiedir=.hie -Wincomplete-uni-patterns -Wwarn=ambiguous-fields
+      OverloadedRecordDot
+  ghc-options: -Wall -Wcompat -Werror -Widentities -Wunused-imports -fwrite-ide-info -hiedir=.hie -Wincomplete-uni-patterns -Wwarn=ambiguous-fields
   build-depends:
       aeson
     , base >=4.7 && <5
@@ -121,8 +122,6 @@ library
     , pretty
     , process
     , raw-strings-qq
-    , record-dot-preprocessor
-    , record-hasfield
     , regex-compat
     , regex-tdfa
     , safe
@@ -131,6 +130,7 @@ library
     , stringbuilder
     , template-haskell
     , text
+    , th-abstraction
     , time
     , transformers
     , unordered-containers
@@ -220,7 +220,8 @@ test-suite namma-dsl-tests
       BlockArguments
       TypeSynonymInstances
       UndecidableInstances
-  ghc-options: -Wall -Wcompat -Werror -Widentities -Wunused-imports -fplugin=RecordDotPreprocessor -fwrite-ide-info -hiedir=.hie
+      OverloadedRecordDot
+  ghc-options: -Wall -Wcompat -Werror -Widentities -Wunused-imports -fwrite-ide-info -hiedir=.hie
   build-depends:
       aeson
     , base >=4.7 && <5
@@ -243,8 +244,6 @@ test-suite namma-dsl-tests
     , pretty
     , process
     , raw-strings-qq
-    , record-dot-preprocessor
-    , record-hasfield
     , regex-compat
     , regex-tdfa
     , safe
@@ -253,6 +252,7 @@ test-suite namma-dsl-tests
     , stringbuilder
     , template-haskell
     , text
+    , th-abstraction
     , time
     , transformers
     , unordered-containers
