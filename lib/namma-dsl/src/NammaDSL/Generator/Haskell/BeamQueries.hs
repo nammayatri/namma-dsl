@@ -696,6 +696,12 @@ generateQueryParams allFields params = pure @[] . TH.listEW $ forM_ params \(Que
           forM_ (fieldDef.beamFields) \bField -> do
             TH.itemW $ cE "Se.Set" ~* vE ("Beam." <> bFieldName bField) ~* (if field == "updatedAt" then (if "Kernel.Prelude.Maybe " `isPrefixOf` (bFieldType bField) then vE "Just" ~* vE "_now" else vE "_now") else correctSetField (Just getParamVal) field tp bField)
 
+withIdToTTypeTransformerArg :: TransformerFunction -> BeamField -> String -> Q TH.Exp
+withIdToTTypeTransformerArg tf beamField field
+  | null (bfieldExtractor beamField) = vE (tfName tf) ~* vE field
+  | otherwise =
+    vE (tfName tf) ~* toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+
 correctSetField :: Maybe String -> String -> String -> BeamField -> Q TH.Exp
 correctSetField optionalFieldName field' tp beamField
   | isJust (bToTType beamField) =
@@ -706,7 +712,7 @@ correctSetField optionalFieldName field' tp beamField
             else
               if (tfIsEmbeddedArgs tf)
                 then vE (tfName tf)
-                else vE (tfName tf) ~* toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+                else withIdToTTypeTransformerArg tf beamField field
   | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
   | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
   | "Kernel.Types.Id.Id " `isPrefixOf` tp = _getId ~* vE field
@@ -726,7 +732,7 @@ correctEqField optionalFieldName field' tp beamField
             else
               if tfIsEmbeddedArgs tf
                 then vE (tfName tf)
-                else vE (tfName tf) ~* toTTypeExtractorTH (makeExtractorFunctionTH $ bfieldExtractor beamField) field
+                else withIdToTTypeTransformerArg tf beamField field
   | "Kernel.Types.Id.Id " `isInfixOf` tp && not ("Kernel.Types.Id.Id " `isPrefixOf` tp) = _getId ~<$> vE field
   | "Kernel.Types.Id.ShortId " `isInfixOf` tp && not ("Kernel.Types.Id.ShortId " `isPrefixOf` tp) = _getShortId ~<$> vE field
   | "Kernel.Types.Id.Id " `isPrefixOf` tp = _getId ~* vE field
