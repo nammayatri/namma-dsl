@@ -382,10 +382,13 @@ pprintType = Pretty.renderStyle (Pretty.style {Pretty.lineLength = 300}) . Ppr.t
 -- one-line `type X = a :> b :> c` and finding it left untouched - it only
 -- re-derives layout for constructs it has dedicated wrapping logic for,
 -- e.g. -> via ArrowT, not arbitrary infix type operators).
+-- 6-space continuation indent matches the old ormolu-produced convention:
+-- `type X =\n  ( link1\n      :> link2\n      :> link3\n  )` - tySynRawDW
+-- supplies the `type X =\n  ( ... \n  )` wrapper, this supplies the body.
 joinInfixChainLines :: TH.Name -> [String] -> String
 joinInfixChainLines _ [] = ""
 joinInfixChainLines operator (x : xs) =
-  x <> concatMap (\y -> "\n    " <> TH.nameBase operator <> " " <> y) xs
+  x <> concatMap (\y -> "\n      " <> TH.nameBase operator <> " " <> y) xs
 
 -- Flatten a chain of an arbitrary infix type operator (e.g. :<|>, :>) to
 -- literal text instead of a UInfixT AST, since Ppr cannot render a 3+-link
@@ -404,7 +407,7 @@ appendInfixTextFlat operator textsQ =
 tySynRawDW :: TH.Name -> Q r String -> Writer r CodeUnit
 tySynRawDW name bodyQ = do
   body <- lift bodyQ
-  tell [CodeRawDec $ "type " <> TH.nameBase name <> " = " <> body]
+  tell [CodeRawDec $ "type " <> TH.nameBase name <> " =\n  ( " <> body <> "\n  )"]
 
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB

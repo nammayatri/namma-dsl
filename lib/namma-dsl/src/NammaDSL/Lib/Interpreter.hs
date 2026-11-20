@@ -36,9 +36,12 @@ interpret CodeTree {..} = do
   -- <> "\n\n"
   -- <> L.intercalate "\n" (interpretImport <$> codeImports)
   -- <> "\n\n"
-  interpretDecs codeDecs
+  -- codeRawDecs first: these are things like `type API = ...`, which used
+  -- to be emitted earliest in the file (before the handler functions etc.
+  -- that make up codeDecs) back when they were plain CodeDecs too.
+  L.intercalate "\n\n" codeRawDecs
     <> "\n\n"
-    <> L.intercalate "\n\n" codeRawDecs
+    <> interpretDecs codeDecs
     <> "\n\n"
     <> L.intercalate "\n\n" (interpretSplice <$> codeSplices)
     <> "\n\n"
