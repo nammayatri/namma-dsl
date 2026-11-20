@@ -6,6 +6,7 @@ import Control.Applicative
 import Control.Monad.Writer hiding (Writer)
 import Data.Data (Typeable, typeRep)
 import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import Data.Proxy
 import Data.String
 import qualified Data.Text as T
@@ -13,7 +14,10 @@ import Language.Haskell.Meta.Parse (parseExp)
 import Language.Haskell.TH as Reexport hiding (Code, Q, appTypeE, compE, forallT, listE, listT, normalB, parensT, runQ, sigE, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT, wildP)
 import qualified Language.Haskell.TH as TH
 import Language.Haskell.TH.Datatype.TyVarBndr (changeTVFlags)
+import qualified Language.Haskell.TH.Ppr as Ppr
+import qualified Language.Haskell.TH.PprLib as Ppr
 import NammaDSL.Lib.Types
+import qualified Text.PrettyPrint as Pretty
 import Text.Read (readEither)
 import Prelude
 
@@ -75,8 +79,11 @@ intE = pure . TH.LitE . TH.IntegerL
 rawE :: String -> Q r TH.Exp
 rawE st = pure $ either (const (error ("Failed while making Exp of " <> st))) id (parseExp st)
 
+-- Built via ArrowT/AppT, not uInfixT "->": Ppr's UInfixT case always
+-- re-parenthesizes a nested right-hand side (see CodeRawDec), but ArrowT
+-- has its own correctly-recursing Ppr case, so nested arrows stay flat.
 (-->) :: Q r TH.Type -> Q r TH.Type -> Q r TH.Type
-a --> b = uInfixT a (TH.mkName "->") b
+a --> b = TH.AppT <$> (TH.AppT TH.ArrowT <$> a) <*> b
 
 infixr 1 -->
 
@@ -357,10 +364,53 @@ appendInfixP :: TH.Name -> NonEmpty (Q r TH.Pat) -> Q r TH.Pat
 appendInfixP operator = foldr1 (\acc e -> uInfixP acc operator e)
 
 appendArrow :: NonEmpty (Q r TH.Type) -> Q r TH.Type
-appendArrow = appendInfixT "->"
+appendArrow = foldr1 (-->)
 
 appendT :: NonEmpty (Q r TH.Type) -> Q r TH.Type
 appendT = foldl1 (~~)
+
+-- A chain body kept as a Doc (Text.PrettyPrint - the Hughes-PJ library
+-- GHC's own Ppr module is itself built on) rather than rendered text, so
+-- it can be nested inside a bigger chain's fsep and still get correct
+-- fill/wrap decisions. Only rendered to a String once, at the very top
+-- (tySynRawDW) - an already-rendered multi-line String fed back into
+-- fsep as one opaque unit would break its column/width tracking.
+type ChainDoc = Pretty.Doc
+
+-- Join an infix chain's links with the Hughes-PJ fill algorithm (fsep):
+-- pack as many onto one line as fit, wrap the rest - the behaviour ormolu
+-- used to produce for these chains, since neither Ppr nor ormolu will do
+-- it for us directly (checked both: Ppr via the pprInfixT bug above,
+-- ormolu by feeding it an already-valid one-line `type X = a :> b :> c`
+-- and finding it left completely untouched - it has no wrapping logic
+-- for an arbitrary infix type operator the way it does for -> via ArrowT).
+-- `nest 6` matches the old convention's continuation indent:
+-- `type X =\n  ( link1\n      :> link2\n      :> link3\n  )`.
+joinInfixChainDoc :: TH.Name -> [ChainDoc] -> ChainDoc
+joinInfixChainDoc _ [] = Pretty.empty
+joinInfixChainDoc operator (x : xs) =
+  Pretty.nest 6 (Pretty.fsep (x : map (\d -> Pretty.text (TH.nameBase operator) Pretty.<+> d) xs))
+
+-- Build a chain of an arbitrary infix type operator (e.g. :<|>, :>) as a
+-- ChainDoc instead of a UInfixT AST, since Ppr cannot render a 3+-link
+-- chain of a custom operator without nesting every link in parens.
+appendInfixTFlat :: TH.Name -> NonEmpty (Q r TH.Type) -> Q r ChainDoc
+appendInfixTFlat operator typesQ =
+  joinInfixChainDoc operator . fmap (Ppr.to_HPJ_Doc . Ppr.ppr) . NE.toList <$> sequenceA typesQ
+
+-- Same as appendInfixTFlat, but the links are already ChainDocs.
+appendInfixTextFlat :: TH.Name -> NonEmpty (Q r ChainDoc) -> Q r ChainDoc
+appendInfixTextFlat operator docsQ =
+  joinInfixChainDoc operator . NE.toList <$> sequenceA docsQ
+
+-- Like tySynDW, but the RHS is a pre-rendered ChainDoc (see CodeRawDec)
+-- rather than a TH.Type, so it is spliced verbatim instead of going
+-- through Ppr. This is the only place a chain gets rendered to a String.
+tySynRawDW :: TH.Name -> Q r ChainDoc -> Writer r CodeUnit
+tySynRawDW name bodyQ = do
+  body <- lift bodyQ
+  let rendered = Pretty.renderStyle (Pretty.style {Pretty.lineLength = 100}) body
+  tell [CodeRawDec $ "type " <> TH.nameBase name <> " =\n  ( " <> rendered <> "\n  )"]
 
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB

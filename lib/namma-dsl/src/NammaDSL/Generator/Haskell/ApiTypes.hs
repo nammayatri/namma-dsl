@@ -257,10 +257,10 @@ generateHaskellTypes = traverse_ processType
 -- used in dashboard common apis
 generateServantApiType :: ApiRead -> ApiTT -> Writer CodeUnit
 generateServantApiType apiRead api = do
-  tySynDW (TH.mkNameT $ mkApiName api) [] $ do
+  tySynRawDW (TH.mkNameT $ mkApiName api) $ do
     apiTTToText apiRead API_TYPES api
   whenJust (api ^. apiHelperApi) $ \_ -> do
-    tySynDW (TH.mkNameT $ mkApiNameHelper api) [] $ do
+    tySynRawDW (TH.mkNameT $ mkApiNameHelper api) $ do
       apiTTToTextHelper apiRead API_TYPES api
 
 generateClientsType :: Writer CodeUnit
