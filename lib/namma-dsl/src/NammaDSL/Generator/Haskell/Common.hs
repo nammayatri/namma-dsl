@@ -191,13 +191,16 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
 
 type IsHelperApi = Bool
 
-apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
+apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r String
 apiTTToTextHelper apiRead generationType = withHelperApi (apiTTToText apiRead generationType)
 
 textToType :: Text -> Q r TH.Type
 textToType ty = TH.appendT $ NE.fromList $ cT <$> words (T.unpack ty)
 
-apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r TH.Type
+-- Returns pre-rendered text, not a Type: this builds a multi-link :> chain,
+-- and Ppr cannot render that without nesting every link in parens (see
+-- CodeRawDec in NammaDSL.Lib.Types).
+apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r String
 apiTTToText apiRead generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
@@ -206,7 +209,7 @@ apiTTToText apiRead generationType apiTT = do
       apiResText = apiResToText apiTypeText (apiTT ^. apiResType) (_responseHeader apiTT)
       headerText = map headerToText (_header apiTT)
 
-  TH.appendInfixT ":>" . NE.fromList $
+  TH.appendInfixTFlat ":>" . NE.fromList $
     maybeToList (addAuthToApi apiRead generationType apiTT)
       <> urlPartsText
       <> headerText
@@ -304,12 +307,15 @@ generateAPIType' :: IsHelperApi -> GenerationType -> ApiRead -> Writer Apis Code
 generateAPIType' isHelperApi generationType apiRead = do
   input <- ask
   let allApis = input ^. apis
-  tySynDW "API" [] $ do
-    case apiReadKind apiRead of
-      UI -> do
-        let apiTTToText_ = apiTTToText apiRead generationType
-        appendInfixT ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
-      DASHBOARD -> do
+  case apiReadKind apiRead of
+    -- Rendered as text, not via tySynDW: this is a multi-link :<|> chain of
+    -- multi-link :> chains, and Ppr cannot render either without nesting
+    -- every link in parens (see CodeRawDec in NammaDSL.Lib.Types).
+    UI -> do
+      let apiTTToText_ = apiTTToText apiRead generationType
+      tySynRawDW "API" $ appendInfixTextFlat ":<|>" . NE.fromList $ apiTTToText_ <$> allApis
+    DASHBOARD -> do
+      tySynDW "API" [] $ do
         let apiTTToText_ = cT . T.unpack . (if isHelperApi then mkApiNameHelper else mkApiName)
         let apiPrefix' =
               T.unpack $

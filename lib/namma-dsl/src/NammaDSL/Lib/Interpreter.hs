@@ -22,6 +22,7 @@ mkCodeTree (CodeDec codeDecs) = mempty{codeDecs = codeDecs}
 -- mkCodeTree (CodeImport codeImport) = mempty{codeImports = [codeImport]}
 -- mkCodeTree (CodeExtension codeExtension) = mempty{codeExtensions = [codeExtension]}
 mkCodeTree (CodeSplice codeSplice') = mempty{codeSplices = [codeSplice']}
+mkCodeTree (CodeRawDec rawDec) = mempty{codeRawDecs = [rawDec]}
 
 interpret :: CodeTree -> String
 interpret CodeTree {..} = do
@@ -36,6 +37,8 @@ interpret CodeTree {..} = do
   -- <> L.intercalate "\n" (interpretImport <$> codeImports)
   -- <> "\n\n"
   interpretDecs codeDecs
+    <> "\n\n"
+    <> L.intercalate "\n\n" codeRawDecs
     <> "\n\n"
     <> L.intercalate "\n\n" (interpretSplice <$> codeSplices)
     <> "\n\n"

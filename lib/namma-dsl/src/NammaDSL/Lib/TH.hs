@@ -4,8 +4,10 @@ module NammaDSL.Lib.TH (module NammaDSL.Lib.TH, module Reexport) where
 
 import Control.Applicative
 import Control.Monad.Writer hiding (Writer)
+import qualified Data.List as L
 import Data.Data (Typeable, typeRep)
 import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import Data.Proxy
 import Data.String
 import qualified Data.Text as T
@@ -13,7 +15,10 @@ import Language.Haskell.Meta.Parse (parseExp)
 import Language.Haskell.TH as Reexport hiding (Code, Q, appTypeE, compE, forallT, listE, listT, normalB, parensT, runQ, sigE, tupE, tupP, tupleT, tySynEqn, uInfixE, uInfixP, uInfixT, wildP)
 import qualified Language.Haskell.TH as TH
 import Language.Haskell.TH.Datatype.TyVarBndr (changeTVFlags)
+import qualified Language.Haskell.TH.Ppr as Ppr
+import qualified Language.Haskell.TH.PprLib as Ppr
 import NammaDSL.Lib.Types
+import qualified Text.PrettyPrint as Pretty
 import Text.Read (readEither)
 import Prelude
 
@@ -75,8 +80,11 @@ intE = pure . TH.LitE . TH.IntegerL
 rawE :: String -> Q r TH.Exp
 rawE st = pure $ either (const (error ("Failed while making Exp of " <> st))) id (parseExp st)
 
+-- Built via ArrowT/AppT, not uInfixT "->": Ppr's UInfixT case always
+-- re-parenthesizes a nested right-hand side (see CodeRawDec), but ArrowT
+-- has its own correctly-recursing Ppr case, so nested arrows stay flat.
 (-->) :: Q r TH.Type -> Q r TH.Type -> Q r TH.Type
-a --> b = uInfixT a (TH.mkName "->") b
+a --> b = TH.AppT <$> (TH.AppT TH.ArrowT <$> a) <*> b
 
 infixr 1 -->
 
@@ -357,10 +365,36 @@ appendInfixP :: TH.Name -> NonEmpty (Q r TH.Pat) -> Q r TH.Pat
 appendInfixP operator = foldr1 (\acc e -> uInfixP acc operator e)
 
 appendArrow :: NonEmpty (Q r TH.Type) -> Q r TH.Type
-appendArrow = appendInfixT "->"
+appendArrow = foldr1 (-->)
 
 appendT :: NonEmpty (Q r TH.Type) -> Q r TH.Type
 appendT = foldl1 (~~)
+
+-- Render a Type the same way the final file would, for use inside a
+-- CodeRawDec where we must emit text ourselves. Mirrors
+-- NammaDSL.Lib.Interpreter.pprint', duplicated locally to avoid a
+-- Lib.TH -> Lib.Interpreter import.
+pprintType :: TH.Type -> String
+pprintType = Pretty.renderStyle (Pretty.style {Pretty.lineLength = 300}) . Ppr.to_HPJ_Doc . Ppr.ppr
+
+-- Flatten a chain of an arbitrary infix type operator (e.g. :<|>, :>) to
+-- literal text instead of a UInfixT AST, since Ppr cannot render a 3+-link
+-- chain of a custom operator without nesting every link in parens.
+appendInfixTFlat :: TH.Name -> NonEmpty (Q r TH.Type) -> Q r String
+appendInfixTFlat operator typesQ =
+  L.intercalate (" " <> TH.nameBase operator <> " ") . fmap pprintType . NE.toList <$> sequenceA typesQ
+
+-- Same as appendInfixTFlat, but the links are already-rendered text.
+appendInfixTextFlat :: TH.Name -> NonEmpty (Q r String) -> Q r String
+appendInfixTextFlat operator textsQ =
+  L.intercalate (" " <> TH.nameBase operator <> " ") . NE.toList <$> sequenceA textsQ
+
+-- Like tySynDW, but the RHS is pre-rendered text (see CodeRawDec) rather
+-- than a TH.Type, so it is spliced verbatim instead of going through Ppr.
+tySynRawDW :: TH.Name -> Q r String -> Writer r CodeUnit
+tySynRawDW name bodyQ = do
+  body <- lift bodyQ
+  tell [CodeRawDec $ "type " <> TH.nameBase name <> " = " <> body]
 
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB
