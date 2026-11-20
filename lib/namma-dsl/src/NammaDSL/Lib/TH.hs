@@ -4,7 +4,6 @@ module NammaDSL.Lib.TH (module NammaDSL.Lib.TH, module Reexport) where
 
 import Control.Applicative
 import Control.Monad.Writer hiding (Writer)
-import qualified Data.List as L
 import Data.Data (Typeable, typeRep)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -377,17 +376,28 @@ appendT = foldl1 (~~)
 pprintType :: TH.Type -> String
 pprintType = Pretty.renderStyle (Pretty.style {Pretty.lineLength = 300}) . Ppr.to_HPJ_Doc . Ppr.ppr
 
+-- Join an infix chain's links one-per-line, since neither Ppr nor ormolu
+-- will wrap a custom type operator's chain for us (checked both directly:
+-- Ppr via the pprInfixT bug above, ormolu by feeding it an already-valid
+-- one-line `type X = a :> b :> c` and finding it left untouched - it only
+-- re-derives layout for constructs it has dedicated wrapping logic for,
+-- e.g. -> via ArrowT, not arbitrary infix type operators).
+joinInfixChainLines :: TH.Name -> [String] -> String
+joinInfixChainLines _ [] = ""
+joinInfixChainLines operator (x : xs) =
+  x <> concatMap (\y -> "\n    " <> TH.nameBase operator <> " " <> y) xs
+
 -- Flatten a chain of an arbitrary infix type operator (e.g. :<|>, :>) to
 -- literal text instead of a UInfixT AST, since Ppr cannot render a 3+-link
 -- chain of a custom operator without nesting every link in parens.
 appendInfixTFlat :: TH.Name -> NonEmpty (Q r TH.Type) -> Q r String
 appendInfixTFlat operator typesQ =
-  L.intercalate (" " <> TH.nameBase operator <> " ") . fmap pprintType . NE.toList <$> sequenceA typesQ
+  joinInfixChainLines operator . fmap pprintType . NE.toList <$> sequenceA typesQ
 
 -- Same as appendInfixTFlat, but the links are already-rendered text.
 appendInfixTextFlat :: TH.Name -> NonEmpty (Q r String) -> Q r String
 appendInfixTextFlat operator textsQ =
-  L.intercalate (" " <> TH.nameBase operator <> " ") . NE.toList <$> sequenceA textsQ
+  joinInfixChainLines operator . NE.toList <$> sequenceA textsQ
 
 -- Like tySynDW, but the RHS is pre-rendered text (see CodeRawDec) rather
 -- than a TH.Type, so it is spliced verbatim instead of going through Ppr.
