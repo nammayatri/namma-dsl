@@ -369,45 +369,48 @@ appendArrow = foldr1 (-->)
 appendT :: NonEmpty (Q r TH.Type) -> Q r TH.Type
 appendT = foldl1 (~~)
 
--- Render a Type the same way the final file would, for use inside a
--- CodeRawDec where we must emit text ourselves. Mirrors
--- NammaDSL.Lib.Interpreter.pprint', duplicated locally to avoid a
--- Lib.TH -> Lib.Interpreter import.
-pprintType :: TH.Type -> String
-pprintType = Pretty.renderStyle (Pretty.style {Pretty.lineLength = 300}) . Ppr.to_HPJ_Doc . Ppr.ppr
+-- A chain body kept as a Doc (Text.PrettyPrint - the Hughes-PJ library
+-- GHC's own Ppr module is itself built on) rather than rendered text, so
+-- it can be nested inside a bigger chain's fsep and still get correct
+-- fill/wrap decisions. Only rendered to a String once, at the very top
+-- (tySynRawDW) - an already-rendered multi-line String fed back into
+-- fsep as one opaque unit would break its column/width tracking.
+type ChainDoc = Pretty.Doc
 
--- Join an infix chain's links one-per-line, since neither Ppr nor ormolu
--- will wrap a custom type operator's chain for us (checked both directly:
--- Ppr via the pprInfixT bug above, ormolu by feeding it an already-valid
--- one-line `type X = a :> b :> c` and finding it left untouched - it only
--- re-derives layout for constructs it has dedicated wrapping logic for,
--- e.g. -> via ArrowT, not arbitrary infix type operators).
--- 6-space continuation indent matches the old ormolu-produced convention:
--- `type X =\n  ( link1\n      :> link2\n      :> link3\n  )` - tySynRawDW
--- supplies the `type X =\n  ( ... \n  )` wrapper, this supplies the body.
-joinInfixChainLines :: TH.Name -> [String] -> String
-joinInfixChainLines _ [] = ""
-joinInfixChainLines operator (x : xs) =
-  x <> concatMap (\y -> "\n      " <> TH.nameBase operator <> " " <> y) xs
+-- Join an infix chain's links with the Hughes-PJ fill algorithm (fsep):
+-- pack as many onto one line as fit, wrap the rest - the behaviour ormolu
+-- used to produce for these chains, since neither Ppr nor ormolu will do
+-- it for us directly (checked both: Ppr via the pprInfixT bug above,
+-- ormolu by feeding it an already-valid one-line `type X = a :> b :> c`
+-- and finding it left completely untouched - it has no wrapping logic
+-- for an arbitrary infix type operator the way it does for -> via ArrowT).
+-- `nest 6` matches the old convention's continuation indent:
+-- `type X =\n  ( link1\n      :> link2\n      :> link3\n  )`.
+joinInfixChainDoc :: TH.Name -> [ChainDoc] -> ChainDoc
+joinInfixChainDoc _ [] = Pretty.empty
+joinInfixChainDoc operator (x : xs) =
+  Pretty.nest 6 (Pretty.fsep (x : map (\d -> Pretty.text (TH.nameBase operator) Pretty.<+> d) xs))
 
--- Flatten a chain of an arbitrary infix type operator (e.g. :<|>, :>) to
--- literal text instead of a UInfixT AST, since Ppr cannot render a 3+-link
+-- Build a chain of an arbitrary infix type operator (e.g. :<|>, :>) as a
+-- ChainDoc instead of a UInfixT AST, since Ppr cannot render a 3+-link
 -- chain of a custom operator without nesting every link in parens.
-appendInfixTFlat :: TH.Name -> NonEmpty (Q r TH.Type) -> Q r String
+appendInfixTFlat :: TH.Name -> NonEmpty (Q r TH.Type) -> Q r ChainDoc
 appendInfixTFlat operator typesQ =
-  joinInfixChainLines operator . fmap pprintType . NE.toList <$> sequenceA typesQ
+  joinInfixChainDoc operator . fmap (Ppr.to_HPJ_Doc . Ppr.ppr) . NE.toList <$> sequenceA typesQ
 
--- Same as appendInfixTFlat, but the links are already-rendered text.
-appendInfixTextFlat :: TH.Name -> NonEmpty (Q r String) -> Q r String
-appendInfixTextFlat operator textsQ =
-  joinInfixChainLines operator . NE.toList <$> sequenceA textsQ
+-- Same as appendInfixTFlat, but the links are already ChainDocs.
+appendInfixTextFlat :: TH.Name -> NonEmpty (Q r ChainDoc) -> Q r ChainDoc
+appendInfixTextFlat operator docsQ =
+  joinInfixChainDoc operator . NE.toList <$> sequenceA docsQ
 
--- Like tySynDW, but the RHS is pre-rendered text (see CodeRawDec) rather
--- than a TH.Type, so it is spliced verbatim instead of going through Ppr.
-tySynRawDW :: TH.Name -> Q r String -> Writer r CodeUnit
+-- Like tySynDW, but the RHS is a pre-rendered ChainDoc (see CodeRawDec)
+-- rather than a TH.Type, so it is spliced verbatim instead of going
+-- through Ppr. This is the only place a chain gets rendered to a String.
+tySynRawDW :: TH.Name -> Q r ChainDoc -> Writer r CodeUnit
 tySynRawDW name bodyQ = do
   body <- lift bodyQ
-  tell [CodeRawDec $ "type " <> TH.nameBase name <> " =\n  ( " <> body <> "\n  )"]
+  let rendered = Pretty.renderStyle (Pretty.style {Pretty.lineLength = 100}) body
+  tell [CodeRawDec $ "type " <> TH.nameBase name <> " =\n  ( " <> rendered <> "\n  )"]
 
 normalB :: Q r TH.Exp -> Q r TH.Body
 normalB = fmap TH.NormalB

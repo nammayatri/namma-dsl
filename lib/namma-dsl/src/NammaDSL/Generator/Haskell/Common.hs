@@ -191,7 +191,7 @@ addAuthToApi apiRead generationType apiTT = case _authType apiTT of
 
 type IsHelperApi = Bool
 
-apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r String
+apiTTToTextHelper :: ApiRead -> GenerationType -> ApiTT -> Q r TH.ChainDoc
 apiTTToTextHelper apiRead generationType = withHelperApi (apiTTToText apiRead generationType)
 
 textToType :: Text -> Q r TH.Type
@@ -200,7 +200,7 @@ textToType ty = TH.appendT $ NE.fromList $ cT <$> words (T.unpack ty)
 -- Returns pre-rendered text, not a Type: this builds a multi-link :> chain,
 -- and Ppr cannot render that without nesting every link in parens (see
 -- CodeRawDec in NammaDSL.Lib.Types).
-apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r String
+apiTTToText :: ApiRead -> GenerationType -> ApiTT -> Q r TH.ChainDoc
 apiTTToText apiRead generationType apiTT = do
   let urlPartsText = map urlPartToText (_urlParts apiTT)
       apiTypeText = apiTypeToText (_apiType apiTT)
