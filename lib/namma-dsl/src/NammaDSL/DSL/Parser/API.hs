@@ -8,6 +8,7 @@
 module NammaDSL.DSL.Parser.API where
 
 import Control.Lens hiding (noneOf)
+import Control.Monad (unless)
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson
 import qualified Data.Aeson as A
@@ -21,7 +22,7 @@ import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Default
 import Data.List (isPrefixOf)
 import Data.List.Extra (dropPrefix)
-import Data.List.Split (splitWhen)
+import Data.List.Split (split, splitWhen, whenElt)
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe, isJust, mapMaybe)
 import Data.Text (Text)
@@ -308,7 +309,7 @@ makeQualifiedTypesInTypes defaultTypeImportMap moduleName defaultTypeImportModul
                     ( a,
                       if a == "enum"
                         then mkEnumTypeQualified dataNames defaultTypeImportModule b
-                        else T.pack $ U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just dataNames) Nothing (T.unpack <$> defaultTypeImportModule) obj (T.unpack b)
+                        else T.pack $ U.makeTypeQualified defaultTypeImportMap (Just $ T.unpack moduleName) (Just dataNames) Nothing (T.unpack <$> defaultTypeImportModule) obj (T.unpack (unmarkText b))
                     )
                 )
                 y,
@@ -352,13 +353,17 @@ mkList (Object obj) =
 mkList _ = []
 
 mkListFromSingleton :: Value -> [(Text, Text)]
-mkListFromSingleton (Object obj) =
+mkListFromSingleton = map (second extractString) . mkRawListFromSingleton
+
+-- | Like 'mkListFromSingleton', with each value as parsed.
+mkRawListFromSingleton :: Value -> [(Text, Value)]
+mkRawListFromSingleton (Object obj) =
   -- TODO remove case with Object, because it sorts fields alphabetically
-  KM.toList obj >>= \(k, v) -> [(toText k, extractString v)]
-mkListFromSingleton (Array arr) = do
+  first toText <$> KM.toList obj
+mkRawListFromSingleton (Array arr) = do
   V.toList arr <&> \case
     Object obj -> case KM.toList obj of
-      [(k, v)] -> (toText k, extractString v)
+      [(k, v)] -> (toText k, v)
       _ -> error $ "Only one field in object expected: " <> show obj
     field -> error $ "Object expected: " <> show field
 
@@ -456,6 +461,73 @@ typesToTypeObject (Just (Object obj)) =
       let (fields, derivations, overrideDerives) = splitTypeAndDerivation fieldsList
       TypeObject (extractRecordType fieldsList) (toText typeName, (fields, derivations)) overrideDerives
 typesToTypeObject _ = error "Expecting Object in Types"
+
+-- | Type of translatable text. 'checkTextFieldsDeclared' runs only where the config imports it.
+translatedTextType :: String
+translatedTextType = "TranslatedText"
+
+-- | Fails unless every Text in the fields of each type is 'translatedTextType' or marked as data: "!Text".
+checkTextFieldsDeclared :: FilePath -> IO ()
+checkTextFieldsDeclared filepath = do
+  contents <- BS.readFile filepath
+  case Yaml.decodeEither' contents of
+    Left e -> error $ "Not a Valid Yaml: " <> filepath <> "\n" <> Yaml.prettyPrintParseException e <> "\nIf it points at a !Text, quote the field type: \"[!Text]\""
+    Right (yml :: Object) -> do
+      let fields = typeFieldValues (yml ^? ix acc_types . _Value)
+          isNullType tp = tp `elem` [Null, Array (V.singleton Null)]
+          nullTyped = [field | (field, tp) <- fields, isNullType tp]
+          typeParts = [(field, fieldTypeParts (extractString tp)) | (field, tp) <- fields, not (isNullType tp)]
+          wrongMarks = [field | (field, parts) <- typeParts, any (maybe False (not . isTextWord) . T.stripPrefix "!") parts]
+          unmarked = [field | (field, parts) <- typeParts, any isTextWord parts]
+          listed = concatMap (\(tp, field) -> "  " <> T.unpack tp <> "." <> T.unpack field <> "\n")
+      unless (null nullTyped) $
+        error $
+          filepath <> ": the type of these fields is null:\n"
+            <> listed nullTyped
+            <> "This usually means a YAML tag like `!Text` was written without quotes — "
+            <> "the YAML parser strips the tag and leaves the value as null, dropping the type. "
+            <> "Quote it: \"!Text\", \"Maybe !Text\" or \"[!Text]\""
+      unless (null wrongMarks) $
+        error $
+          filepath <> ": these fields put ! in front of a type that is not Text:\n"
+            <> listed wrongMarks
+            <> "Only Text takes the mark (\"!Text\", \"Maybe !Text\"); drop it from any other type."
+      unless (null unmarked) $
+        error $
+          filepath <> ": these fields are Text but do not say what they hold:\n"
+            <> listed unmarked
+            <> "If it is translatable text (for example a title, message, label or description), use the type "
+            <> translatedTextType
+            <> " and fill it from a translation key:\n"
+            <> "    <field>: "
+            <> translatedTextType
+            <> "\n"
+            <> "If it is data (for example a name, id, phone, plate, code or number), mark its Text with ! and quote the type:\n"
+            <> "    <field>: \"!Text\""
+
+-- | Per non-enum type: each field, as (type, field), and its value as parsed.
+typeFieldValues :: Maybe Value -> [((Text, Text), Value)]
+typeFieldValues (Just (Object obj)) =
+  [ ((toText typeName, field), tp)
+    | (typeName, typeDef) <- KM.toList obj,
+      let fields = mkRawListFromSingleton typeDef,
+      "enum" `notElem` map fst fields,
+      (field, tp) <- fields,
+      field `notElem` ["derive", "recordType", "derive'"]
+  ]
+typeFieldValues _ = []
+
+-- | Words of a field type and the delimiters between them.
+fieldTypeParts :: Text -> [Text]
+fieldTypeParts = map T.pack . split (whenElt (`elem` (U.typeDelimiter ++ ","))) . T.unpack
+
+-- | Whole word Text or a name ending in .Text, without the ! mark.
+isTextWord :: Text -> Bool
+isTextWord word = not ("!" `T.isPrefixOf` word) && (word == "Text" || ".Text" `T.isSuffixOf` word)
+
+-- | Field type without the ! of each "!Text" (Text that holds data).
+unmarkText :: Text -> Text
+unmarkText = T.concat . map (\part -> maybe part (\word -> if isTextWord word then word else part) (T.stripPrefix "!" part)) . fieldTypeParts
 
 removeSurroundedSpaces :: Text -> Text
 removeSurroundedSpaces = removeSpacesBegin . removeSpacesEnd

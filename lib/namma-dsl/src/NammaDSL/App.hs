@@ -97,6 +97,9 @@ runApiGenerator configPath yamlPath = do
             apiCapabilityBaseline = mbCapabilityBaseline,
             isApiTreeClientGenerated = API_TREE_CLIENT `elem` (config ^. generate)
           }
+  when (isJust (lookup translatedTextType (config ^. defaultTypeImportMapper))) $ do
+    fileState <- getFileState yamlPath
+    when (fileState `elem` [NEW, CHANGED]) $ checkTextFieldsDeclared yamlPath
   (apiDef, apiDefApiTypes) <- apiParser' apiRead yamlPath
   let when' = \(t, f) -> when (elem t (config ^. generate)) $ f config apiRead (if t == API_TYPES then apiDefApiTypes else apiDef)
   mapM_
