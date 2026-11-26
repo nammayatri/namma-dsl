@@ -466,7 +466,8 @@ typesToTypeObject _ = error "Expecting Object in Types"
 translatedTextType :: String
 translatedTextType = "TranslatedText"
 
--- | Fails unless every Text in the fields of each type is 'translatedTextType' or marked as data: "!Text".
+-- | Fails unless every Text field of a type a response returns is 'translatedTextType' or carries the data mark,
+-- "!Text". A type a request takes may not have 'translatedTextType'. See 'bodyTypes'.
 checkTextFieldsDeclared :: FilePath -> IO ()
 checkTextFieldsDeclared filepath = do
   contents <- BS.readFile filepath
@@ -478,7 +479,9 @@ checkTextFieldsDeclared filepath = do
           nullTyped = [field | (field, tp) <- fields, isNullType tp]
           typeParts = [(field, fieldTypeParts (extractString tp)) | (field, tp) <- fields, not (isNullType tp)]
           wrongMarks = [field | (field, parts) <- typeParts, any (maybe False (not . isTextWord) . T.stripPrefix "!") parts]
-          unmarked = [field | (field, parts) <- typeParts, any isTextWord parts]
+          (requestTypes, responseTypes) = bodyTypes yml
+          translatedInRequest = [field | (field@(tp, _), parts) <- typeParts, tp `elem` requestTypes, T.pack translatedTextType `elem` parts]
+          unmarked = [field | (field@(tp, _), parts) <- typeParts, tp `elem` responseTypes, any isTextWord parts]
           listed = concatMap (\(tp, field) -> "  " <> T.unpack tp <> "." <> T.unpack field <> "\n")
       unless (null nullTyped) $
         error $
@@ -492,10 +495,18 @@ checkTextFieldsDeclared filepath = do
           filepath <> ": these fields put ! in front of a type that is not Text:\n"
             <> listed wrongMarks
             <> "Only Text takes the mark (\"!Text\", \"Maybe !Text\"); drop it from any other type."
+      unless (null translatedInRequest) $
+        error $
+          filepath <> ": these fields of a type that a request takes are " <> translatedTextType <> ":\n"
+            <> listed translatedInRequest
+            <> translatedTextType
+            <> " is text the backend returns, so a request cannot take it. Use Text in these fields. "
+            <> "If a response returns the same type, give the request its own type."
       unless (null unmarked) $
         error $
-          filepath <> ": these fields are Text but do not say what they hold:\n"
+          filepath <> ": a type that a response returns cannot have plain Text fields:\n"
             <> listed unmarked
+            <> "Choose one of the two for each field.\n"
             <> "If it is translatable text (for example a title, message, label or description), use the type "
             <> translatedTextType
             <> " and fill it from a translation key:\n"
@@ -504,6 +515,29 @@ checkTextFieldsDeclared filepath = do
             <> "\n"
             <> "If it is data (for example a name, id, phone, plate, code or number), mark its Text with ! and quote the type:\n"
             <> "    <field>: \"!Text\""
+
+-- | The spec's types that a request takes and those a response returns, nested types included.
+bodyTypes :: Object -> ([Text], [Text])
+bodyTypes yml = (reached ownName (bodyWords acc_request ++ bodyWords acc_multipart), reached lastName (bodyWords acc_response))
+  where
+    typeDefs = maybe [] (map (first toText) . KM.toList) (yml ^? ix acc_types . _Object)
+    typeNames = map fst typeDefs
+    -- Type names appear in field types and in enum constructors ("Bus BusRideInfo | Car CarRideInfo").
+    typeWords tp = concat [fieldTypeParts word | (owner, typeDef) <- typeDefs, owner == tp, (_, value) <- mkRawListFromSingleton typeDef, word <- value ^.. _String <> value ^.. _Array . traverse . _String]
+    moduleName = fromMaybe "" (yml ^? ix acc_module . _String)
+    apis = [api | Object method <- yml ^.. ix acc_apis . _Array . traverse, Object api <- KM.elems method]
+    helperApis = [api | obj <- apis, Object method <- obj ^.. ix acc_helperApi . _Array . traverse, Object api <- KM.elems method]
+    bodyWords key = concatMap fieldTypeParts [tp | api <- apis ++ helperApis, tp <- api ^.. ix key . _Object . ix acc_type . _String]
+    -- Names with a module prefix: a response matches on the type name alone, a request only with this module's prefix.
+    lastName = T.takeWhileEnd (/= '.')
+    ownName word = if word == lastName word || ("." <> moduleName <> "." <> lastName word) `T.isSuffixOf` ("." <> word) then lastName word else word
+    reached name = go [] . localTypes
+      where
+        localTypes = filter (`elem` typeNames) . map name
+        go seen [] = seen
+        go seen (tp : rest)
+          | tp `elem` seen = go seen rest
+          | otherwise = go (tp : seen) (rest ++ localTypes (typeWords tp))
 
 -- | Per non-enum type: each field, as (type, field), and its value as parsed.
 typeFieldValues :: Maybe Value -> [((Text, Text), Value)]
